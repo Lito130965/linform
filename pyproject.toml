@@ -12,6 +12,10 @@ dependencies = [
     "weasyprint>=61",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
+    "sqlalchemy>=2.0",
+    "asyncpg>=0.29",
+    "aiosqlite>=0.20",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]

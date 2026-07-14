@@ -33,6 +33,41 @@ def render_html(template_source: str, data: dict, *, strict: bool = True) -> str
         raise TemplateRenderError(f"Template uses a forbidden construct: {exc}") from exc
 
 
+def validate_template(template_source: str) -> None:
+    """Compile check without rendering; raises TemplateRenderError if broken."""
+    env = _make_environment(strict=False)
+    try:
+        env.from_string(template_source)
+    except TemplateSyntaxError as exc:
+        raise TemplateRenderError(f"Template syntax error at line {exc.lineno}: {exc.message}") from exc
+
+
+# Versions are immutable, so a compiled template cached by version id can
+# never go stale. Bounded so ad-hoc churn can't grow it unboundedly.
+_MAX_CACHED = 256
+_compiled_cache: dict[tuple[int, bool], object] = {}
+
+
+def render_version_html(version_id: int, template_source: str, data: dict, *, strict: bool = True) -> str:
+    key = (version_id, strict)
+    template = _compiled_cache.get(key)
+    if template is None:
+        env = _make_environment(strict)
+        try:
+            template = env.from_string(template_source)
+        except TemplateSyntaxError as exc:
+            raise TemplateRenderError(f"Template syntax error at line {exc.lineno}: {exc.message}") from exc
+        if len(_compiled_cache) >= _MAX_CACHED:
+            _compiled_cache.pop(next(iter(_compiled_cache)))
+        _compiled_cache[key] = template
+    try:
+        return template.render(**data)
+    except UndefinedError as exc:
+        raise TemplateRenderError(f"Missing placeholder value: {exc.message}") from exc
+    except SecurityError as exc:
+        raise TemplateRenderError(f"Template uses a forbidden construct: {exc}") from exc
+
+
 def extract_placeholders(template_source: str) -> list[str]:
     """Top-level variables the template expects; the integration contract."""
     env = _make_environment(strict=False)

@@ -7,6 +7,24 @@ services:
       # Host port is configurable so Linform can live next to other apps.
       - "${LINFORM_PORT:-8100}:8000"
     environment:
+      LINFORM_DATABASE_URL: "postgresql+asyncpg://linform:${LINFORM_DB_PASSWORD:-linform}@db:5432/linform"
       LINFORM_API_TOKEN: "${LINFORM_API_TOKEN:-}"
       LINFORM_RENDER_TIMEOUT_SECONDS: "${LINFORM_RENDER_TIMEOUT_SECONDS:-30}"
       LINFORM_RENDER_MAX_WORKERS: "${LINFORM_RENDER_MAX_WORKERS:-2}"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # Deliberately not exposed on the host: the app reaches it via the
+    # compose network, and host port 5432 may belong to something else.
+    environment:
+      POSTGRES_USER: linform
+      POSTGRES_PASSWORD: "${LINFORM_DB_PASSWORD:-linform}"
+      POSTGRES_DB: linform
+    volumes:
+      - linform_pgdata:/var/lib/postgresql/data
+
+volumes:
+  linform_pgdata:

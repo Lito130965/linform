@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     # Service-to-service auth. Empty means auth is disabled (dev mode only).
     api_token: str = ""
 
+    # SQLite file by default so the service runs with zero configuration;
+    # docker-compose overrides this with PostgreSQL.
+    database_url: str = "sqlite+aiosqlite:///./linform.db"
+
     # Rendering
     render_timeout_seconds: float = 30.0
     render_max_workers: int = 2
