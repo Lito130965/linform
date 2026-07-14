@@ -1,0 +1,18 @@
+# Internal planning docs — not part of the public repo
+PLAN.md
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Local artifacts
+out/
+.env
+
+# IDE
+.idea/
+.vscode/
