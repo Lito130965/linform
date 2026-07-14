@@ -1,0 +1,5 @@
+# Linform runs in Linux containers; never let line-ending conversion
+# corrupt shell scripts (git archive applies autocrlf too).
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
