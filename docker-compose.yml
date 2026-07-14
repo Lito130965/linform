@@ -1,0 +1,12 @@
+services:
+  linform:
+    build: .
+    image: linform:latest
+    restart: unless-stopped
+    ports:
+      # Host port is configurable so Linform can live next to other apps.
+      - "${LINFORM_PORT:-8100}:8000"
+    environment:
+      LINFORM_API_TOKEN: "${LINFORM_API_TOKEN:-}"
+      LINFORM_RENDER_TIMEOUT_SECONDS: "${LINFORM_RENDER_TIMEOUT_SECONDS:-30}"
+      LINFORM_RENDER_MAX_WORKERS: "${LINFORM_RENDER_MAX_WORKERS:-2}"
