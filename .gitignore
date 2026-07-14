@@ -9,9 +9,14 @@ __pycache__/
 build/
 dist/
 
+# Frontend
+node_modules/
+frontend/dist/
+
 # Local artifacts
 out/
 .env
+linform.db
 
 # IDE
 .idea/

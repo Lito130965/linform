@@ -1,3 +1,11 @@
+FROM node:20-alpine AS ui
+WORKDIR /ui
+COPY frontend/package.json ./
+RUN npm install --no-audit --no-fund
+COPY frontend ./
+RUN npm run build
+
+
 FROM python:3.12-slim
 
 # WeasyPrint native dependencies + fonts with Cyrillic coverage
@@ -17,6 +25,7 @@ RUN pip install --no-cache-dir .
 
 COPY alembic.ini docker-entrypoint.sh ./
 COPY alembic ./alembic
+COPY --from=ui /ui/dist ./app/static
 
 EXPOSE 8000
 

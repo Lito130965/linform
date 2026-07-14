@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.routers import render, templates
@@ -28,3 +30,10 @@ app.include_router(templates.router)
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# Editor SPA (built by the Dockerfile's node stage). Mounted last so API
+# routes take precedence; absent in dev where Vite serves the frontend.
+_static_dir = Path(__file__).parent / "static"
+if _static_dir.is_dir():
+    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="ui")
