@@ -13,6 +13,9 @@ export default function PreviewPane({
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rendering, setRendering] = useState(false)
+  // Lenient by default: missing placeholders render as blanks so the analyst
+  // always sees the layout; strict mode surfaces them as errors on demand.
+  const [strict, setStrict] = useState(false)
   const urlRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -21,7 +24,7 @@ export default function PreviewPane({
     const t = setTimeout(async () => {
       setRendering(true)
       try {
-        const blob = await api.renderPreview(html, data, ctrl.signal)
+        const blob = await api.renderPreview(html, data, strict, ctrl.signal)
         if (urlRef.current) URL.revokeObjectURL(urlRef.current)
         const next = URL.createObjectURL(blob)
         urlRef.current = next
@@ -39,13 +42,16 @@ export default function PreviewPane({
       clearTimeout(t)
       ctrl.abort()
     }
-  }, [html, data])
+  }, [html, data, strict])
 
   return (
     <div className="preview">
       <div className="preview-header">
         <span>Preview{rendering ? ' — rendering…' : ''}</span>
-        <span className="muted">real PDF pages, exactly what consumers get</span>
+        <label className="strict-toggle" title="Fail on missing placeholder values instead of rendering blanks">
+          <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
+          strict placeholders
+        </label>
       </div>
       {error && <div className="error-box">{error}</div>}
       {url ? (

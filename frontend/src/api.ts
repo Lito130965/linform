@@ -82,12 +82,13 @@ export const api = {
   async renderPreview(
     html: string,
     data: Record<string, unknown>,
+    strict: boolean,
     signal: AbortSignal,
   ): Promise<Blob> {
     const resp = await fetch('/api/render', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html, data }),
+      body: JSON.stringify({ html, data, strict }),
       signal,
     })
     if (!resp.ok) throw await parseError(resp)

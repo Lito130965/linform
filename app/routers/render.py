@@ -41,8 +41,9 @@ async def render_ad_hoc(
     renderer: PdfRenderer = Depends(get_renderer),
     settings: Settings = Depends(get_settings),
 ) -> Response:
+    strict = body.strict if body.strict is not None else settings.strict_placeholders
     try:
-        html = render_html(body.html, body.data, strict=settings.strict_placeholders)
+        html = render_html(body.html, body.data, strict=strict)
     except TemplateRenderError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     try:

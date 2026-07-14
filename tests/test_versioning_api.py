@@ -125,6 +125,19 @@ def test_versions_listed_with_metadata(db_client):
     assert full["html_content"] == INVOICE_V1
 
 
+def test_adhoc_render_strict_override(db_client):
+    # Lenient preview: missing placeholders render as blanks instead of 422.
+    resp = db_client.post(
+        "/api/render", json={"html": "<p>{{ absent }}</p>", "data": {}, "strict": False}
+    )
+    assert resp.status_code == 200
+
+    resp = db_client.post(
+        "/api/render", json={"html": "<p>{{ absent }}</p>", "data": {}, "strict": True}
+    )
+    assert resp.status_code == 422
+
+
 def test_unknown_template_404s_everywhere(db_client):
     assert db_client.get("/api/templates/ghost").status_code == 404
     assert db_client.put("/api/templates/ghost", json={"html_content": "x"}).status_code == 404

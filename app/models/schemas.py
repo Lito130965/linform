@@ -10,6 +10,11 @@ class AdHocRenderRequest(BaseModel):
 
     html: str = Field(min_length=1, description="HTML template with Jinja2 placeholders")
     data: dict = Field(default_factory=dict, description="Payload substituted into the template")
+    strict: bool | None = Field(
+        default=None,
+        description="Override strict placeholder mode for this render; "
+        "editors preview leniently, production uses the configured default",
+    )
 
 
 class PlaceholdersResponse(BaseModel):

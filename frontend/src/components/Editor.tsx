@@ -23,7 +23,7 @@ export default function Editor({ code }: { code: string }) {
   const [detail, setDetail] = useState<TemplateDetail | null>(null)
   const [loadedVersion, setLoadedVersion] = useState<number | null>(null)
   const [html, setHtml] = useState('')
-  const [testData, setTestData] = useState('{\n  "title": "Demo",\n  "name": "world"\n}')
+  const [testData, setTestData] = useState('{}')
   const [comment, setComment] = useState('')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -54,6 +54,7 @@ export default function Editor({ code }: { code: string }) {
         if (initial != null) await loadVersion(initial)
         else {
           setHtml(STARTER_TEMPLATE)
+          setTestData('{\n  "title": "Demo",\n  "name": "world"\n}')
           setLoadedVersion(null)
           setDirty(true)
         }
