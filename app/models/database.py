@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -25,6 +26,23 @@ class VersionStatus(str, enum.Enum):
     draft = "draft"
     published = "published"
     archived = "archived"
+
+
+class Asset(Base):
+    """Uploaded resource (logo, font, background) referenced from templates
+    as asset://<sha256>. Content-addressed and immutable: replacing a logo
+    means uploading a new file — old template versions keep rendering the
+    bytes they were published with."""
+
+    __tablename__ = "assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Template(Base):

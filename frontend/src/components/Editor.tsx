@@ -5,6 +5,8 @@ import type { EditorView } from '@codemirror/view'
 import { api, TemplateDetail } from '../api'
 import PreviewPane from './PreviewPane'
 import PlaceholderPanel from './PlaceholderPanel'
+import AssetsPanel from './AssetsPanel'
+import VersionHistory from './VersionHistory'
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -28,6 +30,7 @@ export default function Editor({ code }: { code: string }) {
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const viewRef = useRef<EditorView | null>(null)
 
   const publishedVersion = detail?.versions.find((v) => v.status === 'published')?.version ?? null
@@ -90,12 +93,12 @@ export default function Editor({ code }: { code: string }) {
     }
   }
 
-  const publish = async () => {
-    if (loadedVersion == null) return
+  const publishVersion = async (version: number | null) => {
+    if (version == null) return
     setBusy(true)
     setError(null)
     try {
-      await api.publish(code, loadedVersion)
+      await api.publish(code, version)
       await refreshDetail()
     } catch (e) {
       setError((e as Error).message)
@@ -104,11 +107,12 @@ export default function Editor({ code }: { code: string }) {
     }
   }
 
-  const insertPlaceholder = (name: string) => {
+  const insertText = (text: string) => {
     const view = viewRef.current
     if (!view) return
-    view.dispatch(view.state.replaceSelection(`{{ ${name} }}`))
+    view.dispatch(view.state.replaceSelection(text))
     view.focus()
+    setDirty(true)
   }
 
   const parsedData = useMemo<{ data: Record<string, unknown> | null; error: string | null }>(() => {
@@ -158,7 +162,7 @@ export default function Editor({ code }: { code: string }) {
         </button>
         <button
           className="btn publish"
-          onClick={publish}
+          onClick={() => publishVersion(loadedVersion)}
           disabled={busy || loadedVersion == null || dirty || loadedVersion === publishedVersion}
           title={
             dirty
@@ -169,6 +173,9 @@ export default function Editor({ code }: { code: string }) {
           }
         >
           {loadedVersion != null && loadedVersion === publishedVersion ? 'Published' : 'Publish'}
+        </button>
+        <button className="btn" onClick={() => setShowHistory(!showHistory)}>
+          History
         </button>
         {dirty && <span className="dirty-badge">unsaved</span>}
       </header>
@@ -191,7 +198,8 @@ export default function Editor({ code }: { code: string }) {
             }}
           />
           <div className="bottom-panels">
-            <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
+            <PlaceholderPanel html={html} onInsert={(name) => insertText(`{{ ${name} }}`)} />
+            <AssetsPanel onInsert={insertText} />
             <div className="test-data">
               <label>Test data (JSON) — preview renders with it</label>
               <textarea
@@ -207,6 +215,18 @@ export default function Editor({ code }: { code: string }) {
         <section className="pane preview-pane">
           <PreviewPane html={html} data={parsedData.data} />
         </section>
+
+        {showHistory && detail && (
+          <VersionHistory
+            code={code}
+            versions={detail.versions}
+            loadedVersion={loadedVersion}
+            editorHtml={html}
+            onLoad={(v) => switchVersion(v)}
+            onPublish={(v) => publishVersion(v)}
+            onClose={() => setShowHistory(false)}
+          />
+        )}
       </div>
     </div>
   )

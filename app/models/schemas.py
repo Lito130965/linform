@@ -21,6 +21,14 @@ class PlaceholdersResponse(BaseModel):
     placeholders: list[str]
 
 
+class AssetOut(BaseModel):
+    url: str
+    sha256: str
+    filename: str
+    mime_type: str
+    size: int
+
+
 class TemplateCreate(BaseModel):
     code: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9_\-]+$",
                       description="Stable identifier used by the render API, e.g. 'invoice'")

@@ -335,3 +335,175 @@ label {
   color: var(--text-muted);
   font-size: 12px;
 }
+
+.btn.small {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+
+/* ---- assets ---- */
+
+.asset-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.asset-item {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 4px;
+  width: 74px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  color: var(--text);
+}
+
+.asset-item:hover {
+  border-color: var(--accent);
+}
+
+.asset-item img {
+  max-width: 62px;
+  max-height: 40px;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 3px;
+}
+
+.asset-ext {
+  height: 40px;
+  line-height: 40px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.asset-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  max-width: 66px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- version history ---- */
+
+.history-drawer {
+  width: 380px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-list {
+  list-style: none;
+  padding: 8px 12px;
+  margin: 0;
+}
+
+.history-list li {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.history-list li.current {
+  border-color: var(--accent);
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-badge {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+
+.status-badge.published {
+  background: var(--green);
+  color: #fff;
+}
+
+.status-badge.draft {
+  background: #e5b34b;
+  color: #222;
+}
+
+.status-badge.archived {
+  background: var(--bg-input);
+  color: var(--text-muted);
+}
+
+.history-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.history-comment {
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.history-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.btn.small.publish {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.diff-view {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  overflow: auto;
+  max-height: 45%;
+}
+
+.diff-view pre {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+.diff-add {
+  background: rgba(63, 178, 111, 0.25);
+}
+
+.diff-del {
+  background: rgba(229, 83, 75, 0.28);
+  text-decoration: line-through;
+}
+
+.diff-same {
+  opacity: 0.55;
+}

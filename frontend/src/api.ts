@@ -50,8 +50,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return resp.json() as Promise<T>
 }
 
+export interface AssetInfo {
+  url: string
+  sha256: string
+  filename: string
+  mime_type: string
+  size: number
+}
+
 export const api = {
   listTemplates: () => request<TemplateInfo[]>('/api/templates'),
+
+  listAssets: () => request<AssetInfo[]>('/api/assets'),
+
+  async uploadAsset(file: File): Promise<AssetInfo> {
+    const form = new FormData()
+    form.append('file', file)
+    const resp = await fetch('/api/assets', { method: 'POST', body: form })
+    if (!resp.ok) throw await parseError(resp)
+    return resp.json()
+  },
 
   createTemplate: (code: string, name: string) =>
     request<TemplateInfo>('/api/templates', {

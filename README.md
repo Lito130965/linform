@@ -51,12 +51,20 @@ curl -X POST localhost:8100/api/render/invoice \
 | POST | `/api/templates/{code}/publish/{v}` | Publish a version (publishing an older one = rollback) |
 | GET | `/api/templates/{code}/versions/{v}` | Full version content |
 | GET | `/api/templates/{code}/placeholders` | Fields the template expects — the integration contract |
+| POST | `/api/assets` | Upload an asset (logo, background); returns an immutable `asset://<sha256>` URL |
+| GET | `/api/assets` | List uploaded assets |
+| GET | `/api/assets/{sha256}` | Raw asset bytes |
 
 Versioning model: versions are **immutable**; exactly one version per template
 is published (enforced by the database, safe with any number of replicas);
 the consumer either renders "whatever is published" or pins an explicit
 version — deciding *which* documents pin *which* version is the consumer's
 business rule, kept out of this service on purpose.
+
+Assets follow the same philosophy: they are content-addressed
+(`asset://<sha256>`) and immutable — replacing a logo means uploading a new
+file and referencing it from a new template version, so old versions keep
+rendering pixel-for-pixel what they were published with.
 
 ## How it works
 
@@ -92,8 +100,10 @@ final HTML  →  WeasyPrint  →  PDF
 - [x] Render core: `POST /api/render` (HTML + JSON → PDF)
 - [x] Stored templates with immutable versions (draft → published → archived)
 - [x] Render by stable template code + explicit version pinning
-- [ ] Web editor: HTML mode with live paged preview
-- [ ] WYSIWYG mode, placeholder panel, version diff
+- [x] Web editor: HTML mode with live paged preview, placeholder panel
+- [x] Content-addressed assets (logos, backgrounds) with `asset://` references
+- [x] Version history with diff, publish/rollback from the UI
+- [ ] WYSIWYG mode
 
 ## License
 
