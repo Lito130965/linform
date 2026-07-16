@@ -2,11 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import type { EditorView } from '@codemirror/view'
+import type { Editor as GrapesEditor } from 'grapesjs'
 import { api, TemplateDetail } from '../api'
+import {
+  detect,
+  fromCanvasAssets,
+  joinFromVisual,
+  protect,
+  restore,
+  splitForVisual,
+  toCanvasAssets,
+} from '../jinja-bridge'
 import PreviewPane from './PreviewPane'
 import PlaceholderPanel from './PlaceholderPanel'
 import AssetsPanel from './AssetsPanel'
 import VersionHistory from './VersionHistory'
+import VisualEditor from './VisualEditor'
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -31,7 +42,13 @@ export default function Editor({ code }: { code: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [mode, setMode] = useState<'code' | 'visual'>('code')
   const viewRef = useRef<EditorView | null>(null)
+  const grapesRef = useRef<GrapesEditor | null>(null)
+  const htmlRef = useRef('')
+  // Set on entering Visual: the parts of the template GrapesJS must not see.
+  const splitRef = useRef<{ prefix: string; suffix: string; styles: string } | null>(null)
+  const visualInitialRef = useRef('')
 
   const publishedVersion = detail?.versions.find((v) => v.status === 'published')?.version ?? null
 
@@ -70,6 +87,7 @@ export default function Editor({ code }: { code: string }) {
   const switchVersion = async (version: number) => {
     if (dirty && !confirm('Discard unsaved changes in the editor?')) return
     setError(null)
+    exitVisual()
     try {
       await loadVersion(version)
     } catch (e) {
@@ -108,12 +126,73 @@ export default function Editor({ code }: { code: string }) {
   }
 
   const insertText = (text: string) => {
+    if (mode === 'visual') {
+      const editor = grapesRef.current
+      if (!editor) return
+      const target = editor.getSelected() ?? editor.getWrapper()
+      target?.append(toCanvasAssets(text))
+      setDirty(true)
+      return
+    }
     const view = viewRef.current
     if (!view) return
     view.dispatch(view.state.replaceSelection(text))
     view.focus()
     setDirty(true)
   }
+
+  // Placeholders insert as marker chips in Visual (the bridge unfolds them
+  // back to {{ … }} on export) and as plain Jinja in Code.
+  const insertPlaceholder = (name: string) =>
+    insertText(
+      mode === 'visual' ? `<span data-jinja-expr="${name}">{{ ${name} }}</span>` : `{{ ${name} }}`,
+    )
+
+  const enterVisual = () => {
+    setError(null)
+    const detected = detect(html)
+    if (!detected.supported) {
+      setError(`Visual mode is unavailable for this template:\n- ${detected.reasons.join('\n- ')}`)
+      return
+    }
+    const split = splitForVisual(html)
+    if (!split.ok) {
+      setError(`Visual mode is unavailable for this template:\n- ${split.reason}`)
+      return
+    }
+    try {
+      visualInitialRef.current = toCanvasAssets(protect(split.body))
+    } catch (e) {
+      setError((e as Error).message)
+      return
+    }
+    splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    setMode('visual')
+  }
+
+  const handleVisualChange = (bodyHtml: string) => {
+    const split = splitRef.current
+    if (!split) return
+    try {
+      const restored = joinFromVisual(split.prefix, restore(fromCanvasAssets(bodyHtml)), split.suffix)
+      if (restored !== htmlRef.current) {
+        htmlRef.current = restored
+        setHtml(restored)
+        setDirty(true)
+      }
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  const exitVisual = () => {
+    grapesRef.current = null
+    setMode('code')
+  }
+
+  useEffect(() => {
+    htmlRef.current = html
+  }, [html])
 
   const parsedData = useMemo<{ data: Record<string, unknown> | null; error: string | null }>(() => {
     try {
@@ -132,6 +211,22 @@ export default function Editor({ code }: { code: string }) {
         <div className="template-title">
           <strong>{detail?.name ?? code}</strong>
           <span className="template-code">{code}</span>
+        </div>
+
+        <div className="mode-toggle">
+          <button
+            className={mode === 'code' ? 'btn mode active' : 'btn mode'}
+            onClick={exitVisual}
+          >
+            Code
+          </button>
+          <button
+            className={mode === 'visual' ? 'btn mode active' : 'btn mode'}
+            onClick={enterVisual}
+            title="Visual editing (templates with macros or complex Jinja stay code-only)"
+          >
+            Visual
+          </button>
         </div>
 
         <select
@@ -184,21 +279,33 @@ export default function Editor({ code }: { code: string }) {
 
       <div className="workspace">
         <section className="pane code-pane">
-          <CodeMirror
-            value={html}
-            height="100%"
-            theme="dark"
-            extensions={[htmlLang()]}
-            onChange={(value) => {
-              setHtml(value)
-              setDirty(true)
-            }}
-            onCreateEditor={(view) => {
-              viewRef.current = view
-            }}
-          />
+          {mode === 'code' ? (
+            <CodeMirror
+              value={html}
+              height="100%"
+              theme="dark"
+              extensions={[htmlLang()]}
+              onChange={(value) => {
+                setHtml(value)
+                setDirty(true)
+              }}
+              onCreateEditor={(view) => {
+                viewRef.current = view
+              }}
+            />
+          ) : (
+            <VisualEditor
+              key={loadedVersion ?? 'new'}
+              initialBody={visualInitialRef.current}
+              canvasStyles={splitRef.current?.styles ?? ''}
+              onChange={handleVisualChange}
+              onReady={(editor) => {
+                grapesRef.current = editor
+              }}
+            />
+          )}
           <div className="bottom-panels">
-            <PlaceholderPanel html={html} onInsert={(name) => insertText(`{{ ${name} }}`)} />
+            <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
             <AssetsPanel onInsert={insertText} />
             <div className="test-data">
               <label>Test data (JSON) — preview renders with it</label>
