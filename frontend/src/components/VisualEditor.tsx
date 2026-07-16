@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
-import grapesjs, { type Editor as GrapesEditor } from 'grapesjs'
+import grapesjs, { type Component, type Editor as GrapesEditor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
+import { unwrapBody } from '../jinja-bridge'
 
 /** Canvas-only affordances for Jinja constructs: visible, but pure CSS —
  * nothing here can leak into the exported HTML. */
@@ -75,6 +76,72 @@ function registerJinjaComponents(editor: GrapesEditor) {
   })
 }
 
+/** Table tools GrapesJS lacks out of the box: add/remove rows and columns
+ * from the toolbar of any selected cell, plus a width-resize handle. */
+function registerTableTools(editor: GrapesEditor) {
+  const selectedCell = (): Component | null => {
+    const sel = editor.getSelected()
+    return sel && sel.is('cell') ? sel : null
+  }
+
+  const eachRow = (cell: Component): { rows: Component[]; colIndex: number } => {
+    const table = cell.closest('table')
+    const rows: Component[] = table ? (table.find('tr') as Component[]) : []
+    return { rows, colIndex: cell.index() }
+  }
+
+  editor.Commands.add('table:add-row', () => {
+    const cell = selectedCell()
+    if (!cell) return
+    const row = cell.parent()
+    if (!row) return
+    const cols = row.components().length
+    row.parent()?.append(`<tr>${'<td> </td>'.repeat(cols)}</tr>`, { at: row.index() + 1 })
+  })
+
+  editor.Commands.add('table:del-row', () => {
+    const cell = selectedCell()
+    cell?.parent()?.remove()
+  })
+
+  editor.Commands.add('table:add-col', () => {
+    const cell = selectedCell()
+    if (!cell) return
+    const { rows, colIndex } = eachRow(cell)
+    for (const row of rows) {
+      const isHead = row.closest('thead') != null
+      row.append(isHead ? '<th> </th>' : '<td> </td>', { at: colIndex + 1 })
+    }
+  })
+
+  editor.Commands.add('table:del-col', () => {
+    const cell = selectedCell()
+    if (!cell) return
+    const { rows, colIndex } = eachRow(cell)
+    for (const row of rows) {
+      const target = row.components().at(colIndex)
+      target?.remove()
+    }
+  })
+
+  editor.on('component:selected', (comp?: Component) => {
+    if (!comp || !comp.is('cell')) return
+    const toolbar = (comp.get('toolbar') ?? []) as { command?: string }[]
+    if (toolbar.some((t) => t.command === 'table:add-col')) return
+    // GrapesJS type declarations lag behind its runtime API here.
+    const set = comp.set.bind(comp) as (key: string, value: unknown) => void
+    set('toolbar', [
+      ...toolbar,
+      { command: 'table:add-col', label: '+C' },
+      { command: 'table:del-col', label: '−C' },
+      { command: 'table:add-row', label: '+R' },
+      { command: 'table:del-row', label: '−R' },
+    ])
+    // Drag handle on the right edge: writes width into the inline style.
+    set('resizable', { tl: 0, tc: 0, tr: 0, cl: 0, cr: 1, bl: 0, bc: 0, br: 0 })
+  })
+}
+
 const BLOCKS = [
   { id: 'text', label: 'Text', category: 'Basic', content: '<p>Text</p>' },
   { id: 'heading', label: 'Heading', category: 'Basic', content: '<h2>Heading</h2>' },
@@ -89,6 +156,25 @@ const BLOCKS = [
   },
   { id: 'image', label: 'Image', category: 'Basic', content: { type: 'image' } },
   { id: 'divider', label: 'Divider', category: 'Basic', content: '<hr>' },
+  {
+    id: 'columns-2',
+    label: '2 columns',
+    category: 'Layout',
+    content:
+      '<div style="display: flex; gap: 8px;">' +
+      '<div style="flex: 1; min-height: 24px;">Left</div>' +
+      '<div style="flex: 1; min-height: 24px;">Right</div></div>',
+  },
+  {
+    id: 'columns-3',
+    label: '3 columns',
+    category: 'Layout',
+    content:
+      '<div style="display: flex; gap: 8px;">' +
+      '<div style="flex: 1; min-height: 24px;">One</div>' +
+      '<div style="flex: 1; min-height: 24px;">Two</div>' +
+      '<div style="flex: 1; min-height: 24px;">Three</div></div>',
+  },
   {
     id: 'page-break',
     label: 'Page break',
@@ -126,10 +212,19 @@ export default function VisualEditor({
       components: initialBody,
       blockManager: { blocks: BLOCKS },
       canvas: { styles: [] },
+      // Style Manager edits must live inside the exported HTML (we discard
+      // the editor's separate CSS on purpose — it would rewrite template
+      // CSS and drop @page). Inline styles survive the round-trip and PDF.
+      avoidInlineStyle: false,
     })
     registerJinjaComponents(editor)
+    registerTableTools(editor)
 
-    const exportBody = () => editor.getHtml({ cleanId: true })
+    // Page-level styling belongs to the template's own markup (Code mode);
+    // a styled wrapper would not survive the export.
+    editor.getWrapper()?.set({ selectable: false, hoverable: false, stylable: false })
+
+    const exportBody = () => unwrapBody(editor.getHtml({ cleanId: true }))
 
     let loaded = false
     let timer: ReturnType<typeof setTimeout> | undefined

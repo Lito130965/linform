@@ -80,3 +80,15 @@ export function splitForVisual(html: string): SplitResult {
 export function joinFromVisual(prefix: string, body: string, suffix: string): string {
   return prefix + body + suffix
 }
+
+/**
+ * GrapesJS exports its wrapper as a <body> tag; the template's own <body>
+ * (when it has one) already lives in the split prefix/suffix. Unwrap the
+ * editor's wrapper so body tags never nest or accumulate across visual
+ * editing sessions. Wrapper attributes are dropped deliberately: page-level
+ * styling belongs to the template's own markup, edited in Code mode.
+ */
+export function unwrapBody(html: string): string {
+  const m = /^\s*<body[^>]*>([\s\S]*)<\/body>\s*$/i.exec(html)
+  return m ? m[1] : html
+}

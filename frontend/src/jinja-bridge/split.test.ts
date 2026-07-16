@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { joinFromVisual, splitForVisual } from './split'
+import { joinFromVisual, splitForVisual, unwrapBody } from './split'
+
+describe('unwrapBody', () => {
+  it('strips the GrapesJS wrapper body tag', () => {
+    expect(unwrapBody('<body><h1>x</h1><p>y</p></body>')).toBe('<h1>x</h1><p>y</p>')
+  })
+
+  it('drops wrapper attributes (page styling lives in the template itself)', () => {
+    expect(unwrapBody('<body class="t" id="iv3a"><p>y</p></body>')).toBe('<p>y</p>')
+  })
+
+  it('leaves content without a wrapper untouched', () => {
+    expect(unwrapBody('<h1>x</h1>')).toBe('<h1>x</h1>')
+  })
+
+  it('unwraps only the outer wrapper once', () => {
+    expect(unwrapBody('<body><body><p>x</p></body></body>')).toBe('<body><p>x</p></body>')
+  })
+})
 
 describe('splitForVisual', () => {
   it('peels leading style blocks off a headless template', () => {
