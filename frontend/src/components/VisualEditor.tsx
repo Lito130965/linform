@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import grapesjs, { type Component, type Editor as GrapesEditor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
-import { unwrapBody } from '../jinja-bridge'
 
 /** Canvas-only affordances for Jinja constructs: visible, but pure CSS —
  * nothing here can leak into the exported HTML. */
@@ -76,12 +75,80 @@ function registerJinjaComponents(editor: GrapesEditor) {
   })
 }
 
+/** GrapesJS holds every style (including inline styles parsed from block
+ * content) in its own CSS registry, which the mode switch deliberately
+ * discards — it would rewrite template CSS and drop @page. So the export
+ * inlines the editor's CSS back onto the elements: what you see in the
+ * canvas is exactly what reaches the HTML, the PDF and the round-trip. */
+function exportInlinedBody(editor: GrapesEditor): string {
+  const rawHtml = editor.getHtml() // ids kept: the CSS selectors need them
+  const css = editor.getCss({ avoidProtected: true }) ?? ''
+  const doc = new DOMParser().parseFromString(rawHtml, 'text/html')
+
+  if (css.trim()) {
+    const styleEl = doc.createElement('style')
+    styleEl.textContent = css
+    doc.head.appendChild(styleEl)
+    const sheet = styleEl.sheet
+    if (sheet) {
+      for (const rule of Array.from(sheet.cssRules)) {
+        if (rule.type !== CSSRule.STYLE_RULE) continue // media/device rules are not print
+        const styleRule = rule as CSSStyleRule
+        if (styleRule.selectorText.includes('*')) continue // editor-internal resets
+        let matched: NodeListOf<Element>
+        try {
+          matched = doc.querySelectorAll(styleRule.selectorText)
+        } catch {
+          continue
+        }
+        matched.forEach((el) => {
+          const target = (el as HTMLElement).style
+          for (let i = 0; i < styleRule.style.length; i++) {
+            const prop = styleRule.style[i]
+            target.setProperty(
+              prop,
+              styleRule.style.getPropertyValue(prop),
+              styleRule.style.getPropertyPriority(prop),
+            )
+          }
+        })
+      }
+    }
+    styleEl.remove()
+  }
+
+  // Auto-generated ids existed only for the editor's own selectors; ids the
+  // template author set (present in component attributes) are kept.
+  const authoredIds = new Set<string>()
+  const generatedIds = new Set<string>()
+  const walk = (c: Component) => {
+    const attrId = (c.get('attributes') as Record<string, unknown> | undefined)?.id
+    if (attrId) authoredIds.add(String(attrId))
+    else generatedIds.add(c.getId())
+    c.components().forEach(walk)
+  }
+  const wrapper = editor.getWrapper()
+  if (wrapper) walk(wrapper)
+  doc.body.querySelectorAll('[id]').forEach((el) => {
+    if (generatedIds.has(el.id) && !authoredIds.has(el.id)) el.removeAttribute('id')
+  })
+
+  // doc.body is GrapesJS's exported wrapper — taking innerHTML unwraps it.
+  return doc.body.innerHTML
+}
+
+const isCell = (c: Component | undefined | null): c is Component => {
+  if (!c) return false
+  const tag = (c.get('tagName') ?? '').toLowerCase()
+  return tag === 'td' || tag === 'th'
+}
+
 /** Table tools GrapesJS lacks out of the box: add/remove rows and columns
  * from the toolbar of any selected cell, plus a width-resize handle. */
 function registerTableTools(editor: GrapesEditor) {
   const selectedCell = (): Component | null => {
     const sel = editor.getSelected()
-    return sel && sel.is('cell') ? sel : null
+    return isCell(sel) ? sel : null
   }
 
   const eachRow = (cell: Component): { rows: Component[]; colIndex: number } => {
@@ -93,7 +160,7 @@ function registerTableTools(editor: GrapesEditor) {
   editor.Commands.add('table:add-row', () => {
     const cell = selectedCell()
     if (!cell) return
-    const row = cell.parent()
+    const row = cell.closest('tr')
     if (!row) return
     const cols = row.components().length
     row.parent()?.append(`<tr>${'<td> </td>'.repeat(cols)}</tr>`, { at: row.index() + 1 })
@@ -101,7 +168,7 @@ function registerTableTools(editor: GrapesEditor) {
 
   editor.Commands.add('table:del-row', () => {
     const cell = selectedCell()
-    cell?.parent()?.remove()
+    cell?.closest('tr')?.remove()
   })
 
   editor.Commands.add('table:add-col', () => {
@@ -125,7 +192,7 @@ function registerTableTools(editor: GrapesEditor) {
   })
 
   editor.on('component:selected', (comp?: Component) => {
-    if (!comp || !comp.is('cell')) return
+    if (!isCell(comp)) return
     const toolbar = (comp.get('toolbar') ?? []) as { command?: string }[]
     if (toolbar.some((t) => t.command === 'table:add-col')) return
     // GrapesJS type declarations lag behind its runtime API here.
@@ -140,6 +207,28 @@ function registerTableTools(editor: GrapesEditor) {
     // Drag handle on the right edge: writes width into the inline style.
     set('resizable', { tl: 0, tc: 0, tr: 0, cl: 0, cr: 1, bl: 0, bc: 0, br: 0 })
   })
+}
+
+/** Paper formats at 96dpi (portrait widths). The canvas width is a hint —
+ * the PDF preview remains the truth about pages — but matching widths make
+ * wrapping in the canvas realistic. */
+const PAGE_FORMATS = [
+  { id: 'A4', name: 'A4', width: '794px', widthMedia: '' },
+  { id: 'A4 landscape', name: 'A4 landscape', width: '1123px', widthMedia: '' },
+  { id: 'A5', name: 'A5', width: '559px', widthMedia: '' },
+  { id: 'A5 landscape', name: 'A5 landscape', width: '794px', widthMedia: '' },
+  { id: 'A3', name: 'A3', width: '1123px', widthMedia: '' },
+  { id: 'Letter', name: 'Letter', width: '816px', widthMedia: '' },
+  { id: 'Free', name: 'Free width', width: '', widthMedia: '' },
+]
+
+/** Pick the initial canvas format from the template's own @page rule. */
+function formatFromStyles(styles: string): string {
+  const m = /size\s*:\s*(a3|a4|a5|letter)\s*(landscape)?/i.exec(styles)
+  if (!m) return 'A4'
+  const base = m[1].length === 2 ? m[1].toUpperCase() : 'Letter'
+  const candidate = m[2] ? `${base} landscape` : base
+  return PAGE_FORMATS.some((f) => f.id === candidate) ? candidate : 'A4'
 }
 
 const BLOCKS = [
@@ -212,19 +301,17 @@ export default function VisualEditor({
       components: initialBody,
       blockManager: { blocks: BLOCKS },
       canvas: { styles: [] },
-      // Style Manager edits must live inside the exported HTML (we discard
-      // the editor's separate CSS on purpose — it would rewrite template
-      // CSS and drop @page). Inline styles survive the round-trip and PDF.
-      avoidInlineStyle: false,
+      deviceManager: { devices: PAGE_FORMATS },
     })
     registerJinjaComponents(editor)
     registerTableTools(editor)
+    editor.setDevice(formatFromStyles(canvasStyles))
 
     // Page-level styling belongs to the template's own markup (Code mode);
     // a styled wrapper would not survive the export.
     editor.getWrapper()?.set({ selectable: false, hoverable: false, stylable: false })
 
-    const exportBody = () => unwrapBody(editor.getHtml({ cleanId: true }))
+    const exportBody = () => exportInlinedBody(editor)
 
     let loaded = false
     let timer: ReturnType<typeof setTimeout> | undefined
