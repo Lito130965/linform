@@ -137,76 +137,90 @@ function exportInlinedBody(editor: GrapesEditor): string {
   return doc.body.innerHTML
 }
 
-const isCell = (c: Component | undefined | null): c is Component => {
-  if (!c) return false
-  const tag = (c.get('tagName') ?? '').toLowerCase()
-  return tag === 'td' || tag === 'th'
+const tagOf = (c: Component | undefined | null): string =>
+  ((c?.get('tagName') as string) ?? '').toLowerCase()
+const isCell = (c: Component | undefined | null): boolean => tagOf(c) === 'td' || tagOf(c) === 'th'
+
+/** Walk up from any component to the nearest ancestor matching a predicate. */
+function ancestor(c: Component | null, pred: (x: Component) => boolean): Component | null {
+  let n: Component | null | undefined = c
+  while (n) {
+    if (pred(n)) return n
+    n = n.parent() ?? null
+  }
+  return null
 }
 
-/** Table tools GrapesJS lacks out of the box: add/remove rows and columns
- * from the toolbar of any selected cell, plus a width-resize handle. */
+/** Table tools GrapesJS lacks out of the box. Commands resolve the cell by
+ * walking up from whatever is selected — clicking a cell often selects the
+ * text component inside it, not the <td> — so they work either way, and are
+ * exposed both on the cell toolbar and as always-available top-panel buttons. */
 function registerTableTools(editor: GrapesEditor) {
-  const selectedCell = (): Component | null => {
+  const cellOf = (): Component | null => {
     const sel = editor.getSelected()
-    return isCell(sel) ? sel : null
+    return sel ? ancestor(sel, isCell) : null
   }
-
-  const eachRow = (cell: Component): { rows: Component[]; colIndex: number } => {
-    const table = cell.closest('table')
-    const rows: Component[] = table ? (table.find('tr') as Component[]) : []
-    return { rows, colIndex: cell.index() }
+  const rowsOf = (cell: Component): Component[] => {
+    const table = ancestor(cell, (c) => tagOf(c) === 'table')
+    return table ? (table.find('tr') as Component[]) : []
   }
 
   editor.Commands.add('table:add-row', () => {
-    const cell = selectedCell()
-    if (!cell) return
-    const row = cell.closest('tr')
+    const cell = cellOf()
+    const row = cell && ancestor(cell, (c) => tagOf(c) === 'tr')
     if (!row) return
-    const cols = row.components().length
+    const cols = Math.max(row.components().length, 1)
     row.parent()?.append(`<tr>${'<td> </td>'.repeat(cols)}</tr>`, { at: row.index() + 1 })
   })
 
   editor.Commands.add('table:del-row', () => {
-    const cell = selectedCell()
-    cell?.closest('tr')?.remove()
+    const cell = cellOf()
+    const row = cell && ancestor(cell, (c) => tagOf(c) === 'tr')
+    row?.remove()
   })
 
   editor.Commands.add('table:add-col', () => {
-    const cell = selectedCell()
+    const cell = cellOf()
     if (!cell) return
-    const { rows, colIndex } = eachRow(cell)
-    for (const row of rows) {
-      const isHead = row.closest('thead') != null
+    const colIndex = cell.index()
+    for (const row of rowsOf(cell)) {
+      const isHead = ancestor(row, (c) => tagOf(c) === 'thead') != null
       row.append(isHead ? '<th> </th>' : '<td> </td>', { at: colIndex + 1 })
     }
   })
 
   editor.Commands.add('table:del-col', () => {
-    const cell = selectedCell()
+    const cell = cellOf()
     if (!cell) return
-    const { rows, colIndex } = eachRow(cell)
-    for (const row of rows) {
-      const target = row.components().at(colIndex)
-      target?.remove()
-    }
+    const colIndex = cell.index()
+    for (const row of rowsOf(cell)) row.components().at(colIndex)?.remove()
   })
 
-  editor.on('component:selected', (comp?: Component) => {
-    if (!isCell(comp)) return
-    const toolbar = (comp.get('toolbar') ?? []) as { command?: string }[]
-    if (toolbar.some((t) => t.command === 'table:add-col')) return
-    // GrapesJS type declarations lag behind its runtime API here.
-    const set = comp.set.bind(comp) as (key: string, value: unknown) => void
-    set('toolbar', [
-      ...toolbar,
-      { command: 'table:add-col', label: '+C' },
-      { command: 'table:del-col', label: '−C' },
-      { command: 'table:add-row', label: '+R' },
-      { command: 'table:del-row', label: '−R' },
-    ])
-    // Drag handle on the right edge: writes width into the inline style.
-    set('resizable', { tl: 0, tc: 0, tr: 0, cl: 0, cr: 1, bl: 0, bc: 0, br: 0 })
+  // Cells are a first-class type: their toolbar and width-resize handle come
+  // from the type defaults, not a mutation on selection.
+  editor.DomComponents.addType('cell', {
+    isComponent: (el) =>
+      el.tagName === 'TD' || el.tagName === 'TH' ? { type: 'cell' } : undefined,
+    model: {
+      defaults: {
+        toolbar: [
+          { attributes: { title: 'Add column' }, command: 'table:add-col', label: '+C' },
+          { attributes: { title: 'Remove column' }, command: 'table:del-col', label: '−C' },
+          { attributes: { title: 'Add row' }, command: 'table:add-row', label: '+R' },
+          { attributes: { title: 'Remove row' }, command: 'table:del-row', label: '−R' },
+        ],
+        resizable: { tl: 0, tc: 0, tr: 0, cl: 0, cr: 1, bl: 0, bc: 0, br: 0 },
+      },
+    },
   })
+
+  // Always-available fallback: table buttons in the top options panel act on
+  // whichever table contains the current selection.
+  const panel = editor.Panels
+  panel.addButton('options', { id: 'tbl-add-col', command: 'table:add-col', label: '+Col', attributes: { title: 'Table: add column' } })
+  panel.addButton('options', { id: 'tbl-del-col', command: 'table:del-col', label: '−Col', attributes: { title: 'Table: remove column' } })
+  panel.addButton('options', { id: 'tbl-add-row', command: 'table:add-row', label: '+Row', attributes: { title: 'Table: add row' } })
+  panel.addButton('options', { id: 'tbl-del-row', command: 'table:del-row', label: '−Row', attributes: { title: 'Table: remove row' } })
 }
 
 /** Paper formats at 96dpi (portrait widths). The canvas width is a hint —
@@ -249,20 +263,22 @@ const BLOCKS = [
     id: 'columns-2',
     label: '2 columns',
     category: 'Layout',
+    // Explicit widths (not flex:1) so resizing one column never rebalances
+    // the other — each keeps whatever width you give it.
     content:
-      '<div style="display: flex; gap: 8px;">' +
-      '<div style="flex: 1; min-height: 24px;">Left</div>' +
-      '<div style="flex: 1; min-height: 24px;">Right</div></div>',
+      '<div style="display: flex;">' +
+      '<div style="width: 50%; flex-shrink: 0; min-height: 24px;">Left</div>' +
+      '<div style="width: 50%; flex-shrink: 0; min-height: 24px;">Right</div></div>',
   },
   {
     id: 'columns-3',
     label: '3 columns',
     category: 'Layout',
     content:
-      '<div style="display: flex; gap: 8px;">' +
-      '<div style="flex: 1; min-height: 24px;">One</div>' +
-      '<div style="flex: 1; min-height: 24px;">Two</div>' +
-      '<div style="flex: 1; min-height: 24px;">Three</div></div>',
+      '<div style="display: flex;">' +
+      '<div style="width: 33.33%; flex-shrink: 0; min-height: 24px;">One</div>' +
+      '<div style="width: 33.33%; flex-shrink: 0; min-height: 24px;">Two</div>' +
+      '<div style="width: 33.33%; flex-shrink: 0; min-height: 24px;">Three</div></div>',
   },
   {
     id: 'page-break',
