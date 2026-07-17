@@ -179,10 +179,22 @@ function registerTableTools(editor: GrapesEditor) {
     const row = cell && ancestor(cell, (c) => tagOf(c) === 'tr')
     if (!row) return
     const cols = Math.max(row.components().length, 1)
-    row.parent()?.append(
-      { type: 'row', tagName: 'tr', components: Array.from({ length: cols }, () => cellDef('td')) },
-      { at: row.index() + 1 },
-    )
+    const newRow = {
+      type: 'row',
+      tagName: 'tr',
+      components: Array.from({ length: cols }, () => cellDef('td')),
+    }
+    // Adding from a header cell must not grow <thead> (it repeats on every
+    // printed page) — the new row goes to the top of <tbody> instead.
+    if (ancestor(row, (c) => tagOf(c) === 'thead')) {
+      const table = ancestor(row, (c) => tagOf(c) === 'table')
+      const tbody = table?.components().filter((c: Component) => tagOf(c) === 'tbody')[0]
+      if (tbody) {
+        tbody.append(newRow, { at: 0 })
+        return
+      }
+    }
+    row.parent()?.append(newRow, { at: row.index() + 1 })
   })
 
   editor.Commands.add('table:del-row', () => {
