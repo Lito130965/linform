@@ -245,6 +245,71 @@ function formatFromStyles(styles: string): string {
   return PAGE_FORMATS.some((f) => f.id === candidate) ? candidate : 'A4'
 }
 
+/** Per-element positioning flag. "XY" on the toolbar pins the element by
+ * pixel coordinates without moving it (coordinates are captured from its
+ * current flow position), after which it drags freely and top/left are
+ * editable in Settings. The anchor is the parent container — it becomes the
+ * coordinate origin, so a breathing parent carries its pinned children.
+ * Toggling again returns the element to normal flow. */
+function registerPositioning(editor: GrapesEditor) {
+  editor.Commands.add('pos:toggle-absolute', () => {
+    const sel = editor.getSelected()
+    if (!sel) return
+    const loose = sel.set.bind(sel) as (key: string, value: unknown) => void
+    const style = { ...(sel.getStyle() as Record<string, string>) }
+    if (style.position === 'absolute') {
+      delete style.position
+      delete style.top
+      delete style.left
+      sel.setStyle(style)
+      loose('dmode', '')
+      return
+    }
+    const parent = sel.parent()
+    const parentEl = parent?.getEl()
+    const win = parentEl?.ownerDocument?.defaultView
+    if (parent && parentEl && win && win.getComputedStyle(parentEl).position === 'static') {
+      parent.addStyle({ position: 'relative' }) // the anchor / coordinate origin
+    }
+    const el = sel.getEl()
+    sel.addStyle({
+      position: 'absolute',
+      left: `${el?.offsetLeft ?? 0}px`,
+      top: `${el?.offsetTop ?? 0}px`,
+    })
+    loose('dmode', 'absolute')
+  })
+
+  editor.on('component:selected', (comp?: Component) => {
+    if (!comp) return
+    const toolbar = (comp.get('toolbar') ?? []) as { command?: string }[]
+    if (toolbar.some((t) => t.command === 'pos:toggle-absolute')) return
+    const set = comp.set.bind(comp) as (key: string, value: unknown) => void
+    set('toolbar', [
+      {
+        command: 'pos:toggle-absolute',
+        label: 'XY',
+        attributes: {
+          title: 'Pin by coordinates (anchor: parent container). Click again to return to flow.',
+        },
+      },
+      ...toolbar,
+    ])
+  })
+
+  // Elements pinned in a previous session must stay draggable by coordinates.
+  editor.on('load', () => {
+    const walk = (c: Component) => {
+      if (((c.getStyle() as Record<string, string>).position ?? '') === 'absolute') {
+        ;(c.set.bind(c) as (key: string, value: unknown) => void)('dmode', 'absolute')
+      }
+      c.components().forEach(walk)
+    }
+    const wrapper = editor.getWrapper()
+    if (wrapper) walk(wrapper)
+  })
+}
+
 const BLOCKS = [
   { id: 'text', label: 'Text', category: 'Basic', content: '<p>Text</p>' },
   { id: 'heading', label: 'Heading', category: 'Basic', content: '<h2>Heading</h2>' },
@@ -321,6 +386,7 @@ export default function VisualEditor({
     })
     registerJinjaComponents(editor)
     registerTableTools(editor)
+    registerPositioning(editor)
     editor.setDevice(formatFromStyles(canvasStyles))
 
     // Page-level styling belongs to the template's own markup (Code mode);
