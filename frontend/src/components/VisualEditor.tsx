@@ -165,12 +165,24 @@ function registerTableTools(editor: GrapesEditor) {
     return table ? (table.find('tr') as Component[]) : []
   }
 
+  // Component definitions, not HTML strings: GrapesJS parses strings through
+  // a detached <div>, and browsers silently drop <tr>/<th>/<td> outside a
+  // table — the append would insert whitespace instead of a cell.
+  const cellDef = (tag: 'td' | 'th') => ({
+    type: 'cell',
+    tagName: tag,
+    components: [{ type: 'textnode', content: ' ' }],
+  })
+
   editor.Commands.add('table:add-row', () => {
     const cell = cellOf()
     const row = cell && ancestor(cell, (c) => tagOf(c) === 'tr')
     if (!row) return
     const cols = Math.max(row.components().length, 1)
-    row.parent()?.append(`<tr>${'<td> </td>'.repeat(cols)}</tr>`, { at: row.index() + 1 })
+    row.parent()?.append(
+      { type: 'row', tagName: 'tr', components: Array.from({ length: cols }, () => cellDef('td')) },
+      { at: row.index() + 1 },
+    )
   })
 
   editor.Commands.add('table:del-row', () => {
@@ -185,7 +197,7 @@ function registerTableTools(editor: GrapesEditor) {
     const colIndex = cell.index()
     for (const row of rowsOf(cell)) {
       const isHead = ancestor(row, (c) => tagOf(c) === 'thead') != null
-      row.append(isHead ? '<th> </th>' : '<td> </td>', { at: colIndex + 1 })
+      row.append(cellDef(isHead ? 'th' : 'td'), { at: colIndex + 1 })
     }
   })
 
@@ -196,31 +208,50 @@ function registerTableTools(editor: GrapesEditor) {
     for (const row of rowsOf(cell)) row.components().at(colIndex)?.remove()
   })
 
-  // Cells are a first-class type: their toolbar and width-resize handle come
-  // from the type defaults, not a mutation on selection.
+  // Cells become text-based components: GrapesJS's built-in cell type is not
+  // a text type, so double-click never opened the rich-text editor on it.
+  // Registered before setComponents, so parsed td/th get this type too.
   editor.DomComponents.addType('cell', {
+    extend: 'text',
     isComponent: (el) =>
       el.tagName === 'TD' || el.tagName === 'TH' ? { type: 'cell' } : undefined,
     model: {
       defaults: {
-        toolbar: [
-          { attributes: { title: 'Add column' }, command: 'table:add-col', label: '+C' },
-          { attributes: { title: 'Remove column' }, command: 'table:del-col', label: '−C' },
-          { attributes: { title: 'Add row' }, command: 'table:add-row', label: '+R' },
-          { attributes: { title: 'Remove row' }, command: 'table:del-row', label: '−R' },
-        ],
-        resizable: { tl: 0, tc: 0, tr: 0, cl: 0, cr: 1, bl: 0, bc: 0, br: 0 },
+        tagName: 'td',
+        draggable: ['tr'],
+        droppable: true,
+        editable: true,
       },
     },
   })
 
+  // Cell toolbar and width-resize handle attach on selection: parsed cells
+  // carry GrapesJS's own built-in type, so type defaults are not an option.
+  editor.on('component:selected', (comp?: Component) => {
+    if (!comp || !isCell(comp)) return
+    const toolbar = (comp.get('toolbar') ?? []) as { command?: string }[]
+    if (toolbar.some((t) => t.command === 'table:add-col')) return
+    const set = comp.set.bind(comp) as (key: string, value: unknown) => void
+    set('toolbar', [
+      ...toolbar,
+      { attributes: { title: 'Add column' }, command: 'table:add-col', label: '+C' },
+      { attributes: { title: 'Remove column' }, command: 'table:del-col', label: '−C' },
+      { attributes: { title: 'Add row' }, command: 'table:add-row', label: '+R' },
+      { attributes: { title: 'Remove row' }, command: 'table:del-row', label: '−R' },
+    ])
+    set('resizable', { tl: 0, tc: 0, tr: 0, cl: 0, cr: 1, bl: 0, bc: 0, br: 0 })
+  })
+
   // Always-available fallback: table buttons in the top options panel act on
-  // whichever table contains the current selection.
+  // whichever table contains the current selection. togglable: false makes
+  // every click run the command (toggle buttons run it only when turning on).
   const panel = editor.Panels
-  panel.addButton('options', { id: 'tbl-add-col', command: 'table:add-col', label: '+Col', attributes: { title: 'Table: add column' } })
-  panel.addButton('options', { id: 'tbl-del-col', command: 'table:del-col', label: '−Col', attributes: { title: 'Table: remove column' } })
-  panel.addButton('options', { id: 'tbl-add-row', command: 'table:add-row', label: '+Row', attributes: { title: 'Table: add row' } })
-  panel.addButton('options', { id: 'tbl-del-row', command: 'table:del-row', label: '−Row', attributes: { title: 'Table: remove row' } })
+  const btn = (id: string, command: string, label: string, title: string) =>
+    panel.addButton('options', { id, command, label, togglable: false, attributes: { title } })
+  btn('tbl-add-col', 'table:add-col', '+Col', 'Table: add column')
+  btn('tbl-del-col', 'table:del-col', '−Col', 'Table: remove column')
+  btn('tbl-add-row', 'table:add-row', '+Row', 'Table: add row')
+  btn('tbl-del-row', 'table:del-row', '−Row', 'Table: remove row')
 }
 
 /** Paper formats at 96dpi (portrait widths). The canvas width is a hint —
@@ -379,14 +410,16 @@ export default function VisualEditor({
       container,
       height: '100%',
       storageManager: false,
-      components: initialBody,
       blockManager: { blocks: BLOCKS },
       canvas: { styles: [] },
       deviceManager: { devices: PAGE_FORMATS },
     })
+    // Custom types must exist before the content is parsed, or existing
+    // elements keep the built-in types and never gain our behavior.
     registerJinjaComponents(editor)
     registerTableTools(editor)
     registerPositioning(editor)
+    editor.setComponents(initialBody)
     editor.setDevice(formatFromStyles(canvasStyles))
 
     // Page-level styling belongs to the template's own markup (Code mode);
