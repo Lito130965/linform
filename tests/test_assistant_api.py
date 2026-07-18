@@ -1,0 +1,112 @@
+"""Assistant proxy: feature-flag gating, streaming shape, the privacy flag,
+admin-only access, and no key leaking into error text — all with a mocked LLM."""
+
+import pytest
+
+from app.core.config import Settings, get_settings
+from app.main import app
+from app.services import assistant
+
+
+def _override(**kwargs):
+    settings = Settings(database_url="sqlite+aiosqlite://", **kwargs)
+    app.dependency_overrides[get_settings] = lambda: settings
+    return settings
+
+
+@pytest.fixture(autouse=True)
+def _cleanup():
+    yield
+    app.dependency_overrides.pop(get_settings, None)
+
+
+def test_status_off_when_no_key(db_client):
+    _override()
+    body = db_client.get("/api/assistant/status").json()
+    assert body == {"enabled": False, "model": None, "sends_test_data": False}
+
+
+def test_status_on_reports_model_not_key(db_client):
+    _override(ai_api_key="secret-key-123", ai_model="gpt-4o-mini")
+    body = db_client.get("/api/assistant/status").json()
+    assert body["enabled"] is True
+    assert body["model"] == "gpt-4o-mini"
+    assert "secret-key-123" not in str(body)
+
+
+def test_chat_returns_503_when_disabled(db_client):
+    _override()
+    resp = db_client.post("/api/assistant", json={"message": "hi"})
+    assert resp.status_code == 503
+
+
+def _mock_stream(deltas):
+    async def gen(settings, messages):
+        gen.messages = messages
+        for d in deltas:
+            yield d
+
+    return gen
+
+
+def test_chat_streams_sse_deltas(db_client, monkeypatch):
+    _override(ai_api_key="k")
+    monkeypatch.setattr(assistant, "stream_completion", _mock_stream(["Hello ", "world"]))
+    resp = db_client.post("/api/assistant", json={"message": "make a title", "html": "<h1>x</h1>"})
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    assert 'event: delta' in resp.text
+    assert '"Hello ' in resp.text
+    assert 'event: done' in resp.text
+
+
+def test_test_data_dropped_unless_flag_set(db_client, monkeypatch):
+    _override(ai_api_key="k", ai_send_test_data=False)
+    mock = _mock_stream(["ok"])
+    monkeypatch.setattr(assistant, "stream_completion", mock)
+    db_client.post(
+        "/api/assistant",
+        json={"message": "m", "html": "<p>{{ x }}</p>", "test_data": {"secret": "pii"}},
+    )
+    sent = "\n".join(m["content"] for m in mock.messages)
+    assert "pii" not in sent
+
+
+def test_test_data_included_when_flag_set(db_client, monkeypatch):
+    _override(ai_api_key="k", ai_send_test_data=True)
+    mock = _mock_stream(["ok"])
+    monkeypatch.setattr(assistant, "stream_completion", mock)
+    db_client.post(
+        "/api/assistant",
+        json={"message": "m", "html": "<p>{{ x }}</p>", "test_data": {"amount": 42}},
+    )
+    sent = "\n".join(m["content"] for m in mock.messages)
+    assert "42" in sent
+
+
+def test_provider_error_becomes_sse_error_without_leaking_key(db_client, monkeypatch):
+    _override(ai_api_key="super-secret", ai_base_url="https://internal.example/v1/")
+
+    async def boom(settings, messages):
+        raise assistant.AssistantError("Could not reach the AI provider")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(assistant, "stream_completion", boom)
+    resp = db_client.post("/api/assistant", json={"message": "m"})
+    assert resp.status_code == 200
+    assert "event: error" in resp.text
+    assert "super-secret" not in resp.text
+    assert "internal.example" not in resp.text
+
+
+def test_chat_requires_admin_token(db_client):
+    _override(ai_api_key="k", admin_token="admin-secret", render_token="render-secret")
+    assert db_client.post("/api/assistant", json={"message": "m"}).status_code == 401
+    assert (
+        db_client.post(
+            "/api/assistant",
+            json={"message": "m"},
+            headers={"Authorization": "Bearer render-secret"},
+        ).status_code
+        == 403
+    )

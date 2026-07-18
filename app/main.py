@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
-from app.routers import assets, render, templates
+from app.routers import assets, assistant, render, templates
 from app.services.renderer import WeasyPrintRenderer
 
 
@@ -26,6 +26,7 @@ app = FastAPI(title="Linform", version="0.1.0", lifespan=lifespan)
 app.include_router(render.router)
 app.include_router(templates.router)
 app.include_router(assets.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health")

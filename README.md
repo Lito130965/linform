@@ -93,6 +93,10 @@ final HTML  →  WeasyPrint  →  PDF
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |
 | `LINFORM_ALLOW_EXTERNAL_URLS` | `false` | Allow http(s) resources in templates |
 | `LINFORM_ALLOWED_URL_HOSTS` | `[]` | Host allowlist when external URLs are on |
+| `LINFORM_AI_API_KEY` | *(empty — assistant off)* | BYOK key for an OpenAI-compatible API; stays server-side |
+| `LINFORM_AI_BASE_URL` | OpenAI | Provider base URL (Gemini compat, OpenRouter, Ollama, …) |
+| `LINFORM_AI_MODEL` | `gpt-4o-mini` | Model id |
+| `LINFORM_AI_SEND_TEST_DATA` | `false` | Allow the assistant to see test data (may contain personal data) |
 | `LINFORM_DATABASE_URL` | local SQLite file | Database; compose sets PostgreSQL |
 | `LINFORM_PORT` | `8100` | Host port (compose only) |
 | `LINFORM_DB_PASSWORD` | `linform` | PostgreSQL password (compose only) |

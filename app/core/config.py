@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     # instead of silently rendering an empty value.
     strict_placeholders: bool = True
 
+    # AI assistant (BYOK). Empty key = feature off and hidden in the UI.
+    # OpenAI-compatible chat completions API — one client covers Gemini's
+    # compat endpoint, OpenAI, Anthropic, Mistral, OpenRouter, Ollama, vLLM.
+    ai_base_url: str = "https://api.openai.com/v1/"
+    ai_api_key: str = ""
+    ai_model: str = "gpt-4o-mini"
+    # Privacy: test data may contain personal data, so the LLM never sees it
+    # unless the installation owner opts in.
+    ai_send_test_data: bool = False
+    ai_timeout_seconds: float = 60.0
+
     # URL fetching policy for external resources referenced by templates
     # (images, stylesheets). Off by default: a template is untrusted input,
     # letting it fetch arbitrary URLs from the server is an SSRF vector.
