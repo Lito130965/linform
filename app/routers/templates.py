@@ -11,12 +11,12 @@ from app.models.schemas import (
     VersionDetailOut,
     VersionOut,
 )
-from app.routers.render import check_token
+from app.core.auth import check_admin_token
 from app.services import versioning
 from app.services.template_engine import TemplateRenderError, extract_placeholders
 from app.services.versioning import ConflictError, NotFoundError
 
-router = APIRouter(prefix="/api/templates", tags=["templates"], dependencies=[Depends(check_token)])
+router = APIRouter(prefix="/api/templates", tags=["templates"], dependencies=[Depends(check_admin_token)])
 
 
 @router.get("", response_model=list[TemplateOut])

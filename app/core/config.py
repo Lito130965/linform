@@ -6,8 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LINFORM_", env_file=".env")
 
-    # Service-to-service auth. Empty means auth is disabled (dev mode only).
+    # Service auth (empty everywhere = auth disabled, dev mode only).
+    # api_token is the legacy single token and counts as both roles.
     api_token: str = ""
+    # Render endpoints only — what consuming applications get.
+    render_token: str = ""
+    # Everything, including template/asset management — the editor side.
+    admin_token: str = ""
 
     # SQLite file by default so the service runs with zero configuration;
     # docker-compose overrides this with PostgreSQL.

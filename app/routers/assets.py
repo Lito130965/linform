@@ -3,14 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.models.schemas import AssetOut
-from app.routers.render import check_token
+from app.core.auth import check_admin_token
 from app.services import assets as assets_service
 from app.services.assets import AssetError
 
-router = APIRouter(prefix="/api/assets", tags=["assets"], dependencies=[Depends(check_token)])
+router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 
-@router.post("", response_model=AssetOut, status_code=201)
+@router.post("", response_model=AssetOut, status_code=201, dependencies=[Depends(check_admin_token)])
 async def upload_asset(file: UploadFile, session: AsyncSession = Depends(get_session)):
     data = await file.read()
     try:
@@ -31,7 +31,7 @@ async def upload_asset(file: UploadFile, session: AsyncSession = Depends(get_ses
     )
 
 
-@router.get("", response_model=list[AssetOut])
+@router.get("", response_model=list[AssetOut], dependencies=[Depends(check_admin_token)])
 async def list_assets(session: AsyncSession = Depends(get_session)):
     return [
         AssetOut(
@@ -47,6 +47,9 @@ async def list_assets(session: AsyncSession = Depends(get_session)):
 
 @router.get("/{sha256}")
 async def get_asset(sha256: str, session: AsyncSession = Depends(get_session)) -> Response:
+    """Raw bytes are served without auth on purpose: browsers cannot attach
+    headers to <img src>, and the 64-hex content hash is an unguessable
+    capability URL. Listing and uploading stay admin-only."""
     asset = await assets_service.get_asset(session, sha256)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")

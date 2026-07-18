@@ -41,10 +41,34 @@ async function parseError(resp: Response): Promise<ApiError> {
   return new ApiError(resp.status, detail)
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+const TOKEN_KEY = 'linform_admin_token'
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY)
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+/** fetch with the stored admin token; on 401 asks for a token once and
+ * retries, so a tokened deployment stays usable without a login screen. */
+async function authFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
   const resp = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: { ...authHeaders(), ...(init.headers ?? {}) },
+  })
+  if (resp.status === 401 && !retried) {
+    const entered = window.prompt('Access token (LINFORM_ADMIN_TOKEN):')
+    if (entered && entered.trim()) {
+      localStorage.setItem(TOKEN_KEY, entered.trim())
+      return authFetch(path, init, true)
+    }
+  }
+  return resp
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const resp = await authFetch(path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   })
   if (!resp.ok) throw await parseError(resp)
   return resp.json() as Promise<T>
@@ -66,7 +90,7 @@ export const api = {
   async uploadAsset(file: File): Promise<AssetInfo> {
     const form = new FormData()
     form.append('file', file)
-    const resp = await fetch('/api/assets', { method: 'POST', body: form })
+    const resp = await authFetch('/api/assets', { method: 'POST', body: form })
     if (!resp.ok) throw await parseError(resp)
     return resp.json()
   },
@@ -103,7 +127,7 @@ export const api = {
     strict: boolean,
     signal: AbortSignal,
   ): Promise<Blob> {
-    const resp = await fetch('/api/render', {
+    const resp = await authFetch('/api/render', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ html, data, strict }),

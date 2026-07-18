@@ -85,7 +85,9 @@ final HTML  →  WeasyPrint  →  PDF
 
 | Env variable | Default | Meaning |
 |---|---|---|
-| `LINFORM_API_TOKEN` | *(empty — auth off)* | Bearer token for the API |
+| `LINFORM_RENDER_TOKEN` | *(empty)* | Bearer token for render endpoints only — give this to consuming applications |
+| `LINFORM_ADMIN_TOKEN` | *(empty)* | Bearer token for everything incl. template/asset management — the editor side |
+| `LINFORM_API_TOKEN` | *(empty)* | Legacy single token, counts as both roles. No tokens at all = auth disabled (dev) |
 | `LINFORM_RENDER_TIMEOUT_SECONDS` | `30` | Hard render timeout |
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |
