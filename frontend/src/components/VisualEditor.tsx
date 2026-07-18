@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import grapesjs, { type Component, type Editor as GrapesEditor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
+import { cleanPastedHtml } from '../docx/clean-paste'
 
 /** Canvas-only affordances for Jinja constructs: visible, but pure CSS —
  * nothing here can leak into the exported HTML. */
@@ -447,6 +448,26 @@ export default function VisualEditor({
       const styleEl = doc.createElement('style')
       styleEl.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS
       doc.head.appendChild(styleEl)
+      // Paste from Word / Google Docs arrives as mso-soup; replace it with
+      // allowlisted structural markup before it can reach the template.
+      doc.addEventListener(
+        'paste',
+        (e: ClipboardEvent) => {
+          const html = e.clipboardData?.getData('text/html')
+          if (!html) return
+          e.preventDefault()
+          e.stopPropagation()
+          const cleaned = cleanPastedHtml(html)
+          if (!cleaned) return
+          if (doc.activeElement && (doc.activeElement as HTMLElement).isContentEditable) {
+            doc.execCommand('insertHTML', false, cleaned)
+          } else {
+            const target = editor.getSelected() ?? editor.getWrapper()
+            target?.append(cleaned)
+          }
+        },
+        true,
+      )
       loaded = true
       callbacksRef.current.onReady?.(editor)
     })

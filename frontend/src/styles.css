@@ -160,6 +160,15 @@ select:focus {
   margin-top: 8px;
 }
 
+.import-badge {
+  font-size: 11px;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- editor layout ---- */
 
 .main {
