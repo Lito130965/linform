@@ -2,6 +2,10 @@ import { useEffect, useRef } from 'react'
 import grapesjs, { type Component, type Editor as GrapesEditor } from 'grapesjs'
 import 'grapesjs/dist/css/grapes.min.css'
 import { cleanPastedHtml } from '../docx/clean-paste'
+import { fitZoom } from '../layout'
+
+/** Breathing room left around the page inside the canvas, in px. */
+const CANVAS_GUTTER_PX = 24
 
 /** Canvas-only affordances for Jinja constructs: visible, but pure CSS —
  * nothing here can leak into the exported HTML. */
@@ -469,8 +473,26 @@ export default function VisualEditor({
         true,
       )
       loaded = true
+      fitCanvas()
       callbacksRef.current.onReady?.(editor)
     })
+
+    // An A4 page is a fixed 794px and the canvas never got that much beside the
+    // preview, so the page simply ran off the right edge. Scale it to whatever
+    // width there is instead, and re-fit whenever that width or the paper
+    // format changes.
+    const fitCanvas = () => {
+      const target = parseInt(String(editor.Devices.getSelected()?.get('width') ?? ''), 10)
+      const canvasEl = container.querySelector('.gjs-cv-canvas') as HTMLElement | null
+      const available = (canvasEl?.clientWidth ?? container.clientWidth) - CANVAS_GUTTER_PX
+      // "Free width" has no fixed page width; it already fills the canvas.
+      editor.Canvas.setZoom(Number.isFinite(target) ? fitZoom(available, target) : 100)
+    }
+    editor.on('change:device', fitCanvas)
+    const observer = new ResizeObserver(() => {
+      if (loaded) fitCanvas()
+    })
+    observer.observe(container)
     editor.on('update', () => {
       if (!loaded) return
       clearTimeout(timer)
@@ -479,6 +501,7 @@ export default function VisualEditor({
 
     return () => {
       clearTimeout(timer)
+      observer.disconnect()
       if (loaded) callbacksRef.current.onChange(exportBody())
       editor.destroy()
     }

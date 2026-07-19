@@ -33,7 +33,15 @@ const STARTER_TEMPLATE = `<style>
 <p>Hello, {{ name }}!</p>
 `
 
-export default function Editor({ code }: { code: string }) {
+export default function Editor({
+  code,
+  overlayPanels = false,
+}: {
+  code: string
+  /** float the assistant and history over the preview instead of giving them a
+   * column of their own — below ~1600px a fixed column starves the canvas */
+  overlayPanels?: boolean
+}) {
   const [detail, setDetail] = useState<TemplateDetail | null>(null)
   const [loadedVersion, setLoadedVersion] = useState<number | null>(null)
   const [html, setHtml] = useState('')
@@ -370,6 +378,7 @@ export default function Editor({ code }: { code: string }) {
 
         {showAssistant && assistant?.enabled && (
           <AssistantPanel
+            overlay={overlayPanels}
             status={assistant}
             currentHtml={html}
             placeholders={placeholderNames}
@@ -381,6 +390,7 @@ export default function Editor({ code }: { code: string }) {
 
         {showHistory && detail && (
           <VersionHistory
+            overlay={overlayPanels}
             code={code}
             versions={detail.versions}
             loadedVersion={loadedVersion}

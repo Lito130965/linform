@@ -19,10 +19,13 @@ export default function AssistantPanel({
   currentHtml,
   placeholders,
   fixError,
+  overlay = false,
   onApply,
   onClose,
 }: {
   status: AssistantStatus
+  /** float over the workspace rather than take a column of its own */
+  overlay?: boolean
   currentHtml: string
   placeholders: string[]
   /** a render error to seed a "fix this" turn, or null */
@@ -124,7 +127,7 @@ export default function AssistantPanel({
   }
 
   return (
-    <div className="assistant-panel">
+    <div className={overlay ? 'assistant-panel overlay' : 'assistant-panel'}>
       <div className="assistant-header">
         <strong>Assistant</strong>
         <span className="muted">{status.model}</span>

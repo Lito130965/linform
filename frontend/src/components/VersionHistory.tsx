@@ -9,6 +9,7 @@ export default function VersionHistory({
   versions,
   loadedVersion,
   editorHtml,
+  overlay = false,
   onLoad,
   onPublish,
   onClose,
@@ -17,6 +18,8 @@ export default function VersionHistory({
   versions: VersionInfo[]
   loadedVersion: number | null
   editorHtml: string
+  /** float over the workspace rather than take a column of its own */
+  overlay?: boolean
   onLoad: (version: number) => void
   onPublish: (version: number) => void
   onClose: () => void
@@ -37,7 +40,7 @@ export default function VersionHistory({
   }, [code, diffWith, editorHtml])
 
   return (
-    <div className="history-drawer">
+    <div className={overlay ? 'history-drawer overlay' : 'history-drawer'}>
       <div className="history-header">
         <strong>History — {code}</strong>
         <button className="btn small" onClick={onClose}>
