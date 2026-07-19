@@ -19,6 +19,9 @@ class AssistantRequest(BaseModel):
     # Sent only when the caller wants test data considered; still gated by the
     # server-side ai_send_test_data flag before it reaches the model.
     test_data: dict | None = None
+    # Scans/screenshots as data: URLs — the document-to-template and
+    # "here, this part is wrong" flows.
+    images: list[str] = Field(default_factory=list, max_length=4)
 
 
 class AssistantStatus(BaseModel):
@@ -51,7 +54,9 @@ async def chat(
     # Enforce the privacy flag here: even if the client sends test data, it is
     # dropped unless the installation explicitly opted in.
     test_data = body.test_data if settings.ai_send_test_data else None
-    messages = assistant.build_messages(body.message, body.html, body.placeholders, test_data)
+    messages = assistant.build_messages(
+        body.message, body.html, body.placeholders, test_data, images=body.images
+    )
 
     async def event_stream() -> AsyncIterator[str]:
         try:

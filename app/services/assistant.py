@@ -15,27 +15,7 @@ from collections.abc import AsyncIterator
 import httpx
 
 from app.core.config import Settings
-
-SYSTEM_PROMPT = """You are a template assistant for Linform, a service that \
-renders HTML templates to PDF with WeasyPrint and fills them with data via \
-sandboxed Jinja2.
-
-Hard rules for every template you produce:
-- Output ONE complete HTML document inside a single ```html fenced code block. \
-Never output partial snippets or diffs — always the full template.
-- Rendering is WeasyPrint: CSS Paged Media works (@page, margins, \
-@top/@bottom margin boxes with counter(page)/counter(pages), \
-page-break-before/inside/after). No JavaScript runs. Flexbox and grid are only \
-partially supported — prefer tables and normal flow for print layout.
-- Data is injected with Jinja2 in a sandbox: {{ placeholders }}, {% for %}, \
-{% if %}, filters like default() and round(). No access to Python internals.
-- Images/logos are referenced as asset://<sha256>; leave existing asset:// \
-URLs untouched. Do not invent asset URLs.
-- Keep the set of {{ placeholders }} stable unless the user asks to change it.
-
-When the user reports a render error, fix the template so it renders cleanly \
-and return the full corrected HTML. Briefly explain what you changed in one or \
-two sentences before the code block."""
+from app.services.assistant_prompt import build_system_prompt
 
 
 class AssistantError(Exception):
@@ -51,6 +31,7 @@ def build_messages(
     template_html: str,
     placeholders: list[str],
     test_data: dict | None,
+    images: list[str] | None = None,
 ) -> list[dict]:
     context = [
         "Current template HTML:",
@@ -63,9 +44,20 @@ def build_messages(
     # router allows only under the ai_send_test_data flag.
     if test_data is not None:
         context += ["Sample data (JSON):", "```json", json.dumps(test_data, ensure_ascii=False), "```"]
+    text = "\n".join(context) + "\n\nRequest: " + user_message
+
+    # Attached documents/screenshots (data URLs) travel in the vision content
+    # format; providers without vision reject them with their own error.
+    content: str | list[dict]
+    if images:
+        content = [{"type": "text", "text": text}] + [
+            {"type": "image_url", "image_url": {"url": url}} for url in images
+        ]
+    else:
+        content = text
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": "\n".join(context) + "\n\nRequest: " + user_message},
+        {"role": "system", "content": build_system_prompt()},
+        {"role": "user", "content": content},
     ]
 
 

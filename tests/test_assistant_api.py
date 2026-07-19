@@ -99,6 +99,49 @@ def test_provider_error_becomes_sse_error_without_leaking_key(db_client, monkeyp
     assert "internal.example" not in resp.text
 
 
+def test_system_prompt_is_assembled_from_live_engine():
+    from app.services.assistant_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+    # Fixed contract and both modes.
+    assert "```html" in prompt
+    assert "MODE: document → template" in prompt
+    assert "MODE: targeted correction" in prompt
+    assert "numbered questions" in prompt
+    # Live introspection: real sandbox filters are listed, so filters added
+    # later (e.g. money/format_date) reach the model automatically.
+    assert "default" in prompt and "round" in prompt and "upper" in prompt
+    # Curated engine facts.
+    assert "asset://" in prompt
+    assert "counter(pages)" in prompt
+    assert "page-break" in prompt
+
+
+def test_images_travel_in_vision_content_format():
+    msgs = assistant.build_messages(
+        "make it like this", "<p>x</p>", ["x"], None,
+        images=["data:image/png;base64,AAA"],
+    )
+    content = msgs[1]["content"]
+    assert isinstance(content, list)
+    kinds = [part["type"] for part in content]
+    assert kinds == ["text", "image_url"]
+    assert content[1]["image_url"]["url"] == "data:image/png;base64,AAA"
+
+
+def test_chat_accepts_images(db_client, monkeypatch):
+    _override(ai_api_key="k")
+    mock = _mock_stream(["ok"])
+    monkeypatch.setattr(assistant, "stream_completion", mock)
+    resp = db_client.post(
+        "/api/assistant",
+        json={"message": "m", "images": ["data:image/png;base64,AAA"]},
+    )
+    assert resp.status_code == 200
+    user_content = mock.messages[1]["content"]
+    assert any(p.get("type") == "image_url" for p in user_content)
+
+
 def test_chat_requires_admin_token(db_client):
     _override(ai_api_key="k", admin_token="admin-secret", render_token="render-secret")
     assert db_client.post("/api/assistant", json={"message": "m"}).status_code == 401
