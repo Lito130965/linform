@@ -721,6 +721,11 @@ label {
   overflow: hidden;
 }
 
+/* Holds the rail's width while the list itself floats above the editor. */
+.app.rail-held {
+  padding-left: 44px;
+}
+
 .sidebar.overlay {
   position: absolute;
   left: 0;

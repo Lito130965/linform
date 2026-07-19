@@ -33,17 +33,20 @@ export default function App() {
     )
   }
 
+  // While the list floats it is out of flow, so the rail's 44px has to be held
+  // open by the shell — otherwise the editor jumps sideways as it opens.
+  const overlaidSidebar = layout.collapseSidebar && sidebarOpen
   const sidebarClass = [
     'sidebar',
     sidebarOpen ? '' : 'collapsed',
     // Once folded, reopening must not shove the editor sideways.
-    layout.collapseSidebar && sidebarOpen ? 'overlay' : '',
+    overlaidSidebar ? 'overlay' : '',
   ]
     .filter(Boolean)
     .join(' ')
 
   return (
-    <div className="app">
+    <div className={overlaidSidebar ? 'app rail-held' : 'app'}>
       <aside className={sidebarClass}>
         <button
           className="sidebar-toggle"
