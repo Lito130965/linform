@@ -37,10 +37,24 @@ ENGINE_FACTS = [
     ' counters: content: "Page " counter(page) " of " counter(pages).',
     "Page breaks: page-break-before/after/inside on blocks; thead repeats on"
     " every page of a long table; tr { page-break-inside: avoid } keeps rows whole.",
-    "Fixed-page paper forms: a .page container with exact size (e.g. width: 210mm;"
-    " height: 296mm), position: relative, overflow: hidden; absolutely positioned"
-    " children (corner registration marks, stamps) anchor to it; .page + .page"
-    " { page-break-before: always } starts the next sheet.",
+    "Page furniture that must appear on EVERY page (background scan, watermark,"
+    " frame, header/footer) belongs on @page, not on a wrapper div: @page { size: A4;"
+    " margin: 30mm 20mm 20mm; background: url('asset://<sha>') no-repeat center;"
+    " background-size: contain }. WeasyPrint then paints it on every page the"
+    " content flows onto, margins included. A background on a wrapper div is painted"
+    " once across the whole unfragmented box, so on the second page it comes out"
+    " shifted and cropped, and the div's padding is lost there too.",
+    "NEVER put a fixed height plus overflow: hidden on a container whose content can"
+    " grow (any {% for %} table, any long text). The box is then exactly one sheet"
+    " tall and everything past it is CLIPPED AND SILENTLY LOST — rows just disappear"
+    " from the PDF. Let such sections flow: no height, no overflow, and use"
+    " .section + .section { page-break-before: always } to start the next sheet."
+    " Add tr { page-break-inside: avoid } so a row is never sliced in half.",
+    "The fixed-size container (width: 210mm; height: 296mm; position: relative;"
+    " overflow: hidden) is ONLY for a sheet whose content provably cannot grow —"
+    " a fixed government form with a fixed number of ruled lines, where absolutely"
+    " positioned children anchor to registration marks. If any part of the sheet"
+    " repeats over data, it is not this case.",
     "Flexbox works, including nested row/column layouts (proven on production tax"
     " forms). CSS grid support is partial — prefer tables or flex for print.",
     "No JavaScript executes. No external http(s) resources by default (SSRF"

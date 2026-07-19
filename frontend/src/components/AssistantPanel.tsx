@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { diffLines, type Change } from 'diff'
 import { assistantChat, AssistantStatus } from '../api'
 import { extractHtmlBlock, replyProse } from '../assistant/extract'
+import { toDownscaledDataUrl } from '../assistant/image'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
@@ -33,6 +34,9 @@ export default function AssistantPanel({
   const [input, setInput] = useState('')
   const [images, setImages] = useState<string[]>([])
   const [streaming, setStreaming] = useState(false)
+  // A vision request waits seconds before the first token. Without a ticking
+  // counter that silence is indistinguishable from a hung page.
+  const [elapsed, setElapsed] = useState(0)
   const [diffFor, setDiffFor] = useState<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -41,6 +45,14 @@ export default function AssistantPanel({
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight)
   }, [messages])
+
+  useEffect(() => {
+    if (!streaming) return
+    setElapsed(0)
+    const started = Date.now()
+    const id = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [streaming])
 
   // "Fix with AI" from the preview seeds the input with the render error.
   useEffect(() => {
@@ -106,10 +118,9 @@ export default function AssistantPanel({
 
   const stop = () => abortRef.current?.abort()
 
-  const attachImage = (file: File) => {
-    const reader = new FileReader()
-    reader.onload = () => setImages((imgs) => [...imgs, reader.result as string].slice(0, 4))
-    reader.readAsDataURL(file)
+  const attachImage = async (file: File) => {
+    const url = await toDownscaledDataUrl(file)
+    setImages((imgs) => [...imgs, url].slice(0, 4))
   }
 
   return (
@@ -131,7 +142,12 @@ export default function AssistantPanel({
         )}
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg ${m.role}`}>
-            <div className="chat-text">{m.text || (streaming && i === messages.length - 1 ? '…' : '')}</div>
+            <div className="chat-text">
+              {m.text ||
+                (streaming && i === messages.length - 1
+                  ? `Thinking… ${elapsed}s`
+                  : '')}
+            </div>
             {m.proposedHtml && (
               <div className="chat-proposal">
                 <button className="btn small" onClick={() => setDiffFor(diffFor === i ? null : i)}>
