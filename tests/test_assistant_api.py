@@ -153,3 +153,85 @@ def test_chat_requires_admin_token(db_client):
         ).status_code
         == 403
     )
+
+
+def test_history_is_replayed_as_turns_before_the_live_request():
+    msgs = assistant.build_messages(
+        "the background moved again",
+        "<p>current</p>",
+        [],
+        None,
+        history=[
+            {"role": "user", "text": "add a background"},
+            {"role": "assistant", "text": "Put it on @page.", "applied": True},
+        ],
+    )
+    roles = [m["role"] for m in msgs]
+    assert roles == ["system", "user", "assistant", "user"]
+    # The live request stays last so the current template outranks the history.
+    assert "the background moved again" in msgs[-1]["content"]
+    assert "<p>current</p>" in msgs[-1]["content"]
+
+
+def test_apply_and_reject_are_marked_so_settled_work_is_not_undone():
+    msgs = assistant.build_messages(
+        "next", "<p>x</p>", [], None,
+        history=[
+            {"role": "assistant", "text": "took it", "applied": True},
+            {"role": "assistant", "text": "missed it", "applied": False},
+            {"role": "assistant", "text": "a question", "applied": None},
+        ],
+    )
+    kept, rejected, asked = msgs[1]["content"], msgs[2]["content"], msgs[3]["content"]
+    assert "settled" in kept
+    assert "did NOT apply" in rejected
+    # A turn that proposed no template carries no verdict either way.
+    assert "settled" not in asked and "did NOT apply" not in asked
+
+
+def test_history_never_carries_old_templates_or_unbounded_text():
+    stale = "<html>STALE VERSION</html>"
+    msgs = assistant.build_messages(
+        "go", "<p>live</p>", [], None,
+        history=[{"role": "assistant", "text": stale + "x" * 5000, "applied": False}],
+    )
+    replayed = msgs[1]["content"]
+    assert len(replayed) < assistant.MAX_HISTORY_CHARS + 200
+
+
+def test_history_is_capped_to_the_recent_turns():
+    history = [{"role": "user", "text": f"turn {i}"} for i in range(60)]
+    msgs = assistant.build_messages("now", "<p>x</p>", [], None, history=history)
+    replayed = [m for m in msgs if m["role"] != "system"][:-1]
+    assert len(replayed) == assistant.MAX_HISTORY_TURNS
+    assert "turn 59" in replayed[-1]["content"]
+    assert "turn 0" not in " ".join(m["content"] for m in replayed)
+
+
+def test_blank_turns_are_dropped():
+    msgs = assistant.build_messages(
+        "go", "<p>x</p>", [], None,
+        history=[{"role": "assistant", "text": "   "}, {"role": "user", "text": "real"}],
+    )
+    assert [m["role"] for m in msgs] == ["system", "user", "user"]
+
+
+def test_chat_accepts_history(db_client, monkeypatch):
+    _override(ai_api_key="k")
+    captured = {}
+
+    def spy(message, html, placeholders, test_data, images=None, history=None):
+        captured["history"] = history
+        return [{"role": "system", "content": "s"}]
+
+    monkeypatch.setattr(assistant, "build_messages", spy)
+    monkeypatch.setattr(assistant, "stream_completion", _mock_stream(["ok"]))
+    resp = db_client.post(
+        "/api/assistant",
+        json={
+            "message": "m",
+            "history": [{"role": "assistant", "text": "prior", "applied": True}],
+        },
+    )
+    assert resp.status_code == 200
+    assert captured["history"] == [{"role": "assistant", "text": "prior", "applied": True}]

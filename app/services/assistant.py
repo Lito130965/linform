@@ -26,15 +26,50 @@ def is_enabled(settings: Settings) -> bool:
     return bool(settings.ai_api_key)
 
 
+#: Turns of context kept. Only prose survives the trip (see build_messages), so
+#: this is cheap — the cost is dominated by the current template, sent once.
+MAX_HISTORY_TURNS = 20
+#: A pasted stack trace or a rambling turn should not crowd out the rest.
+MAX_HISTORY_CHARS = 2000
+
+
+def _history_messages(history: list[dict]) -> list[dict]:
+    """Replay the conversation as prose only.
+
+    Past templates are deliberately dropped: they are 6KB apiece, they are
+    superseded by the current HTML that follows, and keeping them invites the
+    model to anchor on a stale version. What it needs from the past is what was
+    asked, what it answered — and whether the human took it, which is the only
+    accept/reject signal the UI produces.
+    """
+    out: list[dict] = []
+    for turn in history[-MAX_HISTORY_TURNS:]:
+        text = str(turn.get("text", ""))[:MAX_HISTORY_CHARS].strip()
+        if not text:
+            continue
+        if turn.get("role") == "assistant":
+            applied = turn.get("applied")
+            if applied is True:
+                text += "\n[The user applied this template. It is settled: keep it unless asked.]"
+            elif applied is False:
+                text += "\n[The user did NOT apply this template — it did not satisfy the request.]"
+            out.append({"role": "assistant", "content": text})
+        else:
+            out.append({"role": "user", "content": text})
+    return out
+
+
 def build_messages(
     user_message: str,
     template_html: str,
     placeholders: list[str],
     test_data: dict | None,
     images: list[str] | None = None,
+    history: list[dict] | None = None,
 ) -> list[dict]:
     context = [
-        "Current template HTML:",
+        "Current template HTML (the only current truth — earlier turns may quote"
+        " older versions, this is what is in the editor now):",
         "```html",
         template_html or "(empty)",
         "```",
@@ -57,6 +92,8 @@ def build_messages(
         content = text
     return [
         {"role": "system", "content": build_system_prompt()},
+        *_history_messages(history or []),
+        # Last, so the live template outranks anything recalled from the history.
         {"role": "user", "content": content},
     ]
 

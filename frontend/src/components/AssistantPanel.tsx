@@ -9,6 +9,9 @@ interface ChatMessage {
   text: string
   /** template proposed by this assistant message, if any */
   proposedHtml?: string
+  /** whether the user applied that template — the accept/reject signal the
+   * model needs so it stops undoing work that was already agreed */
+  applied?: boolean
 }
 
 /** Assistant chat. The whole panel is hidden when the feature is off, so the
@@ -41,6 +44,7 @@ export default function AssistantPanel({
   // counter that silence is indistinguishable from a hung page.
   const [elapsed, setElapsed] = useState(0)
   const [diffFor, setDiffFor] = useState<number | null>(null)
+  const [dragging, setDragging] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -68,6 +72,13 @@ export default function AssistantPanel({
     const message = input.trim()
     if (!message || streaming) return
     const attached = images
+    // Snapshot before the optimistic append, so the turn being sent is not in
+    // its own history. Prose only: proposedHtml never leaves the browser.
+    const history = messages.map((m) => ({
+      role: m.role,
+      text: m.text,
+      applied: m.proposedHtml ? Boolean(m.applied) : null,
+    }))
     setMessages((m) => [...m, { role: 'user', text: message }, { role: 'assistant', text: '' }])
     setInput('')
     setImages([])
@@ -77,7 +88,7 @@ export default function AssistantPanel({
     let acc = ''
     try {
       for await (const ev of assistantChat(
-        { message, html: currentHtml, placeholders, images: attached },
+        { message, html: currentHtml, placeholders, images: attached, history },
         ctrl.signal,
       )) {
         if (ev.event === 'delta') {
@@ -126,8 +137,44 @@ export default function AssistantPanel({
     setImages((imgs) => [...imgs, url].slice(0, 4))
   }
 
+  /** Images out of a DataTransfer, whether pasted or dropped. Screenshots from
+   * the clipboard and files dragged from a file manager both land here. */
+  const attachFromTransfer = (dt: DataTransfer | null): boolean => {
+    if (!dt) return false
+    const files = Array.from(dt.files).filter((f) => f.type.startsWith('image/'))
+    // A clipboard screenshot has no file entry, only an image item.
+    const items = files.length
+      ? []
+      : Array.from(dt.items)
+          .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+          .map((it) => it.getAsFile())
+          .filter((f): f is File => f !== null)
+    const found = [...files, ...items]
+    found.slice(0, 4).forEach(attachImage)
+    return found.length > 0
+  }
+
   return (
-    <div className={overlay ? 'assistant-panel overlay' : 'assistant-panel'}>
+    <div
+      className={
+        (overlay ? 'assistant-panel overlay' : 'assistant-panel') + (dragging ? ' dropping' : '')
+      }
+      onDragOver={(e) => {
+        // Both handlers are required, or the browser navigates to the file.
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return
+        setDragging(false)
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragging(false)
+        attachFromTransfer(e.dataTransfer)
+      }}
+    >
       <div className="assistant-header">
         <strong>Assistant</strong>
         <span className="muted">{status.model}</span>
@@ -156,8 +203,16 @@ export default function AssistantPanel({
                 <button className="btn small" onClick={() => setDiffFor(diffFor === i ? null : i)}>
                   {diffFor === i ? 'Hide diff' : 'Show diff'}
                 </button>
-                <button className="btn small primary" onClick={() => onApply(m.proposedHtml!)}>
-                  Apply
+                <button
+                  className="btn small primary"
+                  onClick={() => {
+                    onApply(m.proposedHtml!)
+                    setMessages((all) =>
+                      all.map((msg, j) => (j === i ? { ...msg, applied: true } : msg)),
+                    )
+                  }}
+                >
+                  {m.applied ? 'Applied ✓' : 'Apply'}
                 </button>
                 {diffFor === i && <DiffView from={currentHtml} to={m.proposedHtml} />}
               </div>
@@ -180,8 +235,13 @@ export default function AssistantPanel({
       <div className="assistant-input">
         <textarea
           value={input}
-          placeholder="Ask the assistant…  (Enter to send, Shift+Enter for a newline)"
+          placeholder="Ask the assistant…  (Enter to send, Shift+Enter for a newline, paste or drop a screenshot)"
           onChange={(e) => setInput(e.target.value)}
+          onPaste={(e) => {
+            // Only swallow the paste when it actually carried an image, so
+            // pasting text keeps working normally.
+            if (attachFromTransfer(e.clipboardData)) e.preventDefault()
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()

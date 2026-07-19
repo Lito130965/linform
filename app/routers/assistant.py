@@ -1,5 +1,6 @@
 import json
 from collections.abc import AsyncIterator
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -12,8 +13,19 @@ from app.services import assistant
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 
+class HistoryTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    #: Prose only — the client strips html blocks before sending.
+    text: str = ""
+    #: For assistant turns: did the user apply the template it proposed? None
+    #: when the turn proposed none. This is the accept/reject signal.
+    applied: bool | None = None
+
+
 class AssistantRequest(BaseModel):
     message: str = Field(min_length=1)
+    #: Earlier turns of this session, oldest first.
+    history: list[HistoryTurn] = Field(default_factory=list, max_length=40)
     html: str = ""
     placeholders: list[str] = Field(default_factory=list)
     # Sent only when the caller wants test data considered; still gated by the
@@ -55,7 +67,12 @@ async def chat(
     # dropped unless the installation explicitly opted in.
     test_data = body.test_data if settings.ai_send_test_data else None
     messages = assistant.build_messages(
-        body.message, body.html, body.placeholders, test_data, images=body.images
+        body.message,
+        body.html,
+        body.placeholders,
+        test_data,
+        images=body.images,
+        history=[turn.model_dump() for turn in body.history],
     )
 
     async def event_stream() -> AsyncIterator[str]:

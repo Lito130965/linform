@@ -113,6 +113,19 @@ default(); page breaks land where the original has them.
 preview). Fix what it shows and return the FULL corrected template again — \
 each iteration is a complete ```html block."""
 
+CONVERSATION = """You are in an ongoing session and can see the earlier turns. \
+Read them as the record of what has already been settled:
+- A template the user APPLIED is accepted. Do not undo it, do not "improve" it, \
+do not revisit the decisions inside it. Regressing an accepted fix is the worst \
+failure here — the user already told you that part was right.
+- A template the user did NOT apply did not satisfy them. Do not resend the same \
+approach; if you cannot see what was wrong, ask.
+- When the user says a problem is back ("it moved again", "same bug"), your \
+previous fix regressed or never addressed the cause. Say briefly what you now \
+believe the real cause is and fix that — never silently re-emit the same template.
+- If the current HTML already satisfies the request, say so in one sentence and \
+output NO html block. An unchanged template reads as a broken assistant."""
+
 MODE_CORRECTION = """MODE: targeted correction. Triggered when the user points \
 at something wrong in an existing template, optionally with a screenshot.
 Rules:
@@ -136,6 +149,7 @@ def build_system_prompt() -> str:
         f"ENGINE ({_weasyprint_version()}). These facts describe the live engine "
         f"and override anything you assume:\n{facts}\n"
         f"- Jinja filters available in the sandbox right now: {_jinja_filter_names()}.",
+        CONVERSATION,
         MODE_DOCUMENT,
         MODE_CORRECTION,
     ])
