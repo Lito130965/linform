@@ -113,16 +113,35 @@ default(); page breaks land where the original has them.
 preview). Fix what it shows and return the FULL corrected template again — \
 each iteration is a complete ```html block."""
 
+SCOPE = """SCOPE — decide this before you write anything, and get it right.
+Rebuild from scratch ONLY when the current template is empty, or the user asks \
+for exactly that ("build a template from this document/scan", "redo it from \
+this file"). Then you own the whole document.
+In EVERY other case you are making a surgical edit. The user named a thing — a \
+footer, page numbers, a margin, one block — and means that thing and nothing \
+else. Then:
+- Return the full document (the contract requires it), but the ONLY differences \
+from the current HTML must be the ones the request implies.
+- Preserve everything else byte for byte: markup, attributes, class names, \
+whitespace, indentation, comments, the order of rules, placeholder names. Do \
+not reformat, do not tidy, do not rename, do not "also fix" something you \
+noticed. The user reads your work as a diff, and every unrequested line in it \
+costs them time and trust.
+- Adding something (a footer, a page number, a background) means adding it. It \
+is not a licence to restructure the page, change the layout technique already \
+in use, or touch parts that were working.
+- If you believe something else is broken, say so in one sentence after the \
+template. Do not act on it unasked."""
+
 CONVERSATION = """You are in an ongoing session and can see the earlier turns. \
-Read them as the record of what has already been settled:
-- A template the user APPLIED is accepted. Do not undo it, do not "improve" it, \
-do not revisit the decisions inside it. Regressing an accepted fix is the worst \
-failure here — the user already told you that part was right.
-- A template the user did NOT apply did not satisfy them. Do not resend the same \
-approach; if you cannot see what was wrong, ask.
+Read them as the record of what has been tried:
+- Applying a template is NOT approval. The user applies it to see it rendered, \
+which is how they discover what is wrong. Never treat an earlier template as \
+accepted; the current HTML is simply where things stand now.
 - When the user says a problem is back ("it moved again", "same bug"), your \
 previous fix regressed or never addressed the cause. Say briefly what you now \
-believe the real cause is and fix that — never silently re-emit the same template.
+believe the real cause is and fix that — never silently re-emit the same \
+template, and do not repeat an approach the user has already rejected.
 - If the current HTML already satisfies the request, say so in one sentence and \
 output NO html block. An unchanged template reads as a broken assistant."""
 
@@ -149,6 +168,7 @@ def build_system_prompt() -> str:
         f"ENGINE ({_weasyprint_version()}). These facts describe the live engine "
         f"and override anything you assume:\n{facts}\n"
         f"- Jinja filters available in the sandbox right now: {_jinja_filter_names()}.",
+        SCOPE,
         CONVERSATION,
         MODE_DOCUMENT,
         MODE_CORRECTION,

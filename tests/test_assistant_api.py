@@ -163,7 +163,7 @@ def test_history_is_replayed_as_turns_before_the_live_request():
         None,
         history=[
             {"role": "user", "text": "add a background"},
-            {"role": "assistant", "text": "Put it on @page.", "applied": True},
+            {"role": "assistant", "text": "Put it on @page."},
         ],
     )
     roles = [m["role"] for m in msgs]
@@ -173,27 +173,26 @@ def test_history_is_replayed_as_turns_before_the_live_request():
     assert "<p>current</p>" in msgs[-1]["content"]
 
 
-def test_apply_and_reject_are_marked_so_settled_work_is_not_undone():
+def test_applying_a_template_is_not_treated_as_approval():
+    """The user applies in order to see the render — that is how they find out
+    it is wrong. Marking it accepted would side with the template exactly when
+    the user is complaining about it."""
     msgs = assistant.build_messages(
-        "next", "<p>x</p>", [], None,
+        "the footer is still wrong", "<p>x</p>", [], None,
         history=[
-            {"role": "assistant", "text": "took it", "applied": True},
-            {"role": "assistant", "text": "missed it", "applied": False},
-            {"role": "assistant", "text": "a question", "applied": None},
+            {"role": "assistant", "text": "added a footer", "applied": True},
         ],
     )
-    kept, rejected, asked = msgs[1]["content"], msgs[2]["content"], msgs[3]["content"]
-    assert "settled" in kept
-    assert "did NOT apply" in rejected
-    # A turn that proposed no template carries no verdict either way.
-    assert "settled" not in asked and "did NOT apply" not in asked
+    replayed = msgs[1]["content"]
+    assert replayed == "added a footer"
+    assert "settled" not in replayed and "applied" not in replayed.lower()
 
 
 def test_history_never_carries_old_templates_or_unbounded_text():
     stale = "<html>STALE VERSION</html>"
     msgs = assistant.build_messages(
         "go", "<p>live</p>", [], None,
-        history=[{"role": "assistant", "text": stale + "x" * 5000, "applied": False}],
+        history=[{"role": "assistant", "text": stale + "x" * 5000}],
     )
     replayed = msgs[1]["content"]
     assert len(replayed) < assistant.MAX_HISTORY_CHARS + 200
@@ -230,8 +229,18 @@ def test_chat_accepts_history(db_client, monkeypatch):
         "/api/assistant",
         json={
             "message": "m",
-            "history": [{"role": "assistant", "text": "prior", "applied": True}],
+            "history": [{"role": "assistant", "text": "prior"}],
         },
     )
     assert resp.status_code == 200
-    assert captured["history"] == [{"role": "assistant", "text": "prior", "applied": True}]
+    assert captured["history"] == [{"role": "assistant", "text": "prior"}]
+
+
+def test_prompt_forbids_unrequested_edits():
+    from app.services.assistant_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+    # A named request is a surgical edit, not a licence to rewrite the document.
+    assert "SCOPE" in prompt
+    assert "byte for byte" in prompt
+    assert "Rebuild from scratch ONLY" in prompt

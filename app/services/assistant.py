@@ -39,23 +39,20 @@ def _history_messages(history: list[dict]) -> list[dict]:
     Past templates are deliberately dropped: they are 6KB apiece, they are
     superseded by the current HTML that follows, and keeping them invites the
     model to anchor on a stale version. What it needs from the past is what was
-    asked, what it answered — and whether the human took it, which is the only
-    accept/reject signal the UI produces.
+    asked and what it answered.
+
+    Applying a template is deliberately NOT treated as approval. The user
+    applies in order to see it rendered — that is how they find out it is
+    wrong — so reading Apply as acceptance would tell the model a template was
+    settled at the very moment the user is complaining about it.
     """
     out: list[dict] = []
     for turn in history[-MAX_HISTORY_TURNS:]:
         text = str(turn.get("text", ""))[:MAX_HISTORY_CHARS].strip()
         if not text:
             continue
-        if turn.get("role") == "assistant":
-            applied = turn.get("applied")
-            if applied is True:
-                text += "\n[The user applied this template. It is settled: keep it unless asked.]"
-            elif applied is False:
-                text += "\n[The user did NOT apply this template — it did not satisfy the request.]"
-            out.append({"role": "assistant", "content": text})
-        else:
-            out.append({"role": "user", "content": text})
+        role = "assistant" if turn.get("role") == "assistant" else "user"
+        out.append({"role": role, "content": text})
     return out
 
 

@@ -3,15 +3,13 @@ import { diffLines, type Change } from 'diff'
 import { assistantChat, AssistantStatus } from '../api'
 import { extractHtmlBlock, replyProse } from '../assistant/extract'
 import { toDownscaledDataUrl } from '../assistant/image'
+import { renderMarkdown } from '../assistant/markdown'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
   /** template proposed by this assistant message, if any */
   proposedHtml?: string
-  /** whether the user applied that template — the accept/reject signal the
-   * model needs so it stops undoing work that was already agreed */
-  applied?: boolean
 }
 
 /** Assistant chat. The whole panel is hidden when the feature is off, so the
@@ -74,11 +72,7 @@ export default function AssistantPanel({
     const attached = images
     // Snapshot before the optimistic append, so the turn being sent is not in
     // its own history. Prose only: proposedHtml never leaves the browser.
-    const history = messages.map((m) => ({
-      role: m.role,
-      text: m.text,
-      applied: m.proposedHtml ? Boolean(m.applied) : null,
-    }))
+    const history = messages.map((m) => ({ role: m.role, text: m.text }))
     setMessages((m) => [...m, { role: 'user', text: message }, { role: 'assistant', text: '' }])
     setInput('')
     setImages([])
@@ -192,27 +186,25 @@ export default function AssistantPanel({
         )}
         {messages.map((m, i) => (
           <div key={i} className={`chat-msg ${m.role}`}>
-            <div className="chat-text">
-              {m.text ||
-                (streaming && i === messages.length - 1
-                  ? `Thinking… ${elapsed}s`
-                  : '')}
-            </div>
+            {m.role === 'assistant' && m.text ? (
+              // Markdown is escaped at render time (html: false), so model
+              // output cannot inject markup here.
+              <div
+                className="chat-text markdown"
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
+              />
+            ) : (
+              <div className="chat-text">
+                {m.text || (streaming && i === messages.length - 1 ? `Thinking… ${elapsed}s` : '')}
+              </div>
+            )}
             {m.proposedHtml && (
               <div className="chat-proposal">
                 <button className="btn small" onClick={() => setDiffFor(diffFor === i ? null : i)}>
                   {diffFor === i ? 'Hide diff' : 'Show diff'}
                 </button>
-                <button
-                  className="btn small primary"
-                  onClick={() => {
-                    onApply(m.proposedHtml!)
-                    setMessages((all) =>
-                      all.map((msg, j) => (j === i ? { ...msg, applied: true } : msg)),
-                    )
-                  }}
-                >
-                  {m.applied ? 'Applied ✓' : 'Apply'}
+                <button className="btn small primary" onClick={() => onApply(m.proposedHtml!)}>
+                  Apply
                 </button>
                 {diffFor === i && <DiffView from={currentHtml} to={m.proposedHtml} />}
               </div>

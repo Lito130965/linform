@@ -17,9 +17,6 @@ class HistoryTurn(BaseModel):
     role: Literal["user", "assistant"]
     #: Prose only — the client strips html blocks before sending.
     text: str = ""
-    #: For assistant turns: did the user apply the template it proposed? None
-    #: when the turn proposed none. This is the accept/reject signal.
-    applied: bool | None = None
 
 
 class AssistantRequest(BaseModel):

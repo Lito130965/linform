@@ -752,3 +752,43 @@ label {
   outline: 2px dashed var(--accent);
   outline-offset: -6px;
 }
+
+/* ---- assistant markdown ---- */
+
+.chat-text.markdown > *:not(:last-child) {
+  margin-bottom: 8px;
+}
+
+.chat-text.markdown ul,
+.chat-text.markdown ol {
+  padding-left: 20px;
+}
+
+.chat-text.markdown code {
+  background: var(--bg-input);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.chat-text.markdown pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.chat-text.markdown pre code {
+  background: none;
+  padding: 0;
+}
+
+.chat-text.markdown h1,
+.chat-text.markdown h2,
+.chat-text.markdown h3 {
+  font-size: 14px;
+}

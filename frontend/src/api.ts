@@ -92,8 +92,6 @@ export interface AssistantHistoryTurn {
   role: 'user' | 'assistant'
   /** prose only — html blocks are stripped before they leave the browser */
   text: string
-  /** assistant turns: whether the user applied the template it proposed */
-  applied?: boolean | null
 }
 
 export interface AssistantRequestBody {
