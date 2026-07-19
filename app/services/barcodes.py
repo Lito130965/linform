@@ -74,7 +74,12 @@ def qr(value: object, error: str = "m", border: int = 2, dark: str = "#000") -> 
     if level not in ("l", "m", "q", "h"):
         raise BarcodeError(f"qr error level must be one of l, m, q, h — got {error!r}")
     try:
-        symbol = segno.make(text, error=level)
+        # make_qr, never make: segno.make picks the smallest symbol that fits
+        # and silently produces a Micro QR for short payloads. Micro QR has one
+        # finder pattern instead of three, and most phone cameras and handheld
+        # scanners refuse it — the symbol looks plausible on paper and then
+        # cannot be read, which is the worst possible failure for a print form.
+        symbol = segno.make_qr(text, error=level)
     except Exception as exc:  # data too large for any version
         raise BarcodeError(f"qr cannot encode this value: {exc}") from exc
     buf = BytesIO()

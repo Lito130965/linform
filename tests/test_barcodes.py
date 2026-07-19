@@ -79,3 +79,25 @@ def test_data_uri_survives_autoescaping_intact():
     uri = re.search(r'src="([^"]+)"', html).group(1)
     assert "&amp;" not in uri.split(",", 1)[1]
     assert _svg(uri).startswith("<svg") or "<svg" in _svg(uri)
+
+
+def _qr_modules(data_uri: str, border: int = 2) -> int:
+    """Module count of the symbol the filter actually produced."""
+    svg = _svg(data_uri)
+    box = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg)
+    assert box, f"no viewBox in {svg[:120]}"
+    assert box.group(1) == box.group(2), "a QR symbol is square"
+    return int(box.group(1)) - 2 * border
+
+
+def test_the_filter_emits_a_full_qr_not_a_micro_qr():
+    """segno.make picks the smallest symbol that fits and silently returns a
+    Micro QR for short payloads. Micro QR has one finder pattern instead of
+    three, and most phone cameras and handheld scanners refuse it — the symbol
+    prints beautifully and then cannot be scanned, which is the worst way for a
+    paper form to fail. Micro tops out at 17 modules; a full QR starts at 21.
+    Asserted through the public filter, so swapping make_qr back for make fails
+    here rather than in the field."""
+    assert _qr_modules(barcodes.qr("KZ-2026-000123")) >= 21
+    # The shortest payloads are exactly where the Micro fallback used to bite.
+    assert _qr_modules(barcodes.qr("1")) >= 21
