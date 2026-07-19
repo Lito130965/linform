@@ -1,4 +1,7 @@
+import asyncio
 import json
+import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Literal
 
@@ -9,6 +12,8 @@ from pydantic import BaseModel, Field
 from app.core.auth import check_admin_token
 from app.core.config import Settings, get_settings
 from app.services import assistant
+
+log = logging.getLogger("linform.assistant")
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -73,11 +78,37 @@ async def chat(
     )
 
     async def event_stream() -> AsyncIterator[str]:
+        # uvicorn's access log only prints when the response finishes, so a
+        # stream that hangs leaves no trace at all. Log both ends: an "opened"
+        # with no matching "closed" is exactly the signature of a stuck stream.
+        started = time.monotonic()
+        log.info(
+            "assistant stream opened: images=%d history=%d html=%dB",
+            len(body.images),
+            len(body.history),
+            len(body.html),
+        )
+        deltas = 0
+        outcome = "ok"
         try:
             async for delta in assistant.stream_completion(settings, messages):
+                deltas += 1
                 yield _sse("delta", {"text": delta})
             yield _sse("done", {})
         except assistant.AssistantError as exc:
+            outcome = f"error: {exc}"
             yield _sse("error", {"detail": str(exc)})
+        except asyncio.CancelledError:
+            # The client went away mid-stream (navigated, hit Stop, lost the
+            # connection). Worth seeing: it is what a "frozen" tab looks like.
+            outcome = "cancelled by client"
+            raise
+        finally:
+            log.info(
+                "assistant stream closed after %.2fs: deltas=%d %s",
+                time.monotonic() - started,
+                deltas,
+                outcome,
+            )
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

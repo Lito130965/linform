@@ -75,6 +75,18 @@ ENGINE_FACTS = [
     "{% endfor %}{% endmacro %} — plus a checkbox macro putting X when a code"
     " matches ({{ 'X' if reason == 'A' else '' }}), and dates split into 2-2-4"
     " cell groups from a DDMMYYYY string.",
+    "QR codes and barcodes are drawn from payload data by two filters that"
+    " return an SVG data URI, so they go straight into an img src and the CSS"
+    ' width decides the printed size: <img src="{{ order_id | qr }}"'
+    ' style="width: 25mm"> and <img src="{{ tracking | barcode(\'code128\') }}"'
+    ' style="width: 60mm">. qr takes error=\'l\'|\'m\'|\'q\'|\'h\' (correction level)'
+    " and border=<modules of quiet zone>; barcode takes the symbology"
+    " (code128, code39, ean13, ean8, upca, isbn13, issn, itf, pzn, gs1_128),"
+    " text=True to print the digits under the bars, and module_height /"
+    " quiet_zone in millimetres. Never ask the consumer to send a rendered"
+    " image — send the value and encode it here. Fixed-length symbologies"
+    " (ean13, ean8, upca) reject payloads of the wrong length or checksum,"
+    " so prefer code128 unless the form demands a specific symbology.",
     "Money and long numbers arrive pre-formatted as strings from the consumer"
     ' (e.g. "20 000 000.00"); amounts in words too. Do not format them in the template.',
 ]

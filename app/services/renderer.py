@@ -10,9 +10,13 @@ local files. Default policy: data: URIs only.
 """
 
 import asyncio
+import logging
+import time
 from concurrent.futures import BrokenExecutor, ProcessPoolExecutor
 from typing import Protocol
 from urllib.parse import urlsplit
+
+log = logging.getLogger("linform.render")
 
 
 class RenderError(Exception):
@@ -75,11 +79,12 @@ class WeasyPrintRenderer:
 
     async def render_pdf(self, html: str) -> bytes:
         loop = asyncio.get_running_loop()
+        started = time.monotonic()
         future = loop.run_in_executor(
             self._pool, _render_worker, html, self._allow_external, self._allowed_hosts
         )
         try:
-            return await asyncio.wait_for(future, timeout=self._timeout)
+            pdf = await asyncio.wait_for(future, timeout=self._timeout)
         except asyncio.TimeoutError:
             raise RenderTimeout(f"Render exceeded {self._timeout:.0f}s timeout")
         except BrokenExecutor:
@@ -87,6 +92,14 @@ class WeasyPrintRenderer:
         except ValueError as exc:
             # Blocked URL policy violations surface as ValueError from the fetcher.
             raise RenderError(str(exc))
+        # Timed so a slow template is a number in the log rather than a feeling.
+        log.info(
+            "rendered %dB html -> %dB pdf in %.2fs",
+            len(html),
+            len(pdf),
+            time.monotonic() - started,
+        )
+        return pdf
 
     def shutdown(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)

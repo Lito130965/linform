@@ -8,16 +8,20 @@ from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, meta
 from jinja2.exceptions import SecurityError, UndefinedError
 from jinja2.sandbox import SandboxedEnvironment
 
+from app.services import barcodes
+
 
 class TemplateRenderError(Exception):
     """Template failed to compile or render; message is safe to show the client."""
 
 
 def _make_environment(strict: bool) -> SandboxedEnvironment:
-    return SandboxedEnvironment(
+    env = SandboxedEnvironment(
         autoescape=True,
         undefined=StrictUndefined if strict else Undefined,
     )
+    env.filters.update(barcodes.FILTERS)
+    return env
 
 
 def render_html(template_source: str, data: dict, *, strict: bool = True) -> str:
@@ -31,6 +35,10 @@ def render_html(template_source: str, data: dict, *, strict: bool = True) -> str
         raise TemplateRenderError(f"Missing placeholder value: {exc.message}") from exc
     except SecurityError as exc:
         raise TemplateRenderError(f"Template uses a forbidden construct: {exc}") from exc
+    except barcodes.BarcodeError as exc:
+        # A symbol the data cannot encode is the template author's problem, not
+        # a server fault: surface it like any other template error.
+        raise TemplateRenderError(f"Barcode error: {exc}") from exc
 
 
 def validate_template(template_source: str) -> None:
@@ -66,6 +74,10 @@ def render_version_html(version_id: int, template_source: str, data: dict, *, st
         raise TemplateRenderError(f"Missing placeholder value: {exc.message}") from exc
     except SecurityError as exc:
         raise TemplateRenderError(f"Template uses a forbidden construct: {exc}") from exc
+    except barcodes.BarcodeError as exc:
+        # A symbol the data cannot encode is the template author's problem, not
+        # a server fault: surface it like any other template error.
+        raise TemplateRenderError(f"Barcode error: {exc}") from exc
 
 
 def extract_placeholders(template_source: str) -> list[str]:

@@ -108,23 +108,58 @@ export interface AssistantEvent {
   data: { text?: string; detail?: string }
 }
 
+/** No response headers within this long means the request never got through. */
+const ASSISTANT_CONNECT_TIMEOUT_MS = 30_000
+/** Silence on an open stream. Generation itself may legitimately take a while,
+ * so what is bounded is the gap between events, not the total. Without this a
+ * stalled connection leaves the UI on "Thinking…" forever. */
+const ASSISTANT_IDLE_TIMEOUT_MS = 60_000
+
+class TimeoutError extends Error {}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const bell = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new TimeoutError(what)), ms)
+  })
+  return Promise.race([promise, bell]).finally(() => clearTimeout(timer)) as Promise<T>
+}
+
 /** Stream the assistant reply (SSE over fetch). */
 export async function* assistantChat(
   body: AssistantRequestBody,
   signal?: AbortSignal,
 ): AsyncGenerator<AssistantEvent> {
-  const resp = await authFetch('/api/assistant', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    signal,
-  })
+  const resp = await withTimeout(
+    authFetch('/api/assistant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }),
+    ASSISTANT_CONNECT_TIMEOUT_MS,
+    `The assistant did not respond within ${ASSISTANT_CONNECT_TIMEOUT_MS / 1000}s. ` +
+      'The request never reached the server — check the connection and try again.',
+  )
   if (!resp.ok || !resp.body) throw await parseError(resp)
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
   while (true) {
-    const { done, value } = await reader.read()
+    let chunk: ReadableStreamReadResult<Uint8Array>
+    try {
+      chunk = await withTimeout(
+        reader.read(),
+        ASSISTANT_IDLE_TIMEOUT_MS,
+        `The assistant stopped sending for ${ASSISTANT_IDLE_TIMEOUT_MS / 1000}s and was cut off. ` +
+          'Nothing was applied — try again.',
+      )
+    } catch (e) {
+      // Release the socket, or a stalled stream keeps holding it.
+      reader.cancel().catch(() => {})
+      throw e
+    }
+    const { done, value } = chunk
     if (done) break
     buf += decoder.decode(value, { stream: true })
     let sep

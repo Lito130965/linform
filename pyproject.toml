@@ -18,6 +18,10 @@ dependencies = [
     "alembic>=1.13",
     "python-multipart>=0.0.9",
     "httpx>=0.27",
+    # Symbols are drawn here from payload data. Both are pure Python with no
+    # system libraries, so the container stays as light as WeasyPrint left it.
+    "segno>=1.6",
+    "python-barcode>=0.15",
 ]
 
 [project.optional-dependencies]
