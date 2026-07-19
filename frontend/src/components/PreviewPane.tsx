@@ -6,9 +6,13 @@ import { api, ApiError } from '../api'
 export default function PreviewPane({
   html,
   data,
+  onError,
+  fixWithAi,
 }: {
   html: string
   data: Record<string, unknown> | null
+  onError?: (error: string | null) => void
+  fixWithAi?: () => void
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -30,10 +34,15 @@ export default function PreviewPane({
         urlRef.current = next
         setUrl(next)
         setError(null)
+        onError?.(null)
       } catch (e) {
-        if (e instanceof ApiError) setError(e.message)
-        else if (!(e instanceof DOMException && e.name === 'AbortError'))
+        if (e instanceof ApiError) {
+          setError(e.message)
+          onError?.(e.message)
+        } else if (!(e instanceof DOMException && e.name === 'AbortError')) {
           setError((e as Error).message)
+          onError?.((e as Error).message)
+        }
       } finally {
         setRendering(false)
       }
@@ -53,7 +62,16 @@ export default function PreviewPane({
           strict placeholders
         </label>
       </div>
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box">
+          {error}
+          {fixWithAi && (
+            <button className="btn small fix-ai" onClick={fixWithAi}>
+              ✨ Fix with AI
+            </button>
+          )}
+        </div>
+      )}
       {url ? (
         <iframe title="PDF preview" src={url} className="preview-frame" />
       ) : (

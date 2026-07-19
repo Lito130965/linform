@@ -82,8 +82,61 @@ export interface AssetInfo {
   size: number
 }
 
+export interface AssistantStatus {
+  enabled: boolean
+  model: string | null
+  sends_test_data: boolean
+}
+
+export interface AssistantRequestBody {
+  message: string
+  html: string
+  placeholders: string[]
+  test_data?: Record<string, unknown>
+  images?: string[]
+}
+
+export interface AssistantEvent {
+  event: 'delta' | 'done' | 'error'
+  data: { text?: string; detail?: string }
+}
+
+/** Stream the assistant reply (SSE over fetch). */
+export async function* assistantChat(
+  body: AssistantRequestBody,
+  signal?: AbortSignal,
+): AsyncGenerator<AssistantEvent> {
+  const resp = await authFetch('/api/assistant', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!resp.ok || !resp.body) throw await parseError(resp)
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let sep
+    while ((sep = buf.indexOf('\n\n')) !== -1) {
+      const raw = buf.slice(0, sep)
+      buf = buf.slice(sep + 2)
+      const ev = /^event: (.+)$/m.exec(raw)
+      const data = /^data: (.+)$/m.exec(raw)
+      if (ev && data) {
+        yield { event: ev[1] as AssistantEvent['event'], data: JSON.parse(data[1]) }
+      }
+    }
+  }
+}
+
 export const api = {
   listTemplates: () => request<TemplateInfo[]>('/api/templates'),
+
+  assistantStatus: () => request<AssistantStatus>('/api/assistant/status'),
 
   listAssets: () => request<AssetInfo[]>('/api/assets'),
 

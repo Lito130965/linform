@@ -3,7 +3,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import type { EditorView } from '@codemirror/view'
 import type { Editor as GrapesEditor } from 'grapesjs'
-import { api, TemplateDetail } from '../api'
+import { api, AssistantStatus, TemplateDetail } from '../api'
 import {
   detect,
   fromCanvasAssets,
@@ -18,6 +18,7 @@ import PlaceholderPanel from './PlaceholderPanel'
 import AssetsPanel from './AssetsPanel'
 import VersionHistory from './VersionHistory'
 import VisualEditor from './VisualEditor'
+import AssistantPanel from './AssistantPanel'
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -42,6 +43,10 @@ export default function Editor({ code }: { code: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
+  const [showAssistant, setShowAssistant] = useState(false)
+  const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
+  const [fixError, setFixError] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [mode, setMode] = useState<'code' | 'visual'>('code')
   const viewRef = useRef<EditorView | null>(null)
   const grapesRef = useRef<GrapesEditor | null>(null)
@@ -194,6 +199,25 @@ export default function Editor({ code }: { code: string }) {
     htmlRef.current = html
   }, [html])
 
+  // Assistant status decides whether the feature is shown at all.
+  useEffect(() => {
+    api.assistantStatus().then(setAssistant).catch(() => setAssistant({ enabled: false, model: null, sends_test_data: false }))
+  }, [])
+
+  const applyFromAssistant = (newHtml: string) => {
+    if (mode === 'visual') exitVisual()
+    setHtml(newHtml)
+    htmlRef.current = newHtml
+    setDirty(true)
+    setFixError(null)
+  }
+
+  const placeholderNames = useMemo(() => {
+    const names = new Set<string>()
+    for (const m of html.matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)/g)) names.add(m[1])
+    return [...names]
+  }, [html])
+
   const parsedData = useMemo<{ data: Record<string, unknown> | null; error: string | null }>(() => {
     try {
       const value = JSON.parse(testData)
@@ -272,6 +296,15 @@ export default function Editor({ code }: { code: string }) {
         <button className="btn" onClick={() => setShowHistory(!showHistory)}>
           History
         </button>
+        {assistant?.enabled && (
+          <button
+            className={showAssistant ? 'btn mode active' : 'btn'}
+            onClick={() => setShowAssistant(!showAssistant)}
+            title={`AI assistant (${assistant.model})`}
+          >
+            ✨ Assistant
+          </button>
+        )}
         {dirty && <span className="dirty-badge">unsaved</span>}
       </header>
 
@@ -320,8 +353,31 @@ export default function Editor({ code }: { code: string }) {
         </section>
 
         <section className="pane preview-pane">
-          <PreviewPane html={html} data={parsedData.data} />
+          <PreviewPane
+            html={html}
+            data={parsedData.data}
+            onError={setPreviewError}
+            fixWithAi={
+              assistant?.enabled
+                ? () => {
+                    setFixError(previewError)
+                    setShowAssistant(true)
+                  }
+                : undefined
+            }
+          />
         </section>
+
+        {showAssistant && assistant?.enabled && (
+          <AssistantPanel
+            status={assistant}
+            currentHtml={html}
+            placeholders={placeholderNames}
+            fixError={fixError}
+            onApply={applyFromAssistant}
+            onClose={() => setShowAssistant(false)}
+          />
+        )}
 
         {showHistory && detail && (
           <VersionHistory
