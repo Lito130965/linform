@@ -74,6 +74,13 @@ ENGINE_FACTS = [
     " | default('') — mandatory fields should stay strict on purpose.",
     "Jinja2 in a sandbox: {{ expr }}, {% for %}, {% if %}, {% set %},"
     " {% macro %}. Python internals are blocked.",
+    "A row of character cells must NEVER wrap. The cells are inline-block, so"
+    " they break onto a second line like words as soon as the container is"
+    " narrow — a 12-cell identifier silently becomes 8 cells and 4 underneath,"
+    " which on a paper form is simply wrong. Put white-space: nowrap on the"
+    " element wrapping the group (and size the cells so the row fits the space"
+    " you have). This is the single most common layout defect in these forms:"
+    " check every group of boxes — identifiers, dates, codes — sits on one line.",
     "Character-cell government forms pattern: a macro that spreads a value over"
     " bordered cells one character each — "
     "{% macro boxes(value, count) %}{% set v = value | default('') | string | upper %}"

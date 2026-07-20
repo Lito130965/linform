@@ -256,3 +256,15 @@ def test_prompt_forbids_stubs_and_partial_lists():
     assert "EVERY item of EVERY enumerated list" in prompt
     # Running short must be declared up front, not papered over at the end.
     assert "propose splitting it by section" in prompt
+
+
+def test_prompt_warns_about_the_two_defects_seen_on_real_forms():
+    """Both were reproduced on a real Kazakh tax form: calc() in
+    background-position crashed the engine, and every group of character cells
+    wrapped onto a second line."""
+    from app.services.assistant_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+    assert "calc() is NOT supported inside background-position" in prompt
+    assert "row of character cells must NEVER wrap" in prompt
+    assert "white-space: nowrap" in prompt
