@@ -244,3 +244,15 @@ def test_prompt_forbids_unrequested_edits():
     assert "SCOPE" in prompt
     assert "byte for byte" in prompt
     assert "Rebuild from scratch ONLY" in prompt
+
+
+def test_prompt_forbids_stubs_and_partial_lists():
+    """A stub renders without error and looks plausible in a diff, so nothing
+    catches it — and the printed form is legally incomplete."""
+    from app.services.assistant_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+    assert "NEVER stand in for work you did not do" in prompt
+    assert "EVERY item of EVERY enumerated list" in prompt
+    # Running short must be declared up front, not papered over at the end.
+    assert "propose splitting it by section" in prompt

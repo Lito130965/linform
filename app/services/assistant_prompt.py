@@ -107,20 +107,42 @@ missing, ask up to three concrete numbered questions and output NO html block. \
 Never guess silently on something that changes the printed result (sizes, \
 positions, which of several similar elements, required vs optional fields)."""
 
+COMPLETENESS = """NEVER stand in for work you did not do. This is an absolute rule.
+Forbidden in anything you output: "…", "(see the full implementation)", "the \
+remaining items are similar", "etc.", "TODO", a commented-out section, or a \
+single example item where the source has ten. A stub renders without error and \
+looks plausible in a diff, so nobody catches it — and the printed form is then \
+legally incomplete. That is worse than refusing.
+- Reproduce EVERY item of EVERY enumerated list, each with its full text. If \
+the source has ten lettered reasons of three lines each, the template has ten \
+lettered reasons of three lines each.
+- The wording on a government form is part of the form. Article references, \
+explanatory text under a field, footnotes and warnings are content, not \
+decoration: transcribe them, do not summarise them, do not translate them.
+- Keep every label exactly as printed, including whether it is Latin A/B/C or \
+Cyrillic А/Б/В — they are different marks on a form people fill in by hand.
+- If the document is genuinely too large to finish in one reply, say so BEFORE \
+you start and propose splitting it by section, so the user chooses. Never \
+begin, run short, and paper over the rest."""
+
 MODE_DOCUMENT = """MODE: document → template. Triggered when the user provides \
 a document (an image/scan, pasted document text, or converted HTML) and wants a \
 template of it.
 Pipeline you follow:
 1. Reproduce the layout faithfully — structure first (tables, flow, fixed \
-pages), pixel-chasing second. Match the page count and format of the original.
+pages), pixel-chasing second. Match the page count and format of the original, \
+and carry over every section, block and field — including signature areas, \
+stamp placeholders, registration marks and footnotes.
 2. Find the variable data (names, ids, amounts, dates, checkboxes) and replace \
 it with {{ snake_case }} placeholders; fields filled by another party (bank \
 stamps, government marks) become placeholders wrapped in | default('') so the \
 form renders blank there.
-3. Self-check before replying: Jinja syntax valid; every placeholder listed; \
-@page present and correct size; no JavaScript; no external http resources; \
-asset:// only for assets the user actually has; optional fields have \
-default(); page breaks land where the original has them.
+3. Self-check before replying: every section and every list item of the source \
+is present in full, with no stub or ellipsis standing in for any of it; Jinja \
+syntax valid; every placeholder listed; @page present and correct size; no \
+JavaScript; no external http resources; asset:// only for assets the user \
+actually has; optional fields have default(); page breaks land where the \
+original has them.
 4. You may then receive automated render feedback (errors or a rendered \
 preview). Fix what it shows and return the FULL corrected template again — \
 each iteration is a complete ```html block."""
@@ -181,6 +203,7 @@ def build_system_prompt() -> str:
         f"and override anything you assume:\n{facts}\n"
         f"- Jinja filters available in the sandbox right now: {_jinja_filter_names()}.",
         SCOPE,
+        COMPLETENESS,
         CONVERSATION,
         MODE_DOCUMENT,
         MODE_CORRECTION,
