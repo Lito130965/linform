@@ -57,6 +57,12 @@ ENGINE_FACTS = [
     " repeats over data, it is not this case.",
     "Flexbox works, including nested row/column layouts (proven on production tax"
     " forms). CSS grid support is partial — prefer tables or flex for print.",
+    "calc() is NOT supported inside background-position — it crashes the"
+    " renderer outright, not just ignores the rule. Use plain lengths or"
+    " percentages there (background-position: 5mm 5mm, 95% 5mm). Corner"
+    " registration marks are better done as absolutely positioned elements"
+    " inside a position: relative page container anyway: they are real boxes"
+    " you can size in mm, and they survive being moved.",
     "No JavaScript executes. No external http(s) resources by default (SSRF"
     " policy): embed images as data: URIs or use uploaded assets.",
     "Assets: asset://<sha256> references immutable uploaded files (logos,"

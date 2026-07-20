@@ -92,6 +92,19 @@ class WeasyPrintRenderer:
         except ValueError as exc:
             # Blocked URL policy violations surface as ValueError from the fetcher.
             raise RenderError(str(exc))
+        except Exception as exc:
+            # The engine can fail on CSS it does not fully support, and those
+            # failures arrive as arbitrary internal exceptions. Letting one
+            # through means the caller gets "Internal Server Error" for what is
+            # really a template it can fix, and the editor's "Fix with AI" has
+            # nothing to work with. Report it as a template problem, keep the
+            # detail in the log where it belongs.
+            log.exception("render failed on %dB of html", len(html))
+            raise RenderError(
+                f"The rendering engine could not handle this template "
+                f"({type(exc).__name__}: {exc}). This usually means CSS it does "
+                f"not support — check recently changed styles."
+            )
         # Timed so a slow template is a number in the log rather than a feeling.
         log.info(
             "rendered %dB html -> %dB pdf in %.2fs",

@@ -83,3 +83,31 @@ def test_placeholders_endpoint(client):
         json={"html": "{{ a }} {% for x in rows %}{{ x }}{% endfor %}", "data": {}},
     )
     assert resp.json() == {"placeholders": ["a", "rows"]}
+
+
+def test_engine_crash_is_a_template_error_not_a_500(client):
+    """WeasyPrint raises an internal AttributeError on calc() inside
+    background-position. A caller must get an actionable 422 about their
+    template, not "Internal Server Error" — the editor's fix-it flow has
+    nothing to work with otherwise."""
+    html = (
+        "<html><head><style>@page{size:A4;"
+        "background-image:linear-gradient(black,black);"
+        "background-size:5mm 5mm;"
+        "background-position:calc(100% - 5mm) 5mm}"
+        "</style></head><body><p>x</p></body></html>"
+    )
+    resp = client.post("/api/render", json={"html": html, "data": {}, "strict": False})
+    assert resp.status_code == 422
+    assert "could not handle this template" in resp.json()["detail"]
+
+
+def test_plain_background_position_still_renders(client):
+    html = (
+        "<html><head><style>@page{size:A4;"
+        "background-image:linear-gradient(black,black);"
+        "background-size:5mm 5mm;background-position:95% 5mm}"
+        "</style></head><body><p>x</p></body></html>"
+    )
+    resp = client.post("/api/render", json={"html": html, "data": {}, "strict": False})
+    assert resp.status_code == 200
