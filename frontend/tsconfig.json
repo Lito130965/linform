@@ -12,5 +12,8 @@
     "esModuleInterop": true,
     "noUnusedLocals": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests are vitest's business (they use node builtins the app must not);
+  // the app build type-checks application code only.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }
