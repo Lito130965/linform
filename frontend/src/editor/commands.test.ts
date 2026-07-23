@@ -122,3 +122,59 @@ describe('text-commands', () => {
     host.remove()
   })
 })
+
+describe('furniture parsing', () => {
+  const CSS = `
+    @page {
+      size: A4;
+      margin-bottom: 35mm;
+      @bottom-left { content: element(footer); }
+      @top-right {
+        content: "Страница " counter(page) " из " counter(pages);
+        font-size: 8pt;
+      }
+    }
+    div.footer { position: running(footer); font-size: 8pt; }
+  `
+
+  it('reads margin boxes with counters as a human preview', async () => {
+    const { parseMarginBoxes } = await import('./furniture')
+    const boxes = parseMarginBoxes(CSS)
+    const top = boxes.find((b) => b.edge === 'top')!
+    expect(top.slot).toBe('right')
+    expect(top.preview).toBe('Страница ⟨1⟩ из ⟨N⟩')
+    const bottom = boxes.find((b) => b.edge === 'bottom')!
+    expect(bottom.runningName).toBe('footer')
+    expect(bottom.preview).toContain('element footer')
+  })
+
+  it('finds the selector of a running element and badges its true edge', async () => {
+    const { runningSelectors, runningAffordanceCss } = await import('./furniture')
+    expect(runningSelectors(CSS)).toEqual([{ selector: 'div.footer', name: 'footer' }])
+    const css = runningAffordanceCss(CSS)
+    expect(css).toContain('div.footer')
+    expect(css).toContain('bottom of every printed page')
+  })
+
+  it('ignores css without @page or running', async () => {
+    const { parseMarginBoxes, runningSelectors } = await import('./furniture')
+    expect(parseMarginBoxes('body { color: red }')).toEqual([])
+    expect(runningSelectors('body { position: relative }')).toEqual([])
+  })
+})
+
+describe('setTableBorders', () => {
+  it('rules every cell, frames the outside, and clears', async () => {
+    const { setTableBorders } = await import('./table-ops')
+    const b = bodyOf(TABLE)
+    const cell = b.querySelector('td')!
+    setTableBorders(cell, 'all')
+    expect((b.querySelector('table') as HTMLElement).style.border).toContain('solid')
+    expect((cell as HTMLElement).style.border).toContain('1px')
+    setTableBorders(cell, 'outer')
+    expect((cell as HTMLElement).style.border).toBe('')
+    expect((b.querySelector('table') as HTMLElement).style.border).toContain('solid')
+    setTableBorders(cell, 'none')
+    expect((b.querySelector('table') as HTMLElement).style.border).toBe('')
+  })
+})

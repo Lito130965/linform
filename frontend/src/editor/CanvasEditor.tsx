@@ -11,7 +11,8 @@ import {
   formatFromStyles,
 } from './page'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
-import { addColumn, addRow, deleteColumn, deleteRow } from './table-ops'
+import { parseMarginBoxes, runningAffordanceCss } from './furniture'
+import { BorderMode, addColumn, addRow, deleteColumn, deleteRow, setTableBorders } from './table-ops'
 import { setAlign, toggleInline } from './text-commands'
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
@@ -70,6 +71,8 @@ export default function CanvasEditor({
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
     [format],
   )
+  // The @page margin boxes the browser cannot render: shown as strips.
+  const furniture = useMemo(() => parseMarginBoxes(canvasStyles), [canvasStyles])
 
   const select = (el: Element | null) => {
     const body = bodyRef.current
@@ -119,8 +122,10 @@ export default function CanvasEditor({
     doc.close()
 
     const style = doc.createElement('style')
-    // Author CSS first, affordances second, so selection outlines win.
-    style.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS
+    // Author CSS first, affordances second, so selection outlines win. The
+    // running-element badges come from the author's own @page rules: a footer
+    // parked at the top of <body> must read as a footer, not as stray text.
+    style.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS + runningAffordanceCss(canvasStyles)
     doc.head.appendChild(style)
 
     const body = doc.body
@@ -304,9 +309,7 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
   }
 
-  const inTable = selected && ['cell', 'row', 'loop'].includes(selected.kind)
-    ? !!selected.el.closest('table')
-    : false
+  const inTable = selected ? !!selected.el.closest('table') : false
 
   // Toolbar position in stage coordinates (iframe has no internal scroll).
   let toolbarPos: { left: number; top: number } | null = null
@@ -395,6 +398,7 @@ export default function CanvasEditor({
           className="canvas-stage"
           style={{ width: stageWidth, height: frameHeight * zoom }}
         >
+          <FurnitureStrip edge="top" boxes={furniture} zoom={zoom} />
           <iframe
             ref={iframeRef}
             title="template canvas"
@@ -407,6 +411,7 @@ export default function CanvasEditor({
               display: 'block',
             }}
           />
+          <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
           {selected && toolbarPos && (
             <div className="el-toolbar" style={{ left: toolbarPos.left, top: toolbarPos.top }}>
               <span className="el-kind">{KIND_LABEL[selected.kind]}</span>
@@ -433,6 +438,20 @@ export default function CanvasEditor({
                   <button title="Delete column" onClick={() => tableOp(deleteColumn)}>
                     −C
                   </button>
+                  <select
+                    className="el-borders"
+                    title="Table borders"
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) tableOp((el) => setTableBorders(el, e.target.value as BorderMode))
+                      e.target.value = ''
+                    }}
+                  >
+                    <option value="">border…</option>
+                    <option value="all">all cells</option>
+                    <option value="outer">outer only</option>
+                    <option value="none">none</option>
+                  </select>
                 </>
               )}
               <button title="Duplicate" onClick={duplicateSelected}>
@@ -445,6 +464,36 @@ export default function CanvasEditor({
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** The @page margin boxes, rendered where the browser refuses to: a strip
+ * above or below the page. Content is an approximation — counters become
+ * ⟨1⟩/⟨N⟩ — because true values exist only at paginate time; the strip's job
+ * is to stop headers and footers from being invisible in the editor. */
+function FurnitureStrip({
+  edge,
+  boxes,
+  zoom,
+}: {
+  edge: 'top' | 'bottom'
+  boxes: ReturnType<typeof parseMarginBoxes>
+  zoom: number
+}) {
+  const own = boxes.filter((b) => b.edge === edge)
+  if (own.length === 0) return null
+  const slot = (name: 'left' | 'center' | 'right') =>
+    own
+      .filter((b) => b.slot === name)
+      .map((b) => b.preview)
+      .join(' ')
+  return (
+    <div className="furniture-strip" style={{ fontSize: 11 * zoom }}>
+      <span>{slot('left')}</span>
+      <span>{slot('center')}</span>
+      <span>{slot('right')}</span>
+      <i className="furniture-note">{edge === 'top' ? 'page header' : 'page footer'}</i>
     </div>
   )
 }

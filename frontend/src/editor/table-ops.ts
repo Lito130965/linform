@@ -79,6 +79,24 @@ export function addColumn(from: Element): boolean {
   return true
 }
 
+export type BorderMode = 'all' | 'outer' | 'none'
+
+/** Border presets for the whole table, as inline styles — the only channel
+ * that survives export (the author's <style> is read-only in the canvas).
+ * 'all' rules every cell, 'outer' frames just the table, 'none' clears both.
+ * Anything fancier stays a Code-mode job on purpose. */
+export function setTableBorders(from: Element, mode: BorderMode, width = 1): boolean {
+  const table = tableOf(from)
+  if (!table) return false
+  const border = `${width}px solid #000`
+  table.style.borderCollapse = 'collapse'
+  table.style.border = mode === 'none' ? '' : border
+  for (const cell of Array.from(table.querySelectorAll('td, th'))) {
+    ;(cell as HTMLElement).style.border = mode === 'all' ? border : ''
+  }
+  return true
+}
+
 export function deleteColumn(from: Element): boolean {
   const table = tableOf(from)
   const index = cellIndexOf(from)
