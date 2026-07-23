@@ -869,3 +869,34 @@ label {
 .el-toolbar button:hover {
   background: var(--bg-input);
 }
+
+.canvas-topbar .topbar-group {
+  display: flex;
+  gap: 2px;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+}
+
+.canvas-topbar .tb {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.canvas-topbar .tb:hover:not(:disabled) {
+  background: var(--bg-input);
+}
+
+.canvas-topbar .tb:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.canvas-topbar .muted {
+  margin-left: auto;
+}

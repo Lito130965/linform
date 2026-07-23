@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
+import { BLOCKS } from './blocks'
+import { exportBody, prepareBody, prepareFragment } from './export-body'
+import { SnapshotHistory } from './history'
 import {
   CANVAS_AFFORDANCE_CSS,
   CANVAS_GUTTER_PX,
   PAGE_FORMATS,
   formatFromStyles,
 } from './page'
-import { exportBody, prepareBody, prepareFragment } from './export-body'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
+import { addColumn, addRow, deleteColumn, deleteRow } from './table-ops'
+import { setAlign, toggleInline } from './text-commands'
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
@@ -26,6 +31,10 @@ export interface CanvasEditorApi {
  * toolbar commands on the selected node. Export is innerHTML minus exactly
  * the affordances we added (export-body.ts) — no model, no re-serialization,
  * which is the whole reason this editor exists.
+ *
+ * Undo/redo is snapshot-based (see history.ts for why): every settled burst
+ * of mutations commits one clean snapshot; restoring one rewrites the body
+ * and re-applies the canvas affordances.
  */
 export default function CanvasEditor({
   initialBody,
@@ -44,6 +53,8 @@ export default function CanvasEditor({
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLElement | null>(null)
+  const historyRef = useRef<SnapshotHistory | null>(null)
+  const restoringRef = useRef(false)
   const callbacksRef = useRef({ onChange, onReady })
   callbacksRef.current = { onChange, onReady }
 
@@ -51,6 +62,7 @@ export default function CanvasEditor({
   const [zoom, setZoom] = useState(1)
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
+  const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
   // Bumped on any mutation so the toolbar re-measures its position.
   const [, setTick] = useState(0)
 
@@ -58,6 +70,43 @@ export default function CanvasEditor({
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
     [format],
   )
+
+  const select = (el: Element | null) => {
+    const body = bodyRef.current
+    if (!body) return
+    for (const prev of Array.from(body.querySelectorAll('[data-lf-selected]'))) {
+      prev.removeAttribute('data-lf-selected')
+    }
+    if (el && el.isConnected) {
+      el.setAttribute('data-lf-selected', '')
+      setSelected({ el, kind: kindOf(el)! })
+    } else {
+      setSelected(null)
+    }
+  }
+
+  const refreshHistState = () => {
+    const h = historyRef.current
+    if (h) setHistState({ canUndo: h.canUndo, canRedo: h.canRedo })
+  }
+
+  const restoreSnapshot = (snapshot: string | null) => {
+    const body = bodyRef.current
+    if (snapshot === null || !body) return
+    restoringRef.current = true
+    body.innerHTML = snapshot
+    prepareBody(body)
+    setSelected(null)
+    callbacksRef.current.onChange(snapshot)
+    refreshHistState()
+    // Let the observer flush the burst before listening again.
+    queueMicrotask(() => {
+      restoringRef.current = false
+    })
+  }
+
+  const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
+  const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
 
   // ---- mount the document once -------------------------------------------
   useEffect(() => {
@@ -78,41 +127,77 @@ export default function CanvasEditor({
     body.innerHTML = initialBody
     prepareBody(body)
     bodyRef.current = body
+    historyRef.current = new SnapshotHistory(exportBody(body))
 
     // Selection: nearest structural node under the click; body click clears.
     const onClick = (e: MouseEvent) => {
-      const hit = findSelectable(e.target as Element, body)
-      for (const prev of Array.from(body.querySelectorAll('[data-lf-selected]'))) {
-        prev.removeAttribute('data-lf-selected')
-      }
-      if (hit) {
-        hit.setAttribute('data-lf-selected', '')
-        setSelected({ el: hit, kind: kindOf(hit)! })
-      } else {
-        setSelected(null)
-      }
+      select(findSelectable(e.target as Element, body))
     }
     doc.addEventListener('click', onClick)
+
+    // Undo/redo shortcuts; native contenteditable history is unreliable after
+    // programmatic mutations, so ours replaces it entirely.
+    const onKeydown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const key = e.key.toLowerCase()
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault()
+        redo()
+      }
+    }
+    doc.addEventListener('keydown', onKeydown)
+
+    // Paste from Word / Google Docs arrives as mso-soup; replace it with
+    // allowlisted structural markup before it can reach the document.
+    const onPaste = (e: ClipboardEvent) => {
+      const html = e.clipboardData?.getData('text/html')
+      if (!html) return
+      e.preventDefault()
+      const cleaned = cleanPastedHtml(html)
+      if (!cleaned) return
+      const sel = doc.getSelection()
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0)
+        range.deleteContents()
+        const holder = doc.createElement('div')
+        holder.innerHTML = cleaned
+        const frag = doc.createDocumentFragment()
+        while (holder.firstChild) frag.appendChild(holder.firstChild)
+        range.insertNode(frag)
+        sel.collapseToEnd()
+      } else {
+        body.insertAdjacentHTML('beforeend', cleaned)
+      }
+    }
+    doc.addEventListener('paste', onPaste)
 
     // Content height drives the iframe height (the outer pane scrolls).
     const measure = () => setFrameHeight(Math.max(doc.documentElement.scrollHeight, 200))
     measure()
 
-    // Any DOM change: re-measure, reposition the toolbar, debounce an export.
+    // Any settled burst of DOM changes: re-measure, reposition the toolbar,
+    // commit one history snapshot, ship one export.
     let timer: ReturnType<typeof setTimeout> | undefined
     const observer = new MutationObserver(() => {
       measure()
       setTick((t) => t + 1)
+      if (restoringRef.current) return
       clearTimeout(timer)
-      timer = setTimeout(() => callbacksRef.current.onChange(exportBody(body)), 300)
+      timer = setTimeout(() => {
+        const snapshot = exportBody(body)
+        historyRef.current?.commit(snapshot)
+        refreshHistState()
+        callbacksRef.current.onChange(snapshot)
+      }, 300)
     })
     observer.observe(body, {
       subtree: true,
       childList: true,
       characterData: true,
       attributes: true,
-      // Selection marks are canvas-only; exporting on them would be noise.
-      attributeFilter: undefined,
     })
 
     callbacksRef.current.onReady?.({
@@ -139,9 +224,12 @@ export default function CanvasEditor({
       clearTimeout(timer)
       observer.disconnect()
       doc.removeEventListener('click', onClick)
+      doc.removeEventListener('keydown', onKeydown)
+      doc.removeEventListener('paste', onPaste)
       // Flush the final state so mode switches never lose an edit.
       callbacksRef.current.onChange(exportBody(body))
       bodyRef.current = null
+      historyRef.current = null
     }
     // Mounted once per template/version — the parent remounts via key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,10 +252,41 @@ export default function CanvasEditor({
     return () => ro.disconnect()
   }, [pageWidth])
 
-  // ---- element toolbar ----------------------------------------------------
-  const removeSelected = () => {
+  // ---- commands -----------------------------------------------------------
+  const withDoc = (fn: (doc: Document) => void) => {
+    const doc = iframeRef.current?.contentDocument
+    if (doc) fn(doc)
+  }
+
+  const insertBlock = (id: string) => {
+    const block = BLOCKS.find((b) => b.id === id)
+    const body = bodyRef.current
+    const doc = iframeRef.current?.contentDocument
+    if (!block || !body || !doc) return
+    const holder = doc.createElement('div')
+    holder.innerHTML = block.content
+    const node = holder.firstElementChild
+    if (!node) return
+    prepareFragment(node)
+    const target = selected?.el.isConnected ? selected.el : null
+    if (target) target.after(node)
+    else body.appendChild(node)
+    select(node)
+  }
+
+  const moveSelected = (dir: -1 | 1) => {
     if (!selected) return
-    const next = parentSelectable(selected.el, bodyRef.current!)
+    const el = selected.el
+    const sibling = dir === -1 ? el.previousElementSibling : el.nextElementSibling
+    if (!sibling) return
+    if (dir === -1) sibling.before(el)
+    else sibling.after(el)
+    setTick((t) => t + 1)
+  }
+
+  const removeSelected = () => {
+    if (!selected || !bodyRef.current) return
+    const next = parentSelectable(selected.el, bodyRef.current)
     selected.el.remove()
     select(next)
   }
@@ -179,24 +298,15 @@ export default function CanvasEditor({
     selected.el.after(copy)
   }
 
-  const selectParent = () => {
-    if (!selected || !bodyRef.current) return
-    select(parentSelectable(selected.el, bodyRef.current))
+  const tableOp = (op: (el: Element) => unknown) => {
+    if (!selected) return
+    op(selected.el)
+    setTick((t) => t + 1)
   }
 
-  const select = (el: Element | null) => {
-    const body = bodyRef.current
-    if (!body) return
-    for (const prev of Array.from(body.querySelectorAll('[data-lf-selected]'))) {
-      prev.removeAttribute('data-lf-selected')
-    }
-    if (el) {
-      el.setAttribute('data-lf-selected', '')
-      setSelected({ el, kind: kindOf(el)! })
-    } else {
-      setSelected(null)
-    }
-  }
+  const inTable = selected && ['cell', 'row', 'loop'].includes(selected.kind)
+    ? !!selected.el.closest('table')
+    : false
 
   // Toolbar position in stage coordinates (iframe has no internal scroll).
   let toolbarPos: { left: number; top: number } | null = null
@@ -207,7 +317,7 @@ export default function CanvasEditor({
       top: Math.max(0, rect.top * zoom - 30),
     }
   } else if (selected && !selected.el.isConnected) {
-    // The node was removed by an edit (e.g. text retype around it).
+    // The node was removed by an edit (e.g. an undo or a retype around it).
     queueMicrotask(() => setSelected(null))
   }
 
@@ -226,6 +336,58 @@ export default function CanvasEditor({
             ))}
           </select>
         </label>
+        <label>
+          Insert
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) insertBlock(e.target.value)
+            }}
+          >
+            <option value="">block…</option>
+            {BLOCKS.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="topbar-group">
+          <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
+            <b>B</b>
+          </button>
+          <button className="tb" title="Italic" onClick={() => withDoc((d) => toggleInline(d, 'italic'))}>
+            <i>I</i>
+          </button>
+          <button
+            className="tb"
+            title="Underline"
+            onClick={() => withDoc((d) => toggleInline(d, 'underline'))}
+          >
+            <u>U</u>
+          </button>
+        </span>
+        <span className="topbar-group">
+          {(['left', 'center', 'right'] as const).map((a) => (
+            <button
+              key={a}
+              className="tb"
+              title={`Align ${a}`}
+              onClick={() => selected && setAlign(selected.el, a)}
+              disabled={!selected}
+            >
+              {a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥'}
+            </button>
+          ))}
+        </span>
+        <span className="topbar-group">
+          <button className="tb" title="Undo (Ctrl+Z)" onClick={undo} disabled={!histState.canUndo}>
+            ↶
+          </button>
+          <button className="tb" title="Redo (Ctrl+Y)" onClick={redo} disabled={!histState.canRedo}>
+            ↷
+          </button>
+        </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
       </div>
       <div className="canvas-scroll" ref={scrollRef}>
@@ -248,9 +410,31 @@ export default function CanvasEditor({
           {selected && toolbarPos && (
             <div className="el-toolbar" style={{ left: toolbarPos.left, top: toolbarPos.top }}>
               <span className="el-kind">{KIND_LABEL[selected.kind]}</span>
-              <button title="Select parent" onClick={selectParent}>
+              <button title="Select parent" onClick={() => select(parentSelectable(selected.el, bodyRef.current!))}>
                 ↑
               </button>
+              <button title="Move up" onClick={() => moveSelected(-1)}>
+                ▲
+              </button>
+              <button title="Move down" onClick={() => moveSelected(1)}>
+                ▼
+              </button>
+              {inTable && (
+                <>
+                  <button title="Add row" onClick={() => tableOp(addRow)}>
+                    +R
+                  </button>
+                  <button title="Delete row" onClick={() => tableOp(deleteRow)}>
+                    −R
+                  </button>
+                  <button title="Add column" onClick={() => tableOp(addColumn)}>
+                    +C
+                  </button>
+                  <button title="Delete column" onClick={() => tableOp(deleteColumn)}>
+                    −C
+                  </button>
+                </>
+              )}
               <button title="Duplicate" onClick={duplicateSelected}>
                 ⧉
               </button>
