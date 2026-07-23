@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import type { EditorView } from '@codemirror/view'
-import type { Editor as GrapesEditor } from 'grapesjs'
 import { api, AssistantStatus, TemplateDetail } from '../api'
 import {
   detect,
@@ -17,17 +16,8 @@ import PreviewPane from './PreviewPane'
 import PlaceholderPanel from './PlaceholderPanel'
 import AssetsPanel from './AssetsPanel'
 import VersionHistory from './VersionHistory'
-import VisualEditor from './VisualEditor'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import AssistantPanel from './AssistantPanel'
-
-/** Migration flag: the custom DOM editor replaces GrapesJS behind it until it
- * reaches parity on real templates (Stage 3 of the plan removes GrapesJS).
- * Turn on with ?newEditor in the URL or localStorage lf-editor = "custom". */
-const USE_CUSTOM_EDITOR =
-  typeof window !== 'undefined' &&
-  (new URLSearchParams(window.location.search).has('newEditor') ||
-    window.localStorage.getItem('lf-editor') === 'custom')
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -66,10 +56,10 @@ export default function Editor({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [mode, setMode] = useState<'code' | 'visual'>('code')
   const viewRef = useRef<EditorView | null>(null)
-  const grapesRef = useRef<GrapesEditor | null>(null)
   const canvasApiRef = useRef<CanvasEditorApi | null>(null)
   const htmlRef = useRef('')
-  // Set on entering Visual: the parts of the template GrapesJS must not see.
+  // Set on entering Visual: the document scaffolding and <style> the canvas
+  // shows read-only but must not let the user edit into the body.
   const splitRef = useRef<{ prefix: string; suffix: string; styles: string } | null>(null)
   const visualInitialRef = useRef('')
 
@@ -150,15 +140,7 @@ export default function Editor({
 
   const insertText = (text: string) => {
     if (mode === 'visual') {
-      if (USE_CUSTOM_EDITOR) {
-        canvasApiRef.current?.insertHtml(toCanvasAssets(text))
-        setDirty(true)
-        return
-      }
-      const editor = grapesRef.current
-      if (!editor) return
-      const target = editor.getSelected() ?? editor.getWrapper()
-      target?.append(toCanvasAssets(text))
+      canvasApiRef.current?.insertHtml(toCanvasAssets(text))
       setDirty(true)
       return
     }
@@ -214,7 +196,7 @@ export default function Editor({
   }
 
   const exitVisual = () => {
-    grapesRef.current = null
+    canvasApiRef.current = null
     setMode('code')
   }
 
@@ -350,7 +332,6 @@ export default function Editor({
               }}
             />
           ) : (
-            USE_CUSTOM_EDITOR ? (
             <CanvasEditor
               key={loadedVersion ?? 'new'}
               initialBody={visualInitialRef.current}
@@ -360,17 +341,6 @@ export default function Editor({
                 canvasApiRef.current = api
               }}
             />
-            ) : (
-            <VisualEditor
-              key={loadedVersion ?? 'new'}
-              initialBody={visualInitialRef.current}
-              canvasStyles={splitRef.current?.styles ?? ''}
-              onChange={handleVisualChange}
-              onReady={(editor) => {
-                grapesRef.current = editor
-              }}
-            />
-            )
           )}
           <div className="bottom-panels">
             <PlaceholderPanel html={html} onInsert={insertPlaceholder} />

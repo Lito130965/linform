@@ -185,7 +185,9 @@ Better to know before you build on it:
 - [x] Web editor: HTML mode with live paged preview, placeholder panel
 - [x] Content-addressed assets (logos, backgrounds) with `asset://` references
 - [x] Version history with diff, publish/rollback from the UI
-- [x] Visual (WYSIWYG) editing mode alongside the HTML mode
+- [x] Visual (WYSIWYG) editing mode alongside the HTML mode — a purpose-built
+  DOM editor whose round trip is byte-exact through the Jinja bridge (no
+  third-party WYSIWYG re-serializing the markup)
 - [x] Import a starting template from `.docx`
 - [x] Barcodes and QR codes from payload data
 - [x] Optional AI assistant (bring your own key)

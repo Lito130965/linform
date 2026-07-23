@@ -235,21 +235,6 @@ select:focus {
   color: #fff;
 }
 
-.visual-editor {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* Let GrapesJS default UI coexist with the dark app chrome */
-.visual-editor .gjs-one-bg {
-  background-color: var(--bg-panel);
-}
-
-.visual-editor .gjs-two-color {
-  color: var(--text);
-}
-
 .workspace {
   flex: 1;
   display: flex;
