@@ -38,6 +38,10 @@ curl -X POST localhost:8100/api/render/invoice \
   -d '{"number": 42}' --output invoice.pdf
 ```
 
+Ready-made templates to start from — an invoice with a flowing table, a
+shipping label with QR/barcode, a fixed-layout certificate — live in
+[examples/](examples/), each with sample data and curl commands.
+
 ## API
 
 | Method | Path | Purpose |

@@ -1,7 +1,11 @@
 FROM node:20-alpine AS ui
 WORKDIR /ui
-COPY frontend/package.json ./
-RUN npm install --no-audit --no-fund
+# npm ci, not npm install: the lock file pins exact versions, the install is
+# reproducible, and a broken node_modules fails loudly instead of exiting 0
+# with half the packages missing (seen in the wild: "Exit handler never
+# called!" followed by "tsc: not found" one step later).
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY frontend ./
 RUN npm run build
 

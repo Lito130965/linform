@@ -1,0 +1,40 @@
+<!-- Shipping label: QR and barcode filters.
+     The consumer sends plain values (an order id, a tracking number); the
+     symbols are drawn by Linform as vector SVG, so they stay crisp at any
+     print resolution. CSS width in mm decides the printed size. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A5 landscape; margin: 10mm; }
+  body { font-family: 'Liberation Sans', sans-serif; font-size: 11pt; }
+  .box { border: 2px solid #000; padding: 6mm; display: flex; gap: 8mm; }
+  .addr { flex: 1; }
+  .label { font-size: 8pt; text-transform: uppercase; color: #777; margin-top: 4mm; }
+  .name { font-size: 14pt; font-weight: bold; }
+  .codes { text-align: center; }
+  .codes img { display: block; margin: 0 auto 2mm; }
+  .tracking { font-family: 'Liberation Mono', monospace; font-size: 10pt; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="addr">
+      <div class="label">Ship to</div>
+      <div class="name">{{ recipient.name }}</div>
+      {{ recipient.address }}<br>
+      {{ recipient.city }}, {{ recipient.postcode }}<br>
+      {{ recipient.phone }}
+
+      <div class="label">From</div>
+      {{ sender.name }}, {{ sender.city }}
+    </div>
+    <div class="codes">
+      <!-- 30mm QR: order lookup for the courier's phone camera -->
+      <img src="{{ order_id | qr }}" style="width: 30mm">
+      <!-- Code128; text=True prints the digits under the bars -->
+      <img src="{{ tracking | barcode('code128', text=True) }}" style="width: 55mm">
+    </div>
+  </div>
+</body>
+</html>

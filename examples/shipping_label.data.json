@@ -1,0 +1,15 @@
+{
+  "order_id": "ORD-2026-007312",
+  "tracking": "RA123456789KZ",
+  "recipient": {
+    "name": "Jane Example",
+    "address": "Apartment 5, 10 Sample avenue",
+    "city": "Springfield",
+    "postcode": "010101",
+    "phone": "+1 555 0100"
+  },
+  "sender": {
+    "name": "Acme Warehouse",
+    "city": "Shelbyville"
+  }
+}
