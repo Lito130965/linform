@@ -100,15 +100,20 @@ describe('detect: honest rejection, never silent loss', () => {
     expect(() => protect(html)).toThrow()
   }
 
-  it('macros are code-only', () => {
-    rejects('{% macro boxes(v, n) %}<b>{{ v }}</b>{% endmacro %}<p>x</p>', 'macro')
+  // Macros, set and comments are no longer code-only — they are tolerated as
+  // inert raw chips (see tolerance.test.ts for the round-trip proof). detect()
+  // reports them supported so the visual editor opens.
+  it('macros are tolerated, not rejected', () => {
+    expect(
+      detect('{% macro boxes(v, n) %}<b>{{ v }}</b>{% endmacro %}<p>x</p>').supported,
+    ).toBe(true)
   })
 
-  it('set is code-only', () => {
-    rejects("{% set org = org_name | default('') %}<p>{{ org }}</p>", 'set')
+  it('set is tolerated, not rejected', () => {
+    expect(detect("{% set org = org_name | default('') %}<p>{{ org }}</p>").supported).toBe(true)
   })
 
-  it('elif/else are code-only for now', () => {
+  it('elif/else are still code-only', () => {
     rejects('{% if a %}<p>a</p>{% else %}<p>b</p>{% endif %}', 'else')
   })
 
@@ -120,8 +125,8 @@ describe('detect: honest rejection, never silent loss', () => {
     rejects('{% for x in xs %}plain {{ x }} text{% endfor %}', 'element boundary')
   })
 
-  it('jinja comments are code-only', () => {
-    rejects('{#- helper -#}<p>{{ x }}</p>', 'comment')
+  it('jinja comments are tolerated, not rejected', () => {
+    expect(detect('{#- helper -#}<p>{{ x }}</p>').supported).toBe(true)
   })
 
   it('statement inside a tag attribute is code-only', () => {
@@ -132,14 +137,20 @@ describe('detect: honest rejection, never silent loss', () => {
     rejects('{% for x in xs %}<p>{{ x }}</p>', 'without a closing tag')
   })
 
-  it('the real KKM form (macros, set, comments) is honestly code-only', () => {
+  it('the real KKM form (macros + set at flow position) is now editable', () => {
     const kkmLike =
       "{%- macro boxes(value, count) -%}{%- endmacro -%}" +
       "{%- set reason = reason_code | default('') | upper -%}" +
       '<div class="row">{{ boxes(iin_bin, 12) }}</div>'
-    const result = detect(kkmLike)
-    expect(result.supported).toBe(false)
-    expect(result.reasons.length).toBeGreaterThan(0)
+    expect(detect(kkmLike).supported).toBe(true)
+  })
+
+  it('but a construct wedged between table rows stays code-only', () => {
+    const html =
+      '<table><tbody><tr><td>a</td></tr>' +
+      '{% set partials = xs | default([]) %}' +
+      '{% for p in partials %}<tr><td>{{ p }}</td></tr>{% endfor %}</tbody></table>'
+    expect(detect(html).supported).toBe(false)
   })
 
   it('supported templates pass', () => {

@@ -46,6 +46,17 @@ export const CANVAS_AFFORDANCE_CSS = `
   }
   [data-jinja-for] { outline: 1px dashed rgba(79, 140, 255, 0.65); outline-offset: 1px; }
   [data-jinja-if] { outline: 1px dashed rgba(63, 178, 111, 0.7); outline-offset: 1px; }
+  [data-jinja-raw] {
+    background: rgba(138, 109, 26, 0.12);
+    border: 1px solid rgba(138, 109, 26, 0.5);
+    border-radius: 3px;
+    padding: 0 4px;
+    font: 11px/1.5 ui-monospace, monospace;
+    color: #8a6d1a;
+    white-space: nowrap;
+    cursor: default;
+    user-select: none;
+  }
   [data-lf-selected] {
     outline: 2px solid #4f8cff !important;
     outline-offset: 1px;

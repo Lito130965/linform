@@ -37,6 +37,32 @@ const VOID_ELEMENTS = new Set([
 const SUPPORTED_BLOCKS = new Set(['for', 'if'])
 const BLOCK_CLOSERS: Record<string, string> = { endfor: 'for', endif: 'if' }
 
+/** Everything below is TOLERATED rather than understood: wrapped into an
+ * inert locked chip byte-for-byte instead of pushing the whole template into
+ * code-only. A macro definition renders nothing at its definition site, so
+ * hiding its body from the canvas is semantically correct, not a compromise. */
+const RAW_ATTR = 'data-jinja-raw'
+const RAW_PAIRED: Record<string, string> = {
+  macro: 'endmacro',
+  call: 'endcall',
+  filter: 'endfilter',
+  block: 'endblock',
+  with: 'endwith',
+  raw: 'endraw',
+  set: 'endset',
+  trans: 'endtrans',
+}
+const RAW_CLOSERS = new Set(Object.values(RAW_PAIRED))
+
+/** Mid-block continuations: meaningless as standalone chips because they only
+ * exist inside an if/for we do not fully represent. Always code-only. */
+const MID_BLOCK = new Set(['elif', 'else', 'break', 'continue'])
+
+/** Positions where an inline <span> would be foster-parented out by the HTML
+ * parser (table structure, outside a cell). A raw chip there would not survive
+ * the round trip, so such a region stays a genuine code-only reason. */
+const TABLE_INTERNAL = new Set(['table', 'thead', 'tbody', 'tfoot', 'tr'])
+
 // ---------------------------------------------------------------- tokens
 
 type TokenKind = 'stmt' | 'expr' | 'comment'
@@ -245,29 +271,159 @@ interface BlockPair {
   elementClose: TagInfo | null
 }
 
+/** A stretch of source tolerated as one opaque unit — a macro definition,
+ * a {% set %}, a comment, an unsupported statement. Stored byte-for-byte in a
+ * chip attribute and shown as an inert label; never parsed into the canvas. */
+interface RawRegion {
+  start: number
+  end: number
+  label: string
+}
+
 interface DetectInternal {
   result: DetectResult
   pairs: BlockPair[]
   tokens: JinjaToken[]
+  rawRegions: RawRegion[]
+}
+
+/** Forward-scan for the statement token that closes a raw paired block,
+ * counting nesting on that keyword pair only. Returns its index or -1. */
+function matchRawCloser(tokens: JinjaToken[], open: number, openKw: string, closeKw: string): number {
+  let depth = 0
+  for (let j = open; j < tokens.length; j++) {
+    const t = tokens[j]
+    if (t.kind !== 'stmt') continue
+    if (t.keyword === openKw) depth++
+    else if (t.keyword === closeKw) {
+      depth--
+      if (depth === 0) return j
+    }
+  }
+  return -1
+}
+
+function rawLabel(keyword: string, token: JinjaToken): string {
+  const rest = token.inner.slice(keyword.length).trim()
+  const name = /^[A-Za-z_][\w]*/.exec(rest)?.[0]
+  return name ? `${keyword} ${name}` : keyword
+}
+
+function ctxNote(token: JinjaToken): string {
+  return token.ctx === 'tag' ? 'a tag attribute' : `<${token.ctx}>`
+}
+
+/**
+ * Constructs the visual editor cannot represent but CAN preserve: macros,
+ * set, comments, unsupported statements. Rather than force the whole template
+ * code-only, each becomes a raw region — kept byte-for-byte, hidden from the
+ * canvas. Only regions in text context are tolerable; wrapping one inside a
+ * tag/style/script would not survive, so those stay genuine code-only reasons.
+ */
+function findRawRegions(
+  tokens: JinjaToken[],
+  analysis: Analysis,
+): {
+  regions: RawRegion[]
+  reasons: string[]
+  consumed: Set<number>
+} {
+  const regions: RawRegion[] = []
+  const reasons: string[] = []
+  const consumed = new Set<number>()
+
+  // A raw region becomes an inline <span>; refuse the positions where the
+  // parser would foster-parent that span away, and tolerate it otherwise.
+  const emit = (start: number, end: number, label: string, first: number, last: number): void => {
+    const host = enclosingTag(analysis, start)
+    if (host && TABLE_INTERNAL.has(host)) {
+      reasons.push(`{% ${label} %} between table rows is code-only`)
+      return
+    }
+    regions.push({ start, end, label })
+    for (let k = first; k <= last; k++) consumed.add(k)
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (consumed.has(i)) continue
+    const tok = tokens[i]
+
+    if (tok.kind === 'comment') {
+      if (tok.ctx !== 'text') reasons.push(`A Jinja comment inside ${ctxNote(tok)} is code-only`)
+      else emit(tok.start, tok.end, 'comment', i, i)
+      continue
+    }
+    if (tok.kind !== 'stmt') continue
+
+    const kw = tok.keyword
+    // for/if are the represented blocks; leave them to the pairing pass.
+    if (SUPPORTED_BLOCKS.has(kw) || kw in BLOCK_CLOSERS) continue
+    // Mid-block continuations cannot stand alone — always code-only.
+    if (MID_BLOCK.has(kw)) {
+      reasons.push(`{% ${kw} %} is not supported in the visual editor`)
+      continue
+    }
+
+    if (kw in RAW_PAIRED) {
+      const j = matchRawCloser(tokens, i, kw, RAW_PAIRED[kw])
+      if (j !== -1) {
+        if (tok.ctx !== 'text') reasons.push(`{% ${kw} %} inside ${ctxNote(tok)} is code-only`)
+        else emit(tok.start, tokens[j].end, rawLabel(kw, tok), i, j)
+        continue
+      }
+      // No closer: `set` is then the assignment form ({% set x = 1 %}),
+      // which is a legitimate standalone. Others are genuinely unbalanced.
+      if (kw !== 'set') {
+        reasons.push(`{% ${kw} %} without a closing {% ${RAW_PAIRED[kw]} %}`)
+        continue
+      }
+    } else if (RAW_CLOSERS.has(kw)) {
+      reasons.push(`Unbalanced {% ${kw} %}`)
+      continue
+    }
+
+    // Standalone raw statement: set-assignment, or an unsupported keyword.
+    if (tok.ctx !== 'text') reasons.push(`{% ${kw} %} inside ${ctxNote(tok)} is code-only`)
+    else emit(tok.start, tok.end, rawLabel(kw, tok), i, i)
+  }
+
+  return { regions, reasons, consumed }
+}
+
+function inAnyRegion(start: number, end: number, regions: RawRegion[]): boolean {
+  return regions.some((r) => start >= r.start && end <= r.end)
+}
+
+/** Innermost open element name enclosing `pos`, from the tag scan. */
+function enclosingTag(analysis: Analysis, pos: number): string | null {
+  const stack: string[] = []
+  for (const tag of analysis.tags) {
+    if (tag.start >= pos) break
+    if (tag.closing) stack.pop()
+    else if (!tag.selfClosing && !VOID_ELEMENTS.has(tag.name)) stack.push(tag.name)
+  }
+  return stack.length ? stack[stack.length - 1] : null
 }
 
 function detectInternal(html: string): DetectInternal {
   const tokens = findTokens(html)
   const analysis = scanHtml(html, tokens)
-  const reasons: string[] = []
+
+  // First, carve out everything tolerated as raw; those tokens are consumed.
+  const { regions: rawRegions, reasons: rawReasons, consumed } = findRawRegions(tokens, analysis)
+  const reasons: string[] = [...rawReasons]
   const pairs: BlockPair[] = []
 
+  // Then pair the represented blocks over what remains.
   const stack: JinjaToken[] = []
-  for (const token of tokens) {
-    if (token.kind === 'comment') {
-      reasons.push('Jinja comments ({# … #}) are not representable in the visual editor')
-      continue
-    }
+  for (let i = 0; i < tokens.length; i++) {
+    if (consumed.has(i)) continue
+    const token = tokens[i]
     if (token.kind !== 'stmt') continue
 
     if (SUPPORTED_BLOCKS.has(token.keyword)) {
       if (token.ctx !== 'text') {
-        reasons.push(`{% ${token.keyword} %} inside ${token.ctx === 'tag' ? 'a tag attribute' : `<${token.ctx}>`} is code-only`)
+        reasons.push(`{% ${token.keyword} %} inside ${ctxNote(token)} is code-only`)
       }
       stack.push(token)
     } else if (token.keyword in BLOCK_CLOSERS) {
@@ -279,9 +435,8 @@ function detectInternal(html: string): DetectInternal {
       const pair = matchPairToElement(html, analysis, open, token)
       if (typeof pair === 'string') reasons.push(pair)
       else pairs.push(pair)
-    } else {
-      reasons.push(`{% ${token.keyword} %} is not supported in the visual editor`)
     }
+    // Anything else was already turned into a raw region (and consumed).
   }
   for (const left of stack) reasons.push(`{% ${left.keyword} %} without a closing tag`)
 
@@ -289,6 +444,7 @@ function detectInternal(html: string): DetectInternal {
     result: { supported: reasons.length === 0, reasons: [...new Set(reasons)] },
     pairs,
     tokens,
+    rawRegions,
   }
 }
 
@@ -379,12 +535,23 @@ function attrInsertPos(html: string, tag: TagInfo): number {
  * callers must check detect() first and keep such templates code-only.
  */
 export function protect(html: string): string {
-  const { result, pairs, tokens } = detectInternal(html)
+  const { result, pairs, tokens, rawRegions } = detectInternal(html)
   if (!result.supported) {
     throw new Error(`Template is not representable in the visual editor:\n- ${result.reasons.join('\n- ')}`)
   }
 
   const edits: Edit[] = []
+  // Tolerated constructs: one inert chip holding the exact source in its
+  // attribute (escapeAttr↔unescapeAttr round-trip through the DOM), showing
+  // only a label. The body — a macro's markup, a comment — never enters the
+  // canvas, which is correct: it renders nothing at this point in the document.
+  for (const region of rawRegions) {
+    edits.push({
+      start: region.start,
+      end: region.end,
+      text: `<span ${RAW_ATTR}="${escapeAttr(html.slice(region.start, region.end))}">⟨${region.label}⟩</span>`,
+    })
+  }
   for (const pair of pairs) {
     const attr = pair.open.keyword === 'for' ? FOR_ATTR : IF_ATTR
     const expr = pair.open.inner.slice(pair.open.keyword.length).trim()
@@ -399,6 +566,8 @@ export function protect(html: string): string {
 
   for (const token of tokens) {
     if (token.kind !== 'expr' || token.ctx !== 'text') continue
+    // Expressions inside a raw region are part of its bytes, not their own chip.
+    if (inAnyRegion(token.start, token.end, rawRegions)) continue
     edits.push({
       start: token.start,
       end: token.end,
@@ -413,6 +582,11 @@ export function protect(html: string): string {
 
 const SPAN_MARKER_RE = new RegExp(
   `<span\\b[^>]*?${EXPR_ATTR}\\s*=\\s*(?:"([^"]*)"|'([^']*)')[^>]*>[\\s\\S]*?</span>`,
+  'g',
+)
+
+const RAW_MARKER_RE = new RegExp(
+  `<span\\b[^>]*?${RAW_ATTR}\\s*=\\s*(?:"([^"]*)"|'([^']*)')[^>]*>[\\s\\S]*?</span>`,
   'g',
 )
 
@@ -435,9 +609,15 @@ function stripMarkedAttrs(tagText: string): string {
 
 /** Unfold bridge markup back into the original Jinja source. */
 export function restore(html: string): string {
+  // 0. Inert raw chips back to their exact original bytes. Done first so the
+  //    macro source they carry (which may contain literal <span>, {{ }} etc.)
+  //    is plain text before the passes below run — those match only the
+  //    editor's own marker attributes, never anything inside a restored macro.
+  let out = html.replace(RAW_MARKER_RE, (_m, dq, sq) => unescapeAttr(dq ?? sq ?? ''))
+
   // 1. Expression markers back to {{ … }} (the attribute is the truth —
   //    the visible chip text may have been touched by the rich editor).
-  let out = html.replace(SPAN_MARKER_RE, (_m, dq, sq) => `{{ ${unescapeAttr(dq ?? sq ?? '')} }}`)
+  out = out.replace(SPAN_MARKER_RE, (_m, dq, sq) => `{{ ${unescapeAttr(dq ?? sq ?? '')} }}`)
 
   // 2. Elements carrying block attributes back to wrapping tags.
   const analysis = scanHtml(out, [])

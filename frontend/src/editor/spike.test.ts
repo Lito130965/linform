@@ -176,7 +176,11 @@ describe.each(fixtures)('$name', ({ name, html }) => {
     while (walker.nextNode()) {
       const node = walker.currentNode as Text
       if (!/[A-Za-zА-Яа-яЁё]{3,}/.test(node.data)) continue
-      if ((node.parentElement as HTMLElement | null)?.closest('[data-jinja-expr]')) continue
+      // Skip locked chips: their visible text is thrown away on export (the
+      // attribute is the source of truth), so a "typed" edit inside one would
+      // vanish — which is exactly why they are contenteditable=false.
+      if ((node.parentElement as HTMLElement | null)?.closest('[data-jinja-expr], [data-jinja-raw]'))
+        continue
       textNode = node
       originalText = node.data
       break

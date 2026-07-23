@@ -140,6 +140,31 @@ export default function CanvasEditor({
     }
     doc.addEventListener('click', onClick)
 
+    // Double-click a chip / loop / conditional to edit its Jinja expression as
+    // text. The attribute is the source of truth restore() reads; the visible
+    // chip label is kept in sync for placeholders.
+    const onDblClick = (e: MouseEvent) => {
+      const el = findSelectable(e.target as Element, body)
+      if (!el) return
+      const attr = el.hasAttribute('data-jinja-expr')
+        ? 'data-jinja-expr'
+        : el.hasAttribute('data-jinja-for')
+          ? 'data-jinja-for'
+          : el.hasAttribute('data-jinja-if')
+            ? 'data-jinja-if'
+            : null
+      if (!attr) return
+      e.preventDefault()
+      const current = el.getAttribute(attr) ?? ''
+      const next = doc.defaultView?.prompt('Jinja expression', current)
+      if (next === null || next === undefined) return
+      const expr = next.trim()
+      if (!expr) return
+      el.setAttribute(attr, expr)
+      if (attr === 'data-jinja-expr') el.textContent = `{{ ${expr} }}`
+    }
+    doc.addEventListener('dblclick', onDblClick)
+
     // Undo/redo shortcuts; native contenteditable history is unreliable after
     // programmatic mutations, so ours replaces it entirely.
     const onKeydown = (e: KeyboardEvent) => {
@@ -229,6 +254,7 @@ export default function CanvasEditor({
       clearTimeout(timer)
       observer.disconnect()
       doc.removeEventListener('click', onClick)
+      doc.removeEventListener('dblclick', onDblClick)
       doc.removeEventListener('keydown', onKeydown)
       doc.removeEventListener('paste', onPaste)
       // Flush the final state so mode switches never lose an edit.

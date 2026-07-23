@@ -12,11 +12,14 @@
 
 const CANVAS_ONLY_ATTRS = ['contenteditable', 'spellcheck', 'draggable', 'data-lf-selected']
 
+// Placeholder chips and inert raw chips are both atomic: the caret must never
+// enter one and split the expression or the preserved source.
+const CHIP_SELECTOR = '[data-jinja-expr], [data-jinja-raw]'
+
 export function prepareBody(body: HTMLElement): void {
   body.setAttribute('contenteditable', 'true')
   body.setAttribute('spellcheck', 'false')
-  // Chips are atomic: the caret must never enter one and split the expression.
-  for (const chip of Array.from(body.querySelectorAll('[data-jinja-expr]'))) {
+  for (const chip of Array.from(body.querySelectorAll(CHIP_SELECTOR))) {
     chip.setAttribute('contenteditable', 'false')
   }
   // Native image dragging fights the selection model.
@@ -27,8 +30,8 @@ export function prepareBody(body: HTMLElement): void {
 
 /** A newly inserted fragment gets the same affordances as the initial mount. */
 export function prepareFragment(el: Element): void {
-  if (el.hasAttribute('data-jinja-expr')) el.setAttribute('contenteditable', 'false')
-  for (const chip of Array.from(el.querySelectorAll('[data-jinja-expr]'))) {
+  if (el.matches(CHIP_SELECTOR)) el.setAttribute('contenteditable', 'false')
+  for (const chip of Array.from(el.querySelectorAll(CHIP_SELECTOR))) {
     chip.setAttribute('contenteditable', 'false')
   }
   for (const img of Array.from(el.querySelectorAll('img'))) {

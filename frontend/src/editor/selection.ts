@@ -7,6 +7,7 @@
 
 export type NodeKind =
   | 'chip'
+  | 'raw'
   | 'loop'
   | 'conditional'
   | 'image'
@@ -40,6 +41,7 @@ const BLOCK_TAGS = new Set([
 export function kindOf(el: Element): NodeKind | null {
   // Jinja marks outrank the tag: a repeating <tr> is first of all a loop.
   if (el.hasAttribute('data-jinja-expr')) return 'chip'
+  if (el.hasAttribute('data-jinja-raw')) return 'raw'
   if (el.hasAttribute('data-jinja-for')) return 'loop'
   if (el.hasAttribute('data-jinja-if')) return 'conditional'
   switch (el.tagName) {
@@ -74,6 +76,7 @@ export function parentSelectable(el: Element, root: Element): Element | null {
 
 export const KIND_LABEL: Record<NodeKind, string> = {
   chip: 'Placeholder',
+  raw: 'Jinja (locked)',
   loop: 'Repeating',
   conditional: 'Conditional',
   image: 'Image',
