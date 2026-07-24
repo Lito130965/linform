@@ -1236,3 +1236,33 @@ label {
   height: 24px;
   padding: 1px;
 }
+
+.color-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.color-control .cc-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.color-control input[type='color'] {
+  width: 26px;
+  height: 22px;
+  padding: 1px;
+  border-radius: 4px;
+}
+
+.color-control .cc-opacity {
+  width: 46px;
+  padding: 3px 4px;
+  font-size: 12px;
+}
+
+.color-control .cc-pct {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: -2px;
+}

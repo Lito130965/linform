@@ -11,17 +11,12 @@ import {
   formatFromStyles,
 } from './page'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
+import ColorControl from './ColorControl'
+import { type Colour, parse as parseColour, toCss, toHex } from './color'
+import { getFilterArg, setFilterArg } from './filter-args'
 import { parseMarginBoxes, runningAffordanceCss } from './furniture'
 import { BorderMode, addColumn, addRow, deleteColumn, deleteRow, setTableBorders } from './table-ops'
 import { setAlign, toggleInline } from './text-commands'
-
-/** `rgb(r, g, b)` (what the DOM reports for an inline color) → `#rrggbb`, so a
- * native color input can seed from it. Empty or already-hex passes through. */
-function rgbToHex(value: string): string {
-  const m = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/.exec(value.trim())
-  if (!m) return value.startsWith('#') ? value : ''
-  return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')
-}
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
@@ -314,6 +309,25 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
   }
 
+  // A qr/barcode image carries its colour as filter arguments on data-lf-src,
+  // not as CSS — so the two palettes edit the filter call there instead.
+  const lfSrc = selected ? ((selected.el as HTMLElement).getAttribute('data-lf-src') ?? '') : ''
+  const codeFilter = /\|\s*qr\b/.test(lfSrc) ? 'qr' : /\|\s*barcode\b/.test(lfSrc) ? 'barcode' : null
+  const codeKeys =
+    codeFilter === 'qr'
+      ? { fg: 'dark', bg: 'light' }
+      : { fg: 'foreground', bg: 'background' }
+
+  const applyCodeColour = (key: string, c: Colour): void => {
+    if (!selected || !codeFilter) return
+    const next = setFilterArg(lfSrc, codeFilter, key, toHex(c))
+    ;(selected.el as HTMLElement).setAttribute('data-lf-src', next)
+    setTick((t) => t + 1)
+  }
+
+  const codeColour = (key: string, fallback: string): Colour =>
+    parseColour((codeFilter && getFilterArg(lfSrc, codeFilter, key)) || fallback)
+
   const insertBlock = (id: string) => {
     const block = BLOCKS.find((b) => b.id === id)
     const body = bodyRef.current
@@ -485,14 +499,33 @@ export default function CanvasEditor({
               onChange={(e) => applyStyle('height', e.target.value)}
             />
           </label>
-          <label className="prop">
-            Color
-            <input
-              type="color"
-              defaultValue={rgbToHex(styleValue('color')) || '#000000'}
-              onChange={(e) => applyStyle('color', e.target.value)}
-            />
-          </label>
+          {codeFilter ? (
+            <>
+              <ColorControl
+                label="Code"
+                value={codeColour(codeKeys.fg, '#000000')}
+                onChange={(c) => applyCodeColour(codeKeys.fg, c)}
+              />
+              <ColorControl
+                label="Fill"
+                value={codeColour(codeKeys.bg, '#ffffff')}
+                onChange={(c) => applyCodeColour(codeKeys.bg, c)}
+              />
+            </>
+          ) : (
+            <>
+              <ColorControl
+                label="Text"
+                value={parseColour(styleValue('color'))}
+                onChange={(c) => applyStyle('color', toCss(c))}
+              />
+              <ColorControl
+                label="Background"
+                value={parseColour(styleValue('background-color') || '#ffffff')}
+                onChange={(c) => applyStyle('background-color', toCss(c))}
+              />
+            </>
+          )}
         </div>
       )}
       <div className="canvas-scroll" ref={scrollRef}>
