@@ -14,7 +14,9 @@ import {
 } from '../jinja-bridge'
 import PreviewPane from './PreviewPane'
 import PlaceholderPanel from './PlaceholderPanel'
+import PresetPanel from './PresetPanel'
 import AssetsPanel from './AssetsPanel'
+import type { Preset } from '../presets/registry'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import AssistantPanel from './AssistantPanel'
@@ -157,6 +159,28 @@ export default function Editor({
     insertText(
       mode === 'visual' ? `<span data-jinja-expr="${name}">{{ ${name} }}</span>` : `{{ ${name} }}`,
     )
+
+  // A preset generates Jinja source. Code inserts it raw; Visual inserts its
+  // protected form, so the two modes stay provably identical (protect/restore
+  // inverse). If a generator ever produced something unrepresentable, detect
+  // catches it here rather than corrupting the canvas silently.
+  const insertPreset = (preset: Preset) => {
+    const source = preset.generate({})
+    if (mode !== 'visual') {
+      insertText(source)
+      return
+    }
+    if (!detect(source).supported) {
+      setError(`This preset cannot be inserted visually:\n- ${detect(source).reasons.join('\n- ')}`)
+      return
+    }
+    try {
+      canvasApiRef.current?.insertHtml(toCanvasAssets(protect(source)))
+      setDirty(true)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   const enterVisual = () => {
     setError(null)
@@ -344,6 +368,7 @@ export default function Editor({
           )}
           <div className="bottom-panels">
             <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
+            <PresetPanel onInsert={insertPreset} />
             <AssetsPanel onInsert={insertText} />
             <div className="test-data">
               <label>Test data (JSON) — preview renders with it</label>

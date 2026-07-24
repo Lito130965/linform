@@ -926,3 +926,53 @@ label {
   padding: 1px 2px;
   border-radius: 4px;
 }
+
+/* ---- preset palette ---- */
+
+.preset-group {
+  margin-bottom: 8px;
+}
+
+.preset-group-name {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.preset-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-card {
+  flex: 1 1 140px;
+  max-width: 220px;
+  text-align: left;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.preset-card:hover {
+  border-color: var(--accent);
+}
+
+.preset-card-label {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.preset-card-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
