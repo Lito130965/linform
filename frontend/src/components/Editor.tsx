@@ -15,6 +15,7 @@ import {
 import PreviewPane from './PreviewPane'
 import PlaceholderPanel from './PlaceholderPanel'
 import PresetPanel from './PresetPanel'
+import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
 import type { Preset } from '../presets/registry'
 import VersionHistory from './VersionHistory'
@@ -53,6 +54,7 @@ export default function Editor({
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
+  const [presetFor, setPresetFor] = useState<Preset | null>(null)
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -160,18 +162,13 @@ export default function Editor({
       mode === 'visual' ? `<span data-jinja-expr="${name}">{{ ${name} }}</span>` : `{{ ${name} }}`,
     )
 
-  // A preset generates Jinja source. Code inserts it raw; Visual inserts its
-  // protected form, so the two modes stay provably identical (protect/restore
-  // inverse). If a generator ever produced something unrepresentable, detect
-  // catches it here rather than corrupting the canvas silently.
-  const insertPreset = (preset: Preset) => {
-    const source = preset.generate({})
+  // Preset source (from the dialog, configured against test-data hints). Code
+  // inserts it raw; Visual inserts its protected form, so the two modes stay
+  // provably identical (protect/restore inverse). detect() already guarded the
+  // dialog's Insert button, so this cannot corrupt the canvas silently.
+  const insertPresetSource = (source: string) => {
     if (mode !== 'visual') {
       insertText(source)
-      return
-    }
-    if (!detect(source).supported) {
-      setError(`This preset cannot be inserted visually:\n- ${detect(source).reasons.join('\n- ')}`)
       return
     }
     try {
@@ -368,7 +365,7 @@ export default function Editor({
           )}
           <div className="bottom-panels">
             <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
-            <PresetPanel onInsert={insertPreset} />
+            <PresetPanel onInsert={setPresetFor} />
             <AssetsPanel onInsert={insertText} />
             <div className="test-data">
               <label>Test data (JSON) — preview renders with it</label>
@@ -420,6 +417,16 @@ export default function Editor({
             onLoad={(v) => switchVersion(v)}
             onPublish={(v) => publishVersion(v)}
             onClose={() => setShowHistory(false)}
+          />
+        )}
+
+        {presetFor && (
+          <PresetDialog
+            preset={presetFor}
+            placeholders={placeholderNames}
+            testData={testData}
+            onInsert={insertPresetSource}
+            onClose={() => setPresetFor(null)}
           />
         )}
       </div>

@@ -19,9 +19,13 @@ export type PresetGroup = 'Tables' | 'Fields' | 'Sections' | 'Codes'
 export interface PresetParam {
   name: string
   label: string
-  /** placeholder → offer known field names; text/number → free entry. */
-  kind: 'placeholder' | 'array' | 'text' | 'number'
+  /** placeholder → offer known field names; array → offer arrays from test
+   * data; columns → checklist of the chosen array's item fields (comma list);
+   * text/number → free entry. */
+  kind: 'placeholder' | 'array' | 'columns' | 'text' | 'number'
   default: string
+  /** For a 'columns' param: which 'array' param supplies its field checklist. */
+  fieldsFrom?: string
 }
 
 export interface Preset {
@@ -59,7 +63,7 @@ export const PRESETS: Preset[] = [
     params: [
       { name: 'array', label: 'Array', kind: 'array', default: 'items' },
       { name: 'item', label: 'Item name', kind: 'text', default: 'item' },
-      { name: 'columns', label: 'Columns (comma-separated fields)', kind: 'text', default: 'name, amount' },
+      { name: 'columns', label: 'Columns', kind: 'columns', default: 'name, amount', fieldsFrom: 'array' },
     ],
     generate: (raw) => {
       const p = withDefaults(PRESETS[0], raw)
