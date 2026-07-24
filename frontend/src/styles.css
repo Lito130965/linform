@@ -263,14 +263,46 @@ select:focus {
 }
 
 .bottom-panels {
+  position: relative;
   border-top: 1px solid var(--border);
-  padding: 10px 12px;
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 220px;
-  overflow-y: auto;
   background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+/* Drag handle along the panel's top edge. */
+.panel-resize {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+
+.panel-resize::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: var(--border);
+}
+
+.panel-resize:hover::after {
+  background: var(--accent);
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 label {
@@ -1160,4 +1192,47 @@ label {
 .add-preset-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* ---- canvas element properties bar ---- */
+
+.canvas-props {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 5px 12px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.canvas-props .props-kind {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.canvas-props .prop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.canvas-props .prop input,
+.canvas-props .prop select {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.canvas-props .prop input:not([type='color']) {
+  width: 64px;
+}
+
+.canvas-props .prop input[type='color'] {
+  width: 28px;
+  height: 24px;
+  padding: 1px;
 }

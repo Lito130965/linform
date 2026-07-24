@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import type { EditorView } from '@codemirror/view'
@@ -58,6 +58,23 @@ export default function Editor({
   const [panelTab, setPanelTab] = useState<'placeholders' | 'presets' | 'assets' | 'data'>(
     'placeholders',
   )
+  const [panelHeight, setPanelHeight] = useState(220)
+
+  // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
+  // editor or vanishing; the value is otherwise the user's to set.
+  const startPanelResize = (e: ReactMouseEvent) => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = panelHeight
+    const onMove = (ev: MouseEvent) =>
+      setPanelHeight(Math.max(80, Math.min(700, startH + (startY - ev.clientY))))
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -366,7 +383,12 @@ export default function Editor({
               }}
             />
           )}
-          <div className="bottom-panels">
+          <div className="bottom-panels" style={{ maxHeight: panelHeight, height: panelHeight }}>
+            <div
+              className="panel-resize"
+              onMouseDown={startPanelResize}
+              title="Drag to resize"
+            />
             <div className="panel-tabs">
               {(['placeholders', 'presets', 'assets', 'data'] as const).map((t) => (
                 <button

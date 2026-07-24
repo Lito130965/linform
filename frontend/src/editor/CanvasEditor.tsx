@@ -15,6 +15,14 @@ import { parseMarginBoxes, runningAffordanceCss } from './furniture'
 import { BorderMode, addColumn, addRow, deleteColumn, deleteRow, setTableBorders } from './table-ops'
 import { setAlign, toggleInline } from './text-commands'
 
+/** `rgb(r, g, b)` (what the DOM reports for an inline color) → `#rrggbb`, so a
+ * native color input can seed from it. Empty or already-hex passes through. */
+function rgbToHex(value: string): string {
+  const m = /^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/.exec(value.trim())
+  if (!m) return value.startsWith('#') ? value : ''
+  return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('')
+}
+
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
   /** Insert markup at the selection (after the selected node) or append. */
@@ -66,6 +74,8 @@ export default function CanvasEditor({
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
   // Bumped on any mutation so the toolbar re-measures its position.
   const [, setTick] = useState(0)
+  // Bumped on each new selection so the props inputs re-seed from that element.
+  const [selId, setSelId] = useState(0)
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -86,6 +96,7 @@ export default function CanvasEditor({
     } else {
       setSelected(null)
     }
+    setSelId((n) => n + 1)
   }
 
   const refreshHistState = () => {
@@ -289,6 +300,20 @@ export default function CanvasEditor({
     if (doc) fn(doc)
   }
 
+  // Inline style read/write on the selected element — the only channel that
+  // survives export while the author's <style> stays read-only. Setting a
+  // property mutates the DOM, which the observer picks up for history/export.
+  const styleValue = (prop: string): string =>
+    selected ? (selected.el as HTMLElement).style.getPropertyValue(prop) : ''
+
+  const applyStyle = (prop: string, value: string): void => {
+    if (!selected) return
+    const s = (selected.el as HTMLElement).style
+    if (value.trim()) s.setProperty(prop, value.trim())
+    else s.removeProperty(prop)
+    setTick((t) => t + 1)
+  }
+
   const insertBlock = (id: string) => {
     const block = BLOCKS.find((b) => b.id === id)
     const body = bodyRef.current
@@ -419,6 +444,57 @@ export default function CanvasEditor({
         </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
       </div>
+      {selected && (
+        <div className="canvas-props" key={selId}>
+          <span className="props-kind">{KIND_LABEL[selected.kind]}</span>
+          <label className="prop">
+            Font
+            <select
+              defaultValue={styleValue('font-family')}
+              onChange={(e) => applyStyle('font-family', e.target.value)}
+            >
+              <option value="">—</option>
+              <option value="serif">Serif</option>
+              <option value="sans-serif">Sans-serif</option>
+              <option value="monospace">Monospace</option>
+              <option value='"Times New Roman", serif'>Times New Roman</option>
+              <option value="Arial, sans-serif">Arial</option>
+            </select>
+          </label>
+          <label className="prop">
+            Size
+            <input
+              defaultValue={styleValue('font-size')}
+              placeholder="12pt"
+              onChange={(e) => applyStyle('font-size', e.target.value)}
+            />
+          </label>
+          <label className="prop">
+            W
+            <input
+              defaultValue={styleValue('width')}
+              placeholder="auto"
+              onChange={(e) => applyStyle('width', e.target.value)}
+            />
+          </label>
+          <label className="prop">
+            H
+            <input
+              defaultValue={styleValue('height')}
+              placeholder="auto"
+              onChange={(e) => applyStyle('height', e.target.value)}
+            />
+          </label>
+          <label className="prop">
+            Color
+            <input
+              type="color"
+              defaultValue={rgbToHex(styleValue('color')) || '#000000'}
+              onChange={(e) => applyStyle('color', e.target.value)}
+            />
+          </label>
+        </div>
+      )}
       <div className="canvas-scroll" ref={scrollRef}>
         <div
           className="canvas-stage"
