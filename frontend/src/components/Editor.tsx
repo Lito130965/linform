@@ -55,6 +55,9 @@ export default function Editor({
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [presetFor, setPresetFor] = useState<Preset | null>(null)
+  const [panelTab, setPanelTab] = useState<'placeholders' | 'presets' | 'assets' | 'data'>(
+    'placeholders',
+  )
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -364,17 +367,40 @@ export default function Editor({
             />
           )}
           <div className="bottom-panels">
-            <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
-            <PresetPanel onInsert={setPresetFor} />
-            <AssetsPanel onInsert={insertText} />
-            <div className="test-data">
-              <label>Test data (JSON) — preview renders with it</label>
-              <textarea
-                spellCheck={false}
-                value={testData}
-                onChange={(e) => setTestData(e.target.value)}
-              />
-              {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+            <div className="panel-tabs">
+              {(['placeholders', 'presets', 'assets', 'data'] as const).map((t) => (
+                <button
+                  key={t}
+                  className={panelTab === t ? 'panel-tab active' : 'panel-tab'}
+                  onClick={() => setPanelTab(t)}
+                >
+                  {t === 'placeholders'
+                    ? 'Placeholders'
+                    : t === 'presets'
+                      ? 'Presets'
+                      : t === 'assets'
+                        ? 'Assets'
+                        : 'Test data'}
+                </button>
+              ))}
+            </div>
+            <div className="panel-body">
+              {panelTab === 'placeholders' && (
+                <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
+              )}
+              {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
+              {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
+              {panelTab === 'data' && (
+                <div className="test-data">
+                  <label>Test data (JSON) — preview renders with it</label>
+                  <textarea
+                    spellCheck={false}
+                    value={testData}
+                    onChange={(e) => setTestData(e.target.value)}
+                  />
+                  {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+                </div>
+              )}
             </div>
           </div>
         </section>

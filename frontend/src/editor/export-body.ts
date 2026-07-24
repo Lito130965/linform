@@ -10,11 +10,20 @@
  * be meaningless, so ownership of these attributes inside the canvas is ours.
  */
 
+import { LF_SRC_ATTR, isJinjaImage, restoreRealSrc, showPlaceholder } from './media-placeholder'
+
 const CANVAS_ONLY_ATTRS = ['contenteditable', 'spellcheck', 'draggable', 'data-lf-selected']
 
 // Placeholder chips and inert raw chips are both atomic: the caret must never
 // enter one and split the expression or the preserved source.
 const CHIP_SELECTOR = '[data-jinja-expr], [data-jinja-raw]'
+
+function affordImages(root: ParentNode): void {
+  for (const img of Array.from(root.querySelectorAll('img'))) {
+    img.setAttribute('draggable', 'false') // native drag fights the selection model
+    if (isJinjaImage(img)) showPlaceholder(img) // qr/barcode: box, not a broken icon
+  }
+}
 
 export function prepareBody(body: HTMLElement): void {
   body.setAttribute('contenteditable', 'true')
@@ -22,10 +31,7 @@ export function prepareBody(body: HTMLElement): void {
   for (const chip of Array.from(body.querySelectorAll(CHIP_SELECTOR))) {
     chip.setAttribute('contenteditable', 'false')
   }
-  // Native image dragging fights the selection model.
-  for (const img of Array.from(body.querySelectorAll('img'))) {
-    img.setAttribute('draggable', 'false')
-  }
+  affordImages(body)
 }
 
 /** A newly inserted fragment gets the same affordances as the initial mount. */
@@ -34,14 +40,15 @@ export function prepareFragment(el: Element): void {
   for (const chip of Array.from(el.querySelectorAll(CHIP_SELECTOR))) {
     chip.setAttribute('contenteditable', 'false')
   }
-  for (const img of Array.from(el.querySelectorAll('img'))) {
-    img.setAttribute('draggable', 'false')
-  }
+  if (isJinjaImage(el)) showPlaceholder(el)
+  affordImages(el)
 }
 
 export function exportBody(body: HTMLElement): string {
   const clone = body.cloneNode(true) as HTMLElement
   for (const el of [clone, ...Array.from(clone.querySelectorAll('*'))]) {
+    // Real qr/barcode src comes back before the canvas-only attr is dropped.
+    if (el.hasAttribute(LF_SRC_ATTR)) restoreRealSrc(el)
     for (const attr of CANVAS_ONLY_ATTRS) el.removeAttribute(attr)
   }
   return clone.innerHTML

@@ -14,7 +14,7 @@
 
 import type { NodeKind } from '../editor/selection'
 
-export type PresetGroup = 'Tables' | 'Fields' | 'Sections' | 'Codes'
+export type PresetGroup = 'Tables' | 'Fields' | 'Sections' | 'Codes' | 'Custom'
 
 export interface PresetParam {
   name: string

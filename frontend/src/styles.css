@@ -1066,3 +1066,98 @@ label {
   gap: 8px;
   margin-top: 12px;
 }
+
+/* ---- bottom panel tabs ---- */
+
+.panel-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 12px;
+  font-size: 12px;
+  margin-bottom: -1px;
+}
+
+.panel-tab:hover {
+  color: var(--text);
+}
+
+.panel-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.preset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preset-card-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 140px;
+  max-width: 220px;
+}
+
+.preset-card-wrap .preset-card {
+  flex: 1;
+  max-width: none;
+}
+
+.preset-del {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.preset-card-wrap:hover .preset-del {
+  opacity: 1;
+}
+
+.preset-del:hover {
+  background: var(--red);
+  color: #fff;
+}
+
+.add-preset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.add-preset textarea {
+  min-height: 60px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.add-preset-actions {
+  display: flex;
+  justify-content: flex-end;
+}

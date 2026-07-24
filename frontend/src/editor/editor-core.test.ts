@@ -78,6 +78,17 @@ describe('prepareBody / exportBody are inverse', () => {
     expect(exportBody(b)).not.toContain('data-lf-selected')
   })
 
+  it('a qr/barcode image shows a placeholder but exports its real src', () => {
+    const b = bodyOf('<p>x</p><img src="{{ order_id | qr }}" style="width:30mm">')
+    prepareBody(b)
+    const img = b.querySelector('img')!
+    // Canvas shows a self-describing SVG placeholder, not the broken Jinja URL.
+    expect(img.getAttribute('src')!.startsWith('data:image/svg+xml,')).toBe(true)
+    expect(img.getAttribute('data-lf-src')).toBe('{{ order_id | qr }}')
+    // Export restores the true expression exactly.
+    expect(exportBody(b)).toBe('<p>x</p><img src="{{ order_id | qr }}" style="width:30mm">')
+  })
+
   it('a prepared inserted fragment exports clean too', () => {
     const b = bodyOf(TEMPLATE)
     prepareBody(b)
