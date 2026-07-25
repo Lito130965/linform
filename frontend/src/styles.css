@@ -1290,3 +1290,22 @@ label {
 .row-resize:hover {
   background: var(--accent);
 }
+
+.convert-actions .tb,
+.convert-form .tb {
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.convert-form {
+  align-items: center;
+  gap: 4px;
+}
+
+.convert-form input {
+  width: 84px;
+  padding: 3px 6px;
+  font-size: 12px;
+}

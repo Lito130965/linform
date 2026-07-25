@@ -18,6 +18,7 @@ import PresetPanel from './PresetPanel'
 import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
 import type { Preset } from '../presets/registry'
+import { parseHints } from '../presets/hints'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import AssistantPanel from './AssistantPanel'
@@ -377,6 +378,7 @@ export default function Editor({
               key={loadedVersion ?? 'new'}
               initialBody={visualInitialRef.current}
               canvasStyles={splitRef.current?.styles ?? ''}
+              arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onChange={handleVisualChange}
               onReady={(api) => {
                 canvasApiRef.current = api

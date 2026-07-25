@@ -26,6 +26,9 @@ import {
   setTableBorders,
 } from './table-ops'
 import { type Layer, layerOf, setLayer } from './layer'
+import { existingValue, isConditional, isRepeating, makeRepeating, wrapConditional } from './convert'
+import { protect } from '../jinja-bridge'
+import { PRESETS } from '../presets/registry'
 import { setAlign, toggleInline } from './text-commands'
 
 /** Run `onMove` on every mouse move until the button is released. */
@@ -65,6 +68,7 @@ export default function CanvasEditor({
   canvasStyles,
   onChange,
   onReady,
+  arrayHints = [],
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -73,6 +77,8 @@ export default function CanvasEditor({
   /** fires (debounced) with the current canvas-form body HTML */
   onChange: (bodyHtml: string) => void
   onReady?: (api: CanvasEditorApi) => void
+  /** array names from the editor's test data, to suggest in convert dialogs */
+  arrayHints?: string[]
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -91,6 +97,9 @@ export default function CanvasEditor({
   const [, setTick] = useState(0)
   // Bumped on each new selection so the props inputs re-seed from that element.
   const [selId, setSelId] = useState(0)
+  const [convert, setConvert] = useState<
+    { type: 'repeat' | 'if' | 'cells'; value: string; item: string } | null
+  >(null)
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -112,6 +121,7 @@ export default function CanvasEditor({
       setSelected(null)
     }
     setSelId((n) => n + 1)
+    setConvert(null)
   }
 
   const refreshHistState = () => {
@@ -370,6 +380,31 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
   }
 
+  // Convert-existing: which transforms apply to the current selection, and a
+  // small form to collect their one or two parameters.
+  const canRepeat =
+    !!selected && ['row', 'block'].includes(selected.kind) && !isRepeating(selected.el)
+  const canCondition =
+    !!selected && selected.kind === 'block' && !isConditional(selected.el)
+  const canSplit = !!selected && ['cell', 'chip'].includes(selected.kind)
+
+  const applyConvert = (): void => {
+    if (!selected || !convert) return
+    const el = selected.el
+    if (convert.type === 'repeat') {
+      makeRepeating(el, convert.item || 'item', convert.value || 'items')
+    } else if (convert.type === 'if') {
+      wrapConditional(el, convert.value || 'flag')
+    } else if (convert.type === 'cells') {
+      const gen = PRESETS.find((p) => p.id === 'char-cells')!.generate
+      const target = el.matches('td, th') ? el : el.closest('td, th') ?? el
+      target.innerHTML = protect(gen({ value: convert.value || 'value' }))
+      prepareFragment(target)
+    }
+    setTick((t) => t + 1)
+    setConvert(null)
+  }
+
   const insertBlock = (id: string) => {
     const block = BLOCKS.find((b) => b.id === id)
     const body = bodyRef.current
@@ -612,6 +647,79 @@ export default function CanvasEditor({
                 onChange={(c) => applyStyle('background-color', toCss(c))}
               />
             </>
+          )}
+          {(canRepeat || canCondition || canSplit) && !convert && (
+            <span className="topbar-group convert-actions">
+              {canRepeat && (
+                <button
+                  className="tb"
+                  title="Repeat this for each item of an array"
+                  onClick={() =>
+                    setConvert({ type: 'repeat', value: arrayHints[0] ?? 'items', item: 'item' })
+                  }
+                >
+                  ⟳ Repeat
+                </button>
+              )}
+              {canCondition && (
+                <button
+                  className="tb"
+                  title="Show only when a field is present"
+                  onClick={() => setConvert({ type: 'if', value: existingValue(selected.el) || 'flag', item: '' })}
+                >
+                  ? If
+                </button>
+              )}
+              {canSplit && (
+                <button
+                  className="tb"
+                  title="Split the value into one box per character"
+                  onClick={() =>
+                    setConvert({ type: 'cells', value: existingValue(selected.el) || 'value', item: '' })
+                  }
+                >
+                  ▦ Cells
+                </button>
+              )}
+            </span>
+          )}
+          {convert && (
+            <span className="topbar-group convert-form">
+              {convert.type === 'repeat' && (
+                <>
+                  <input
+                    placeholder="item"
+                    value={convert.item}
+                    onChange={(e) => setConvert({ ...convert, item: e.target.value })}
+                  />
+                  <span className="cc-label">in</span>
+                  <input
+                    list="convert-arrays"
+                    placeholder="items"
+                    value={convert.value}
+                    onChange={(e) => setConvert({ ...convert, value: e.target.value })}
+                  />
+                  <datalist id="convert-arrays">
+                    {arrayHints.map((a) => (
+                      <option key={a} value={a} />
+                    ))}
+                  </datalist>
+                </>
+              )}
+              {convert.type !== 'repeat' && (
+                <input
+                  placeholder={convert.type === 'if' ? 'condition' : 'value'}
+                  value={convert.value}
+                  onChange={(e) => setConvert({ ...convert, value: e.target.value })}
+                />
+              )}
+              <button className="tb" onClick={applyConvert}>
+                Apply
+              </button>
+              <button className="tb" onClick={() => setConvert(null)}>
+                ✕
+              </button>
+            </span>
           )}
         </div>
       )}
