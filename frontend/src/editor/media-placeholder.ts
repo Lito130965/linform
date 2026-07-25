@@ -20,13 +20,19 @@ function labelFor(src: string): string {
   return `Image · ${value}`
 }
 
-/** Aspect ratio hints so the placeholder occupies a realistic footprint when
- * only width is set: QR is square, a barcode is wide and short. */
+/** Aspect ratio hints so the placeholder occupies the same footprint the real
+ * symbol will. QR is square. A Code128's real intrinsic ratio (measured) is
+ * ~0.63 with the digits printed, ~0.42 without — so the box height, for a fixed
+ * width, matches the rendered barcode. The payload width is a Jinja expression
+ * and cannot be known here, so this is a typical-case estimate, not exact. */
 function aspect(src: string): { w: number; h: number } {
   const m = /\{\{\s*([\s\S]+?)\s*\}\}/.exec(src)
   const inner = m?.[1] ?? ''
   if (/\|\s*qr\b/.test(inner)) return { w: 100, h: 100 }
-  if (/\|\s*barcode\b/.test(inner)) return { w: 300, h: 96 }
+  if (/\|\s*barcode\b/.test(inner)) {
+    const noText = /text\s*=\s*(false|0|none)/i.test(inner)
+    return noText ? { w: 200, h: 85 } : { w: 200, h: 126 }
+  }
   return { w: 200, h: 120 }
 }
 

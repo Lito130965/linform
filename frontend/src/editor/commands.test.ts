@@ -178,3 +178,50 @@ describe('setTableBorders', () => {
     expect((b.querySelector('table') as HTMLElement).style.border).toBe('')
   })
 })
+
+describe('column and row sizing', () => {
+  it('setColumnWidth sizes every cell in the column, not one', async () => {
+    const { setColumnWidth } = await import('./table-ops')
+    const b = bodyOf(TABLE)
+    setColumnWidth(b.querySelector('tbody td')!, '40mm')
+    // Column 0 across thead + both body rows.
+    const col0 = [...b.querySelectorAll('tr')].map((r) => (r as HTMLTableRowElement).cells[0])
+    expect(col0.every((c) => (c as HTMLElement).style.width === '40mm')).toBe(true)
+    // Column 1 untouched.
+    expect((b.querySelectorAll('tr')[0] as HTMLTableRowElement).cells[1].style.width).toBe('')
+  })
+
+  it('setRowHeight sizes the row', async () => {
+    const { setRowHeight } = await import('./table-ops')
+    const b = bodyOf(TABLE)
+    const cell = b.querySelector('tbody td')!
+    setRowHeight(cell, '15mm')
+    expect((cell.closest('tr') as HTMLElement).style.height).toBe('15mm')
+  })
+})
+
+describe('image layer', () => {
+  it('page background is fixed and repeats, behind is pinned under text, normal clears', async () => {
+    const { setLayer, layerOf } = await import('./layer')
+    const host = document.body.appendChild(document.createElement('div'))
+    host.innerHTML = '<p>text</p><img src="asset://x">'
+    const img = host.querySelector('img') as HTMLImageElement
+
+    setLayer(img, 'page')
+    expect(img.style.position).toBe('fixed')
+    expect(img.style.zIndex).toBe('-1')
+    expect(layerOf(img)).toBe('page')
+
+    setLayer(img, 'behind')
+    expect(img.style.position).toBe('absolute')
+    expect(img.style.zIndex).toBe('-1')
+    expect(host.style.position).toBe('relative') // anchor added
+    expect(layerOf(img)).toBe('behind')
+
+    setLayer(img, 'normal')
+    expect(img.style.position).toBe('')
+    expect(host.style.position).toBe('') // anchor removed
+    expect(layerOf(img)).toBe('normal')
+    host.remove()
+  })
+})

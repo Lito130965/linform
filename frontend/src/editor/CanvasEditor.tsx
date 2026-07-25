@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
 import { BLOCKS } from './blocks'
@@ -15,8 +15,28 @@ import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
 import { getFilterArg, setFilterArg } from './filter-args'
 import { parseMarginBoxes, runningAffordanceCss } from './furniture'
-import { BorderMode, addColumn, addRow, deleteColumn, deleteRow, setTableBorders } from './table-ops'
+import {
+  BorderMode,
+  addColumn,
+  addRow,
+  deleteColumn,
+  deleteRow,
+  setColumnWidth,
+  setRowHeight,
+  setTableBorders,
+} from './table-ops'
+import { type Layer, layerOf, setLayer } from './layer'
 import { setAlign, toggleInline } from './text-commands'
+
+/** Run `onMove` on every mouse move until the button is released. */
+function endDrag(onMove: (e: MouseEvent) => void): void {
+  const up = () => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', up)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', up)
+}
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
@@ -328,6 +348,28 @@ export default function CanvasEditor({
   const codeColour = (key: string, fallback: string): Colour =>
     parseColour((codeFilter && getFilterArg(lfSrc, codeFilter, key)) || fallback)
 
+  // Width/height mean the column and row when a table cell is selected, so a
+  // resize grows the whole column, not one lopsided cell.
+  const isCell = selected?.kind === 'cell'
+  const applyWidth = (v: string): void => {
+    if (isCell && selected) {
+      setColumnWidth(selected.el, v)
+      setTick((t) => t + 1)
+    } else applyStyle('width', v)
+  }
+  const applyHeight = (v: string): void => {
+    if (isCell && selected) {
+      setRowHeight(selected.el, v)
+      setTick((t) => t + 1)
+    } else applyStyle('height', v)
+  }
+
+  const applyLayer = (layer: Layer): void => {
+    if (!selected) return
+    setLayer(selected.el as HTMLElement, layer)
+    setTick((t) => t + 1)
+  }
+
   const insertBlock = (id: string) => {
     const block = BLOCKS.find((b) => b.id === id)
     const body = bodyRef.current
@@ -387,6 +429,38 @@ export default function CanvasEditor({
   } else if (selected && !selected.el.isConnected) {
     // The node was removed by an edit (e.g. an undo or a retype around it).
     queueMicrotask(() => setSelected(null))
+  }
+
+  // Selected cell rect in stage coordinates, for the column/row drag handles.
+  const cellRect =
+    isCell && selected?.el.isConnected
+      ? (selected.el as HTMLElement).getBoundingClientRect()
+      : null
+
+  const startColResize = (e: ReactMouseEvent) => {
+    if (!selected) return
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = (selected.el as HTMLElement).offsetWidth
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(8, startW + (ev.clientX - startX) / zoom)
+      setColumnWidth(selected.el, `${Math.round(w)}px`)
+      setTick((t) => t + 1)
+    }
+    endDrag(onMove)
+  }
+
+  const startRowResize = (e: ReactMouseEvent) => {
+    if (!selected) return
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = (selected.el as HTMLElement).offsetHeight
+    const onMove = (ev: MouseEvent) => {
+      const h = Math.max(8, startH + (ev.clientY - startY) / zoom)
+      setRowHeight(selected.el, `${Math.round(h)}px`)
+      setTick((t) => t + 1)
+    }
+    endDrag(onMove)
   }
 
   const stageWidth = pageWidth === null ? undefined : pageWidth * zoom
@@ -484,21 +558,34 @@ export default function CanvasEditor({
             />
           </label>
           <label className="prop">
-            W
+            {isCell ? 'Col W' : 'W'}
             <input
               defaultValue={styleValue('width')}
               placeholder="auto"
-              onChange={(e) => applyStyle('width', e.target.value)}
+              onChange={(e) => applyWidth(e.target.value)}
             />
           </label>
           <label className="prop">
-            H
+            {isCell ? 'Row H' : 'H'}
             <input
               defaultValue={styleValue('height')}
               placeholder="auto"
-              onChange={(e) => applyStyle('height', e.target.value)}
+              onChange={(e) => applyHeight(e.target.value)}
             />
           </label>
+          {selected.kind === 'image' && (
+            <label className="prop">
+              Layer
+              <select
+                defaultValue={layerOf(selected.el as HTMLElement)}
+                onChange={(e) => applyLayer(e.target.value as Layer)}
+              >
+                <option value="normal">In flow</option>
+                <option value="behind">Behind text</option>
+                <option value="page">Page background (every page)</option>
+              </select>
+            </label>
+          )}
           {codeFilter ? (
             <>
               <ColorControl
@@ -547,6 +634,30 @@ export default function CanvasEditor({
             }}
           />
           <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
+          {cellRect && (
+            <>
+              <div
+                className="col-resize"
+                title="Drag to resize column"
+                style={{
+                  left: cellRect.right * zoom - 3,
+                  top: cellRect.top * zoom,
+                  height: cellRect.height * zoom,
+                }}
+                onMouseDown={startColResize}
+              />
+              <div
+                className="row-resize"
+                title="Drag to resize row"
+                style={{
+                  left: cellRect.left * zoom,
+                  top: cellRect.bottom * zoom - 3,
+                  width: cellRect.width * zoom,
+                }}
+                onMouseDown={startRowResize}
+              />
+            </>
+          )}
           {selected && toolbarPos && (
             <div className="el-toolbar" style={{ left: toolbarPos.left, top: toolbarPos.top }}>
               <span className="el-kind">{KIND_LABEL[selected.kind]}</span>

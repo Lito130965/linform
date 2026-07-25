@@ -1266,3 +1266,27 @@ label {
   font-size: 11px;
   margin-left: -2px;
 }
+
+/* ---- table column/row resize handles ---- */
+
+.col-resize,
+.row-resize {
+  position: absolute;
+  z-index: 8;
+  background: transparent;
+}
+
+.col-resize {
+  width: 6px;
+  cursor: col-resize;
+}
+
+.row-resize {
+  height: 6px;
+  cursor: row-resize;
+}
+
+.col-resize:hover,
+.row-resize:hover {
+  background: var(--accent);
+}

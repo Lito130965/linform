@@ -12,7 +12,13 @@
 
 import { LF_SRC_ATTR, isJinjaImage, restoreRealSrc, showPlaceholder } from './media-placeholder'
 
-const CANVAS_ONLY_ATTRS = ['contenteditable', 'spellcheck', 'draggable', 'data-lf-selected']
+const CANVAS_ONLY_ATTRS = [
+  'contenteditable',
+  'spellcheck',
+  'draggable',
+  'data-lf-selected',
+  'data-lf-anchor',
+]
 
 // Placeholder chips and inert raw chips are both atomic: the caret must never
 // enter one and split the expression or the preserved source.

@@ -1,8 +1,13 @@
 import { type Colour } from './color'
 
-/** A colour swatch plus an opacity percent — one palette. Emits the combined
- * Colour on either change; the parent decides whether it becomes CSS rgba() or
- * a filter's hex argument. */
+/** A colour swatch plus an opacity percent — one palette.
+ *
+ * The swatch is UNCONTROLLED (defaultValue): while its native picker dialog is
+ * open, every drag fires onChange and re-renders the props bar, and pushing a
+ * fresh `value` into an open colour dialog traps it — the window stops
+ * responding and will not close. Leaving React out of the input's value while
+ * the dialog is open fixes that; the parent re-seeds it on each new selection
+ * through the props bar's key. */
 export default function ColorControl({
   label,
   value,
@@ -17,7 +22,7 @@ export default function ColorControl({
       <span className="cc-label">{label}</span>
       <input
         type="color"
-        value={value.hex}
+        defaultValue={value.hex}
         onChange={(e) => onChange({ ...value, hex: e.target.value })}
       />
       <input

@@ -22,24 +22,27 @@ export const BLOCKS: BlockDef[] = [
       '<thead><tr><th>Column</th><th>Column</th></tr></thead>' +
       '<tbody><tr><td>Value</td><td>Value</td></tr></tbody></table>',
   },
+  // Columns are borderless one-row tables, not flex divs: a table is what the
+  // author wants to grow (add rows, add/remove columns, resize) — the row/
+  // column tools then apply exactly as they do to any table.
   {
     id: 'columns-2',
     label: '2 columns',
-    // Explicit widths (not flex:1) so resizing one column never rebalances
-    // the other — each keeps whatever width you give it.
     content:
-      '<div style="display: flex;">' +
-      '<div style="width: 50%; flex-shrink: 0; min-height: 24px;">Left</div>' +
-      '<div style="width: 50%; flex-shrink: 0; min-height: 24px;">Right</div></div>',
+      '<table style="width: 100%; border-collapse: collapse;"><tbody><tr>' +
+      '<td style="width: 50%; vertical-align: top;">Left</td>' +
+      '<td style="width: 50%; vertical-align: top;">Right</td>' +
+      '</tr></tbody></table>',
   },
   {
     id: 'columns-3',
     label: '3 columns',
     content:
-      '<div style="display: flex;">' +
-      '<div style="width: 33.33%; flex-shrink: 0; min-height: 24px;">One</div>' +
-      '<div style="width: 33.33%; flex-shrink: 0; min-height: 24px;">Two</div>' +
-      '<div style="width: 33.33%; flex-shrink: 0; min-height: 24px;">Three</div></div>',
+      '<table style="width: 100%; border-collapse: collapse;"><tbody><tr>' +
+      '<td style="width: 33.33%; vertical-align: top;">One</td>' +
+      '<td style="width: 33.33%; vertical-align: top;">Two</td>' +
+      '<td style="width: 33.33%; vertical-align: top;">Three</td>' +
+      '</tr></tbody></table>',
   },
   { id: 'divider', label: 'Divider', content: '<hr>' },
   {

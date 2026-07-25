@@ -79,6 +79,28 @@ export function addColumn(from: Element): boolean {
   return true
 }
 
+/** Set a column's width by putting it on every cell in that column, so the
+ * column resizes as a whole rather than one lopsided cell. Width is a CSS
+ * length string ('40mm', '120px', '25%'). */
+export function setColumnWidth(cell: Element, width: string): boolean {
+  const table = tableOf(cell)
+  const index = cellIndexOf(cell)
+  if (!table || index < 0) return false
+  for (const row of Array.from(table.rows)) {
+    const c = row.cells[index] as HTMLElement | undefined
+    if (c) c.style.width = width
+  }
+  return true
+}
+
+/** Set a row's height on its <tr>. */
+export function setRowHeight(cell: Element, height: string): boolean {
+  const row = rowOf(cell)
+  if (!row) return false
+  ;(row as HTMLElement).style.height = height
+  return true
+}
+
 export type BorderMode = 'all' | 'outer' | 'none'
 
 /** Border presets for the whole table, as inline styles — the only channel
