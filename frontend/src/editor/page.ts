@@ -70,4 +70,17 @@ export const CANVAS_AFFORDANCE_CSS = `
     width: 100% !important;
     height: 100% !important;
   }
+  /* A running header/footer sits in flow in the canvas (the browser ignores
+     position: running); badge it so its true role reads clearly. */
+  [data-lf-running] {
+    outline: 1px dashed rgba(181, 138, 42, 0.8);
+    outline-offset: 2px;
+    position: relative;
+  }
+  [data-lf-running]::before {
+    content: "repeats at the " attr(data-lf-running) " of every page";
+    display: block;
+    font: 9px/1.6 system-ui, sans-serif;
+    color: #8a6d1a;
+  }
 `

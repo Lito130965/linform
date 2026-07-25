@@ -93,9 +93,14 @@ export default function CanvasEditor({
   // An active drag. While set, a transparent overlay covers the stage so the
   // iframe never swallows mousemove/mouseup — the bug where a resize kept
   // following the cursor after the button was released.
-  const [drag, setDrag] = useState<{ onMove: (e: MouseEvent) => void; cursor: string } | null>(
-    null,
-  )
+  const [drag, setDrag] = useState<{
+    onMove: (e: MouseEvent) => void
+    cursor: string
+    onEnd?: () => void
+  } | null>(null)
+  // Live drop target while dragging a block to reorder it.
+  const [moveDrop, setMoveDrop] = useState<{ el: Element; where: 'before' | 'after' } | null>(null)
+  const dropRef = useRef<{ el: Element; where: 'before' | 'after' } | null>(null)
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -411,13 +416,15 @@ export default function CanvasEditor({
     if (!block || !body || !doc) return
     const holder = doc.createElement('div')
     holder.innerHTML = block.content
-    const node = holder.firstElementChild
-    if (!node) return
-    prepareFragment(node)
+    const nodes = Array.from(holder.children)
+    if (nodes.length === 0) return
+    for (const node of nodes) prepareFragment(node)
     const target = selected?.el.isConnected ? selected.el : null
-    if (target) target.after(node)
-    else body.appendChild(node)
-    select(node)
+    // Insert all top-level nodes (header/footer carry a <style> plus the div).
+    if (target) for (const node of [...nodes].reverse()) target.after(node)
+    else for (const node of nodes) body.appendChild(node)
+    // Select the last visible node so the author can edit it immediately.
+    select(nodes[nodes.length - 1])
   }
 
   const moveSelected = (dir: -1 | 1) => {
@@ -519,6 +526,47 @@ export default function CanvasEditor({
         el.style.width = `${Math.round(Math.max(8, startW + (ev.clientX - startX) / zoom))}px`
         el.style.height = `${Math.round(Math.max(8, startH + (ev.clientY - startY) / zoom))}px`
         setTick((t) => t + 1)
+      },
+    })
+  }
+
+  // Drag a block to reorder it: hit-test through the overlay into the iframe,
+  // highlight a drop line before/after the block under the cursor, and on
+  // release move the dragged node there.
+  const startBlockMove = (e: ReactMouseEvent) => {
+    if (!selected) return
+    e.preventDefault()
+    const dragged = selected.el
+    setDrag({
+      cursor: 'grabbing',
+      onMove: (ev) => {
+        const doc = iframeRef.current?.contentDocument
+        const iframe = iframeRef.current
+        const body = bodyRef.current
+        if (!doc || !iframe || !body) return
+        const rect = iframe.getBoundingClientRect()
+        const x = (ev.clientX - rect.left) / zoom
+        const y = (ev.clientY - rect.top) / zoom
+        const under = doc.elementFromPoint(x, y)
+        const target = under ? findSelectable(under, body) : null
+        if (!target || target === dragged || dragged.contains(target)) {
+          dropRef.current = null
+          setMoveDrop(null)
+          return
+        }
+        const tr = (target as HTMLElement).getBoundingClientRect()
+        const where = y < tr.top + tr.height / 2 ? 'before' : 'after'
+        dropRef.current = { el: target, where }
+        setMoveDrop({ el: target, where })
+      },
+      onEnd: () => {
+        const d = dropRef.current
+        if (d && d.el !== dragged && !dragged.contains(d.el)) {
+          if (d.where === 'before') d.el.before(dragged)
+          else d.el.after(dragged)
+        }
+        dropRef.current = null
+        setMoveDrop(null)
       },
     })
   }
@@ -837,13 +885,33 @@ export default function CanvasEditor({
               )}
             </>
           )}
+          {moveDrop &&
+            (() => {
+              const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
+              return (
+                <div
+                  className="drop-line"
+                  style={{
+                    left: tr.left * zoom,
+                    top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
+                    width: tr.width * zoom,
+                  }}
+                />
+              )
+            })()}
           {drag && (
             <div
               className="drag-overlay"
               style={{ cursor: drag.cursor }}
               onMouseMove={(e) => drag.onMove(e.nativeEvent)}
-              onMouseUp={() => setDrag(null)}
-              onMouseLeave={() => setDrag(null)}
+              onMouseUp={() => {
+                drag.onEnd?.()
+                setDrag(null)
+              }}
+              onMouseLeave={() => {
+                setDrag(null)
+                setMoveDrop(null)
+              }}
             />
           )}
           {selected && toolbarPos && (
@@ -851,6 +919,9 @@ export default function CanvasEditor({
               <span className="el-kind">{KIND_LABEL[selected.kind]}</span>
               <button title="Select parent" onClick={() => select(parentSelectable(selected.el, bodyRef.current!))}>
                 ↑
+              </button>
+              <button className="grip" title="Drag to move" onMouseDown={startBlockMove}>
+                ⠿
               </button>
               <button title="Move up" onClick={() => moveSelected(-1)}>
                 ▲

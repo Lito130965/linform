@@ -50,4 +50,24 @@ export const BLOCKS: BlockDef[] = [
     label: 'Page break',
     content: '<div style="page-break-after: always;"></div>',
   },
+  // Header/footer repeat on every printed page via the running-element pattern
+  // (as in ai_test). The @page rule lives in a <style> carried in the body —
+  // WeasyPrint honours it there, so nothing touches the read-only author CSS.
+  // data-lf-running is a canvas-only badge marker, stripped on export.
+  {
+    id: 'header',
+    label: 'Page header',
+    content:
+      '<style>@page { margin-top: 22mm; @top-center { content: element(lf-header); } }</style>' +
+      '<div data-lf-running="header" style="position: running(lf-header); font-size: 9pt; ' +
+      'text-align: center; color: #555;">Header text — edit me</div>',
+  },
+  {
+    id: 'footer',
+    label: 'Page footer',
+    content:
+      '<style>@page { margin-bottom: 22mm; @bottom-center { content: element(lf-footer); } }</style>' +
+      '<div data-lf-running="footer" style="position: running(lf-footer); font-size: 9pt; ' +
+      'text-align: center; color: #555;">Footer text — edit me</div>',
+  },
 ]
