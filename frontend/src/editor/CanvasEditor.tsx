@@ -14,7 +14,7 @@ import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from '
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
 import { getFilterArg, setFilterArg } from './filter-args'
-import { parseMarginBoxes, runningAffordanceCss } from './furniture'
+import { parseMarginBoxes, parsePageBox, runningAffordanceCss } from './furniture'
 import {
   BorderMode,
   addColumn,
@@ -30,16 +30,6 @@ import { existingValue, isConditional, isRepeating, makeRepeating, wrapCondition
 import { protect } from '../jinja-bridge'
 import { PRESETS } from '../presets/registry'
 import { setAlign, toggleInline } from './text-commands'
-
-/** Run `onMove` on every mouse move until the button is released. */
-function endDrag(onMove: (e: MouseEvent) => void): void {
-  const up = () => {
-    window.removeEventListener('mousemove', onMove)
-    window.removeEventListener('mouseup', up)
-  }
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', up)
-}
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
@@ -100,6 +90,12 @@ export default function CanvasEditor({
   const [convert, setConvert] = useState<
     { type: 'repeat' | 'if' | 'cells'; value: string; item: string } | null
   >(null)
+  // An active drag. While set, a transparent overlay covers the stage so the
+  // iframe never swallows mousemove/mouseup — the bug where a resize kept
+  // following the cursor after the button was released.
+  const [drag, setDrag] = useState<{ onMove: (e: MouseEvent) => void; cursor: string } | null>(
+    null,
+  )
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -107,6 +103,8 @@ export default function CanvasEditor({
   )
   // The @page margin boxes the browser cannot render: shown as strips.
   const furniture = useMemo(() => parseMarginBoxes(canvasStyles), [canvasStyles])
+  // Page geometry so a page-background image can bleed past the margins.
+  const pageBox = useMemo(() => parsePageBox(canvasStyles), [canvasStyles])
 
   const select = (el: Element | null) => {
     const body = bodyRef.current
@@ -376,9 +374,10 @@ export default function CanvasEditor({
 
   const applyLayer = (layer: Layer): void => {
     if (!selected) return
-    setLayer(selected.el as HTMLElement, layer)
+    setLayer(selected.el as HTMLElement, layer, pageBox)
     setTick((t) => t + 1)
   }
+  const imageInCell = selected?.kind === 'image' && !!selected.el.closest('td, th')
 
   // Convert-existing: which transforms apply to the current selection, and a
   // small form to collect their one or two parameters.
@@ -471,18 +470,23 @@ export default function CanvasEditor({
     isCell && selected?.el.isConnected
       ? (selected.el as HTMLElement).getBoundingClientRect()
       : null
+  const imgRect =
+    selected?.kind === 'image' && selected.el.isConnected
+      ? (selected.el as HTMLElement).getBoundingClientRect()
+      : null
 
   const startColResize = (e: ReactMouseEvent) => {
     if (!selected) return
     e.preventDefault()
     const startX = e.clientX
     const startW = (selected.el as HTMLElement).offsetWidth
-    const onMove = (ev: MouseEvent) => {
-      const w = Math.max(8, startW + (ev.clientX - startX) / zoom)
-      setColumnWidth(selected.el, `${Math.round(w)}px`)
-      setTick((t) => t + 1)
-    }
-    endDrag(onMove)
+    setDrag({
+      cursor: 'col-resize',
+      onMove: (ev) => {
+        setColumnWidth(selected.el, `${Math.round(Math.max(8, startW + (ev.clientX - startX) / zoom))}px`)
+        setTick((t) => t + 1)
+      },
+    })
   }
 
   const startRowResize = (e: ReactMouseEvent) => {
@@ -490,12 +494,55 @@ export default function CanvasEditor({
     e.preventDefault()
     const startY = e.clientY
     const startH = (selected.el as HTMLElement).offsetHeight
-    const onMove = (ev: MouseEvent) => {
-      const h = Math.max(8, startH + (ev.clientY - startY) / zoom)
-      setRowHeight(selected.el, `${Math.round(h)}px`)
-      setTick((t) => t + 1)
-    }
-    endDrag(onMove)
+    setDrag({
+      cursor: 'row-resize',
+      onMove: (ev) => {
+        setRowHeight(selected.el, `${Math.round(Math.max(8, startH + (ev.clientY - startY) / zoom))}px`)
+        setTick((t) => t + 1)
+      },
+    })
+  }
+
+  // Image resize: drag the bottom-right corner. Width/height go on the element
+  // inline, so they survive export and drive the printed size.
+  const startImageResize = (e: ReactMouseEvent) => {
+    if (!selected) return
+    e.preventDefault()
+    const el = selected.el as HTMLElement
+    const startX = e.clientX
+    const startY = e.clientY
+    const startW = el.offsetWidth
+    const startH = el.offsetHeight
+    setDrag({
+      cursor: 'nwse-resize',
+      onMove: (ev) => {
+        el.style.width = `${Math.round(Math.max(8, startW + (ev.clientX - startX) / zoom))}px`
+        el.style.height = `${Math.round(Math.max(8, startH + (ev.clientY - startY) / zoom))}px`
+        setTick((t) => t + 1)
+      },
+    })
+  }
+
+  // A positioned image (behind text / page / cell background) may be dragged to
+  // any coordinate; its top/left move with the cursor.
+  const positioned = selected?.kind === 'image' &&
+    ['absolute', 'fixed'].includes((selected.el as HTMLElement).style.position)
+  const startImageMove = (e: ReactMouseEvent) => {
+    if (!selected) return
+    e.preventDefault()
+    const el = selected.el as HTMLElement
+    const startX = e.clientX
+    const startY = e.clientY
+    const startTop = parseFloat(el.style.top) || 0
+    const startLeft = parseFloat(el.style.left) || 0
+    setDrag({
+      cursor: 'move',
+      onMove: (ev) => {
+        el.style.top = `${Math.round(startTop + (ev.clientY - startY) / zoom)}px`
+        el.style.left = `${Math.round(startLeft + (ev.clientX - startX) / zoom)}px`
+        setTick((t) => t + 1)
+      },
+    })
   }
 
   const stageWidth = pageWidth === null ? undefined : pageWidth * zoom
@@ -617,6 +664,7 @@ export default function CanvasEditor({
               >
                 <option value="normal">In flow</option>
                 <option value="behind">Behind text</option>
+                {imageInCell && <option value="cell">Cell background</option>}
                 <option value="page">Page background (every page)</option>
               </select>
             </label>
@@ -765,6 +813,38 @@ export default function CanvasEditor({
                 onMouseDown={startRowResize}
               />
             </>
+          )}
+          {imgRect && (
+            <>
+              <div
+                className="img-resize"
+                title="Drag to resize"
+                style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
+                onMouseDown={startImageResize}
+              />
+              {positioned && (
+                <div
+                  className="img-move"
+                  title="Drag to move freely"
+                  style={{
+                    left: imgRect.left * zoom,
+                    top: imgRect.top * zoom,
+                    width: imgRect.width * zoom,
+                    height: imgRect.height * zoom,
+                  }}
+                  onMouseDown={startImageMove}
+                />
+              )}
+            </>
+          )}
+          {drag && (
+            <div
+              className="drag-overlay"
+              style={{ cursor: drag.cursor }}
+              onMouseMove={(e) => drag.onMove(e.nativeEvent)}
+              onMouseUp={() => setDrag(null)}
+              onMouseLeave={() => setDrag(null)}
+            />
           )}
           {selected && toolbarPos && (
             <div className="el-toolbar" style={{ left: toolbarPos.left, top: toolbarPos.top }}>

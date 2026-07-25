@@ -48,6 +48,38 @@ function previewOfContent(value: string): { preview: string; runningName?: strin
   return { preview: parts.join(''), runningName }
 }
 
+/** Physical page geometry for a full-bleed background: the sheet size and the
+ * @page margins, so a fixed image can be pushed out past the margins to cover
+ * the whole page (the ai_test pattern). Null when no @page size is declared. */
+export interface PageBox {
+  width: string
+  height: string
+  margin: { top: string; right: string; bottom: string; left: string }
+}
+
+const PAGE_SIZES: Record<string, [string, string]> = {
+  a3: ['297mm', '420mm'],
+  a4: ['210mm', '297mm'],
+  a5: ['148mm', '210mm'],
+  letter: ['216mm', '279mm'],
+}
+
+export function parsePageBox(css: string): PageBox | null {
+  const pm = /@page\b[^{]*\{/.exec(css)
+  if (!pm) return null
+  const body = blockBody(css, pm.index + pm[0].length - 1).body
+  const sizeM = /size\s*:\s*(a3|a4|a5|letter)\s*(landscape)?/i.exec(body)
+  if (!sizeM) return null
+  let [w, h] = PAGE_SIZES[sizeM[1].toLowerCase()]
+  if (sizeM[2]) [w, h] = [h, w]
+
+  // margin shorthand: 1–4 values, CSS order (top / right / bottom / left).
+  const marginM = /margin\s*:\s*([^;}]+)/.exec(body)
+  const parts = marginM ? marginM[1].trim().split(/\s+/) : ['0']
+  const [t, r = t, b = t, l = r] = parts
+  return { width: w, height: h, margin: { top: t, right: r, bottom: b, left: l } }
+}
+
 /** All margin boxes declared inside @page rules of the given CSS. */
 export function parseMarginBoxes(css: string): MarginBox[] {
   const out: MarginBox[] = []

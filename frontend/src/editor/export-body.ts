@@ -18,6 +18,7 @@ const CANVAS_ONLY_ATTRS = [
   'draggable',
   'data-lf-selected',
   'data-lf-anchor',
+  'data-lf-pagebg',
 ]
 
 // Placeholder chips and inert raw chips are both atomic: the caret must never

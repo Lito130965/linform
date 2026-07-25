@@ -225,3 +225,46 @@ describe('image layer', () => {
     host.remove()
   })
 })
+
+describe('parsePageBox', () => {
+  it('reads A4 size and margins for a full-bleed background', async () => {
+    const { parsePageBox } = await import('./furniture')
+    const box = parsePageBox('@page { size: A4; margin: 20mm 15mm; }')!
+    expect(box.width).toBe('210mm')
+    expect(box.height).toBe('297mm')
+    expect(box.margin).toEqual({ top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' })
+  })
+
+  it('swaps dimensions for landscape and returns null without @page size', async () => {
+    const { parsePageBox } = await import('./furniture')
+    expect(parsePageBox('@page { size: A4 landscape; margin: 0 }')!.width).toBe('297mm')
+    expect(parsePageBox('body { color: red }')).toBeNull()
+  })
+})
+
+describe('image layer: cell background and full-bleed page', () => {
+  it('cell background fills the nearest cell and anchors it', async () => {
+    const { setLayer, layerOf } = await import('./layer')
+    const b = bodyOf('<table><tbody><tr><td><img src="asset://x"></td></tr></tbody></table>')
+    const img = b.querySelector('img') as HTMLImageElement
+    setLayer(img, 'cell')
+    expect(img.style.position).toBe('absolute')
+    expect(img.style.width).toBe('100%')
+    expect(img.style.right).toBe('0px')
+    expect((b.querySelector('td') as HTMLElement).style.position).toBe('relative')
+    expect(layerOf(img)).toBe('cell')
+  })
+
+  it('page background bleeds past the margins when a page box is given', async () => {
+    const { setLayer } = await import('./layer')
+    const host = document.body.appendChild(document.createElement('div'))
+    host.innerHTML = '<img src="asset://x">'
+    const img = host.querySelector('img') as HTMLImageElement
+    setLayer(img, 'page', { width: '210mm', height: '297mm', margin: { top: '20mm', right: '20mm', bottom: '20mm', left: '20mm' } })
+    expect(img.style.position).toBe('fixed')
+    expect(img.style.top).toBe('-20mm')
+    expect(img.style.width).toBe('210mm')
+    expect(img.dataset.lfPagebg).toBe('1')
+    host.remove()
+  })
+})

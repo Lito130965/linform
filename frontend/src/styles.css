@@ -1309,3 +1309,32 @@ label {
   padding: 3px 6px;
   font-size: 12px;
 }
+
+/* ---- image resize / move handles + drag overlay ---- */
+
+.img-resize {
+  position: absolute;
+  z-index: 9;
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.img-move {
+  position: absolute;
+  z-index: 7;
+  cursor: move;
+  background: transparent;
+}
+
+/* Covers the whole viewport during a drag so the iframe cannot swallow
+   mousemove/mouseup — the fix for a resize that kept following the cursor. */
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}

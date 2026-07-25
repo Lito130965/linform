@@ -61,4 +61,13 @@ export const CANVAS_AFFORDANCE_CSS = `
     outline: 2px solid #4f8cff !important;
     outline-offset: 1px;
   }
+  /* A page-background image is exported with negative margin offsets so it
+     bleeds to the sheet edge in print; in the margin-less canvas iframe that
+     would shift it off-corner, so show it filling the iframe instead. */
+  img[data-lf-pagebg] {
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
 `
