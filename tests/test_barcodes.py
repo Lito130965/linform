@@ -101,3 +101,28 @@ def test_the_filter_emits_a_full_qr_not_a_micro_qr():
     assert _qr_modules(barcodes.qr("KZ-2026-000123")) >= 21
     # The shortest payloads are exactly where the Micro fallback used to bite.
     assert _qr_modules(barcodes.qr("1")) >= 21
+
+
+def test_qr_takes_module_and_background_colours():
+    # segno shortens hex: #cc0000 -> #c00 on the modules' stroke, #eeeeee -> #eee
+    # on the background fill.
+    svg = _svg(barcodes.qr("HELLO", dark="#cc0000", light="#eeeeee")).lower()
+    assert 'stroke="#c00"' in svg
+    assert "#eee" in svg
+
+
+def test_qr_transparent_background_drops_the_light_fill():
+    # Fully transparent light -> segno None -> no background rect at all.
+    clear = _svg(barcodes.qr("HELLO", light="#ffffff00"))
+    opaque = _svg(barcodes.qr("HELLO", light="#ffffff"))
+    assert clear != opaque
+
+
+def test_barcode_8digit_hex_becomes_rgba_in_the_svg():
+    svg = _svg(barcodes.barcode("ABC123", foreground="#00000080"))
+    assert "rgba(0, 0, 0, 0.5" in svg
+
+
+def test_barcode_plain_hex_foreground_passes_through():
+    svg = _svg(barcodes.barcode("ABC123", foreground="#ff0000", background="#ffffff"))
+    assert "ff0000" in svg.lower()

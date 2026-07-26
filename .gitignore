@@ -22,3 +22,6 @@ linform.db
 # IDE
 .idea/
 .vscode/
+
+# Spike fixtures: real templates fetched from a live server — never committed
+frontend/spike-fixtures/

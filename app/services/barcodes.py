@@ -18,6 +18,7 @@ and the vector scales to it.
 """
 
 import base64
+import re
 from io import BytesIO
 
 #: Refuse absurd payloads outright rather than melting a worker over a symbol
@@ -48,6 +49,26 @@ def _svg_data_uri(svg: bytes) -> str:
     return "data:image/svg+xml;base64," + base64.b64encode(svg).decode("ascii")
 
 
+def _none_if_clear(color: object) -> str | None:
+    """A fully transparent background becomes segno's ``None`` — no rect at all,
+    so the paper shows through — rather than a #rrggbb00 fill some viewers keep."""
+    s = str(color).strip().lower()
+    if s in ("", "none", "transparent") or (len(s) == 9 and s.endswith("00")):
+        return None
+    return str(color)
+
+
+def _rgba_if_hex8(color: object) -> str:
+    """8-digit hex → rgba() for the barcode SVG: WeasyPrint honours rgba alpha
+    reliably, 8-digit hex in SVG fills less so. 6-digit hex and names pass through."""
+    s = str(color).strip()
+    m = re.fullmatch(r"#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})", s)
+    if not m:
+        return s
+    r, g, b, a = (int(m.group(i), 16) for i in range(1, 5))
+    return f"rgba({r}, {g}, {b}, {round(a / 255, 3)})"
+
+
 def _check(value: object, what: str) -> str:
     text = "" if value is None else str(value)
     if not text:
@@ -59,13 +80,22 @@ def _check(value: object, what: str) -> str:
     return text
 
 
-def qr(value: object, error: str = "m", border: int = 2, dark: str = "#000") -> str:
+def qr(
+    value: object,
+    error: str = "m",
+    border: int = 2,
+    dark: str = "#000",
+    light: str = "#fff",
+) -> str:
     """``{{ order_id | qr }}`` -> an SVG data URI for <img src="...">.
 
     ``error`` is the correction level l/m/q/h: higher survives a worse print or
     a partly covered symbol, at the cost of a denser grid. ``border`` is the
     quiet zone in modules — the spec asks for 4, but 2 is usually enough on
-    clean paper and saves room on a crowded form.
+    clean paper and saves room on a crowded form. ``dark`` is the module colour
+    and ``light`` the background; both take hex, including 8-digit #rrggbbaa for
+    transparency — a fully transparent light lets the paper show through. A
+    low-contrast pair is the classic unscannable code, so keep dark dark.
     """
     import segno
 
@@ -83,9 +113,15 @@ def qr(value: object, error: str = "m", border: int = 2, dark: str = "#000") -> 
     except Exception as exc:  # data too large for any version
         raise BarcodeError(f"qr cannot encode this value: {exc}") from exc
     buf = BytesIO()
-    # omitsize keeps width/height off the root element, so the template's CSS
-    # decides the printed size instead of a hardcoded pixel count.
-    symbol.save(buf, kind="svg", xmldecl=False, omitsize=True, border=int(border), dark=dark)
+    try:
+        # omitsize keeps width/height off the root element, so the template's
+        # CSS decides the printed size instead of a hardcoded pixel count.
+        symbol.save(
+            buf, kind="svg", xmldecl=False, omitsize=True, border=int(border),
+            dark=dark, light=_none_if_clear(light),
+        )
+    except ValueError as exc:
+        raise BarcodeError(f"qr colour is not valid: {exc}") from exc
     return _svg_data_uri(buf.getvalue())
 
 
@@ -95,12 +131,17 @@ def barcode(
     text: bool = False,
     module_height: float = 12.0,
     quiet_zone: float = 2.0,
+    foreground: str = "#000",
+    background: str = "#fff",
 ) -> str:
     """``{{ tracking | barcode('code128') }}`` -> an SVG data URI.
 
     ``text`` prints the human-readable digits under the bars; forms usually
     carry the number in their own layout already, so it defaults off.
-    ``module_height`` and ``quiet_zone`` are millimetres.
+    ``module_height`` and ``quiet_zone`` are millimetres. ``foreground`` colours
+    the bars and the digits, ``background`` the field behind them; both take hex
+    including 8-digit #rrggbbaa (the alpha is passed through to the SVG, which
+    the renderer honours).
     """
     import barcode as pybarcode
     from barcode.writer import SVGWriter
@@ -125,6 +166,8 @@ def barcode(
                 "write_text": bool(text),
                 "module_height": float(module_height),
                 "quiet_zone": float(quiet_zone),
+                "foreground": _rgba_if_hex8(foreground),
+                "background": _rgba_if_hex8(background),
             },
         )
     except Exception as exc:

@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import type { EditorView } from '@codemirror/view'
-import type { Editor as GrapesEditor } from 'grapesjs'
 import { api, AssistantStatus, TemplateDetail } from '../api'
 import {
   detect,
@@ -15,9 +14,13 @@ import {
 } from '../jinja-bridge'
 import PreviewPane from './PreviewPane'
 import PlaceholderPanel from './PlaceholderPanel'
+import PresetPanel from './PresetPanel'
+import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
+import type { Preset } from '../presets/registry'
+import { parseHints } from '../presets/hints'
 import VersionHistory from './VersionHistory'
-import VisualEditor from './VisualEditor'
+import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import AssistantPanel from './AssistantPanel'
 
 const STARTER_TEMPLATE = `<style>
@@ -52,14 +55,36 @@ export default function Editor({
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
+  const [presetFor, setPresetFor] = useState<Preset | null>(null)
+  const [panelTab, setPanelTab] = useState<'placeholders' | 'presets' | 'assets' | 'data'>(
+    'placeholders',
+  )
+  const [panelHeight, setPanelHeight] = useState(220)
+
+  // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
+  // editor or vanishing; the value is otherwise the user's to set.
+  const startPanelResize = (e: ReactMouseEvent) => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = panelHeight
+    const onMove = (ev: MouseEvent) =>
+      setPanelHeight(Math.max(80, Math.min(700, startH + (startY - ev.clientY))))
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [mode, setMode] = useState<'code' | 'visual'>('code')
   const viewRef = useRef<EditorView | null>(null)
-  const grapesRef = useRef<GrapesEditor | null>(null)
+  const canvasApiRef = useRef<CanvasEditorApi | null>(null)
   const htmlRef = useRef('')
-  // Set on entering Visual: the parts of the template GrapesJS must not see.
+  // Set on entering Visual: the document scaffolding and <style> the canvas
+  // shows read-only but must not let the user edit into the body.
   const splitRef = useRef<{ prefix: string; suffix: string; styles: string } | null>(null)
   const visualInitialRef = useRef('')
 
@@ -140,10 +165,7 @@ export default function Editor({
 
   const insertText = (text: string) => {
     if (mode === 'visual') {
-      const editor = grapesRef.current
-      if (!editor) return
-      const target = editor.getSelected() ?? editor.getWrapper()
-      target?.append(toCanvasAssets(text))
+      canvasApiRef.current?.insertHtml(toCanvasAssets(text))
       setDirty(true)
       return
     }
@@ -160,6 +182,23 @@ export default function Editor({
     insertText(
       mode === 'visual' ? `<span data-jinja-expr="${name}">{{ ${name} }}</span>` : `{{ ${name} }}`,
     )
+
+  // Preset source (from the dialog, configured against test-data hints). Code
+  // inserts it raw; Visual inserts its protected form, so the two modes stay
+  // provably identical (protect/restore inverse). detect() already guarded the
+  // dialog's Insert button, so this cannot corrupt the canvas silently.
+  const insertPresetSource = (source: string) => {
+    if (mode !== 'visual') {
+      insertText(source)
+      return
+    }
+    try {
+      canvasApiRef.current?.insertHtml(toCanvasAssets(protect(source)))
+      setDirty(true)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   const enterVisual = () => {
     setError(null)
@@ -199,7 +238,7 @@ export default function Editor({
   }
 
   const exitVisual = () => {
-    grapesRef.current = null
+    canvasApiRef.current = null
     setMode('code')
   }
 
@@ -335,27 +374,57 @@ export default function Editor({
               }}
             />
           ) : (
-            <VisualEditor
+            <CanvasEditor
               key={loadedVersion ?? 'new'}
               initialBody={visualInitialRef.current}
               canvasStyles={splitRef.current?.styles ?? ''}
+              arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onChange={handleVisualChange}
-              onReady={(editor) => {
-                grapesRef.current = editor
+              onReady={(api) => {
+                canvasApiRef.current = api
               }}
             />
           )}
-          <div className="bottom-panels">
-            <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
-            <AssetsPanel onInsert={insertText} />
-            <div className="test-data">
-              <label>Test data (JSON) — preview renders with it</label>
-              <textarea
-                spellCheck={false}
-                value={testData}
-                onChange={(e) => setTestData(e.target.value)}
-              />
-              {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+          <div className="bottom-panels" style={{ maxHeight: panelHeight, height: panelHeight }}>
+            <div
+              className="panel-resize"
+              onMouseDown={startPanelResize}
+              title="Drag to resize"
+            />
+            <div className="panel-tabs">
+              {(['placeholders', 'presets', 'assets', 'data'] as const).map((t) => (
+                <button
+                  key={t}
+                  className={panelTab === t ? 'panel-tab active' : 'panel-tab'}
+                  onClick={() => setPanelTab(t)}
+                >
+                  {t === 'placeholders'
+                    ? 'Placeholders'
+                    : t === 'presets'
+                      ? 'Presets'
+                      : t === 'assets'
+                        ? 'Assets'
+                        : 'Test data'}
+                </button>
+              ))}
+            </div>
+            <div className="panel-body">
+              {panelTab === 'placeholders' && (
+                <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
+              )}
+              {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
+              {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
+              {panelTab === 'data' && (
+                <div className="test-data">
+                  <label>Test data (JSON) — preview renders with it</label>
+                  <textarea
+                    spellCheck={false}
+                    value={testData}
+                    onChange={(e) => setTestData(e.target.value)}
+                  />
+                  {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -398,6 +467,16 @@ export default function Editor({
             onLoad={(v) => switchVersion(v)}
             onPublish={(v) => publishVersion(v)}
             onClose={() => setShowHistory(false)}
+          />
+        )}
+
+        {presetFor && (
+          <PresetDialog
+            preset={presetFor}
+            placeholders={placeholderNames}
+            testData={testData}
+            onInsert={insertPresetSource}
+            onClose={() => setPresetFor(null)}
           />
         )}
       </div>
