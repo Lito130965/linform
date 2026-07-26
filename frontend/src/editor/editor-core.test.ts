@@ -131,3 +131,20 @@ describe('pagination spacers are canvas-only', () => {
     expect(kindOf(b.querySelector('[data-lf-spacer]')!)).toBeNull()
   })
 })
+
+describe('page break is badged in the canvas but exports clean', () => {
+  it('marks an empty page-break div and strips the marker on export', () => {
+    const b = bodyOf('<p>a</p><div style="page-break-after: always;"></div><p>b</p>')
+    prepareBody(b)
+    const brk = b.querySelector('[style*="page-break-after"]')!
+    expect(brk.hasAttribute('data-lf-pagebreak')).toBe(true)
+    // Export keeps the break rule, drops the canvas-only badge marker.
+    expect(exportBody(b)).toBe('<p>a</p><div style="page-break-after: always;"></div><p>b</p>')
+  })
+
+  it('does not badge a real element that merely also breaks', () => {
+    const b = bodyOf('<div style="page-break-after: always;">has content</div>')
+    prepareBody(b)
+    expect(b.querySelector('div')!.hasAttribute('data-lf-pagebreak')).toBe(false)
+  })
+})

@@ -20,11 +20,27 @@ const CANVAS_ONLY_ATTRS = [
   'data-lf-anchor',
   'data-lf-pagebg',
   'data-lf-running',
+  'data-lf-pagebreak',
 ]
 
 // Placeholder chips and inert raw chips are both atomic: the caret must never
 // enter one and split the expression or the preserved source.
 const CHIP_SELECTOR = '[data-jinja-expr], [data-jinja-raw]'
+
+/** A dedicated page-break: an empty element whose only job is the break. It is
+ * invisible in print, so the canvas badges it (via data-lf-pagebreak) to make
+ * it clickable — then the toolbar's move/delete work on it like any block. */
+function isPageBreakBlock(el: Element): boolean {
+  const style = el.getAttribute('style') ?? ''
+  if (!/(?:page-)?break-(?:after|before)\s*:\s*(always|page)/i.test(style)) return false
+  return el.children.length === 0 && (el.textContent ?? '').trim() === ''
+}
+
+function affordBreaks(root: ParentNode): void {
+  for (const el of Array.from(root.querySelectorAll('*'))) {
+    if (isPageBreakBlock(el)) el.setAttribute('data-lf-pagebreak', '')
+  }
+}
 
 function affordImages(root: ParentNode): void {
   for (const img of Array.from(root.querySelectorAll('img'))) {
@@ -40,6 +56,7 @@ export function prepareBody(body: HTMLElement): void {
     chip.setAttribute('contenteditable', 'false')
   }
   affordImages(body)
+  affordBreaks(body)
 }
 
 /** A newly inserted fragment gets the same affordances as the initial mount. */
@@ -49,7 +66,9 @@ export function prepareFragment(el: Element): void {
     chip.setAttribute('contenteditable', 'false')
   }
   if (isJinjaImage(el)) showPlaceholder(el)
+  if (isPageBreakBlock(el)) el.setAttribute('data-lf-pagebreak', '')
   affordImages(el)
+  affordBreaks(el)
 }
 
 export function exportBody(body: HTMLElement): string {

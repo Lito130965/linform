@@ -84,4 +84,27 @@ export const CANVAS_AFFORDANCE_CSS = `
     font: 9px/1.6 system-ui, sans-serif;
     color: #8a6d1a;
   }
+  /* A page break is invisible in print; show it as a labelled bar so it can be
+     clicked, moved and deleted like any block. Canvas-only — the exported
+     element keeps just its page-break style. */
+  [data-lf-pagebreak] {
+    display: block !important;
+    height: 20px !important;
+    min-height: 20px !important;
+    margin: 6px 0 !important;
+    border-top: 2px dashed #c94f4f;
+    background: repeating-linear-gradient(
+      -45deg, rgba(201, 79, 79, 0.10), rgba(201, 79, 79, 0.10) 6px,
+      transparent 6px, transparent 12px);
+    position: relative;
+    cursor: pointer;
+  }
+  [data-lf-pagebreak]::after {
+    content: "✂ page break";
+    position: absolute;
+    top: 2px;
+    left: 8px;
+    font: 10px/1.4 system-ui, sans-serif;
+    color: #c94f4f;
+  }
 `
