@@ -5,18 +5,19 @@
  * duration of the migration flag and dies with it in Stage 3.
  */
 
-/** Paper formats at 96dpi (portrait widths). The canvas width is a hint —
- * the PDF preview remains the truth about pages — but matching widths make
- * wrapping in the canvas realistic. `width: null` means "fill the container"
- * (free width). */
-export const PAGE_FORMATS: { id: string; name: string; width: number | null }[] = [
-  { id: 'A4', name: 'A4', width: 794 },
-  { id: 'A4 landscape', name: 'A4 landscape', width: 1123 },
-  { id: 'A5', name: 'A5', width: 559 },
-  { id: 'A5 landscape', name: 'A5 landscape', width: 794 },
-  { id: 'A3', name: 'A3', width: 1123 },
-  { id: 'Letter', name: 'Letter', width: 816 },
-  { id: 'Free', name: 'Free width', width: null },
+/** Paper formats at 96dpi. The canvas width is a hint — the PDF preview
+ * remains the truth about pages — but matching the width makes wrapping
+ * realistic and the height lets the canvas show a full sheet to its bottom
+ * edge and split into page-tall sheets. `width: null` means "fill the
+ * container" (free width, no page height). */
+export const PAGE_FORMATS: { id: string; name: string; width: number | null; height: number | null }[] = [
+  { id: 'A4', name: 'A4', width: 794, height: 1123 },
+  { id: 'A4 landscape', name: 'A4 landscape', width: 1123, height: 794 },
+  { id: 'A5', name: 'A5', width: 559, height: 794 },
+  { id: 'A5 landscape', name: 'A5 landscape', width: 794, height: 559 },
+  { id: 'A3', name: 'A3', width: 1123, height: 1587 },
+  { id: 'Letter', name: 'Letter', width: 816, height: 1056 },
+  { id: 'Free', name: 'Free width', width: null, height: null },
 ]
 
 /** Pick the initial canvas format from the template's own @page rule. */

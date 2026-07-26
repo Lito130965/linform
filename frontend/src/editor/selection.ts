@@ -39,6 +39,8 @@ const BLOCK_TAGS = new Set([
 ])
 
 export function kindOf(el: Element): NodeKind | null {
+  // Canvas-only pagination spacers are never selectable.
+  if (el.hasAttribute('data-lf-spacer')) return null
   // Jinja marks outrank the tag: a repeating <tr> is first of all a loop.
   if (el.hasAttribute('data-jinja-expr')) return 'chip'
   if (el.hasAttribute('data-jinja-raw')) return 'raw'

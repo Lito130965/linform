@@ -1352,3 +1352,25 @@ label {
   pointer-events: none;
   box-shadow: 0 0 4px var(--accent);
 }
+
+/* ---- page boundaries in the canvas ---- */
+
+.page-boundary {
+  position: absolute;
+  left: 0;
+  height: 0;
+  border-top: 2px dashed rgba(79, 140, 255, 0.6);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.page-boundary span {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  font-size: 10px;
+  color: var(--accent);
+  background: var(--bg);
+  padding: 0 4px;
+  border-radius: 3px;
+}

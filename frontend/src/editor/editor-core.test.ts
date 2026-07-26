@@ -118,3 +118,16 @@ describe('formatFromStyles', () => {
     }
   })
 })
+
+describe('pagination spacers are canvas-only', () => {
+  it('export strips data-lf-spacer elements entirely', () => {
+    const b = bodyOf('<p>a</p><div data-lf-spacer style="height:200px"></div><p>b</p>')
+    prepareBody(b)
+    expect(exportBody(b)).toBe('<p>a</p><p>b</p>')
+  })
+
+  it('a spacer is not selectable', () => {
+    const b = bodyOf('<div data-lf-spacer></div>')
+    expect(kindOf(b.querySelector('[data-lf-spacer]')!)).toBeNull()
+  })
+})

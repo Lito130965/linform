@@ -31,6 +31,38 @@ import { protect } from '../jinja-bridge'
 import { PRESETS } from '../presets/registry'
 import { setAlign, toggleInline } from './text-commands'
 
+/** Does this element force a page break, and on which side? */
+function breakSide(el: HTMLElement): 'after' | 'before' | null {
+  const isBreak = (v: string) => v === 'always' || v === 'page'
+  if (isBreak(el.style.pageBreakAfter) || isBreak(el.style.breakAfter)) return 'after'
+  if (isBreak(el.style.pageBreakBefore) || isBreak(el.style.breakBefore)) return 'before'
+  return null
+}
+
+/** Push content past a page break onto the next sheet, so the canvas shows the
+ * following content on a new page as it will print. The pushes are canvas-only
+ * spacer divs (data-lf-spacer), stripped on export; the caller detaches the
+ * observer so they neither loop nor reach history. */
+function paginate(body: HTMLElement, pageHeight: number | null): void {
+  for (const s of Array.from(body.querySelectorAll('[data-lf-spacer]'))) s.remove()
+  if (!pageHeight) return
+  const doc = body.ownerDocument
+  const bodyTop = body.getBoundingClientRect().top
+  for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
+    const side = breakSide(el)
+    if (!side) continue
+    const rect = el.getBoundingClientRect()
+    const edge = (side === 'after' ? rect.bottom : rect.top) - bodyTop
+    const gap = Math.ceil(edge / pageHeight) * pageHeight - edge
+    if (gap <= 2 || gap >= pageHeight) continue
+    const spacer = doc.createElement('div')
+    spacer.setAttribute('data-lf-spacer', '1')
+    spacer.style.height = `${Math.round(gap)}px`
+    if (side === 'after') el.after(spacer)
+    else el.before(spacer)
+  }
+}
+
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
   /** Insert markup at the selection (after the selected node) or append. */
@@ -106,6 +138,18 @@ export default function CanvasEditor({
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
     [format],
   )
+  const pageHeight = useMemo(
+    () => PAGE_FORMATS.find((f) => f.id === format)?.height ?? null,
+    [format],
+  )
+  // The sheet shown always fills whole pages down to the bottom edge; content
+  // taller than one page extends into further page-tall sheets.
+  const sheetHeight =
+    pageHeight ? Math.max(1, Math.ceil(frameHeight / pageHeight)) * pageHeight : frameHeight
+  const pageCount = pageHeight ? Math.round(sheetHeight / pageHeight) : 1
+  // The observer closure (mounted once) reads the live page height from here.
+  const pageHeightRef = useRef(pageHeight)
+  pageHeightRef.current = pageHeight
   // The @page margin boxes the browser cannot render: shown as strips.
   const furniture = useMemo(() => parseMarginBoxes(canvasStyles), [canvasStyles])
   // Page geometry so a page-background image can bleed past the margins.
@@ -170,6 +214,14 @@ export default function CanvasEditor({
     const body = doc.body
     body.innerHTML = initialBody
     prepareBody(body)
+    // Show content in its real position: inset by the @page margins, so the
+    // canvas matches where things actually print. body.style is canvas-only —
+    // export is body.innerHTML, never the body element itself.
+    body.style.margin = '0'
+    if (pageBox) {
+      const m = pageBox.margin
+      body.style.padding = `${m.top} ${m.right} ${m.bottom} ${m.left}`
+    }
     bodyRef.current = body
     historyRef.current = new SnapshotHistory(exportBody(body))
 
@@ -247,10 +299,16 @@ export default function CanvasEditor({
     const measure = () => setFrameHeight(Math.max(doc.documentElement.scrollHeight, 200))
     measure()
 
-    // Any settled burst of DOM changes: re-measure, reposition the toolbar,
-    // commit one history snapshot, ship one export.
+    const observeOpts = { subtree: true, childList: true, characterData: true, attributes: true }
+    // Any settled burst of DOM changes: repaginate, re-measure, reposition the
+    // toolbar, commit one history snapshot, ship one export. The observer is
+    // detached while pagination inserts its canvas-only spacers, so those never
+    // loop back in or reach the export (exportBody strips them anyway).
     let timer: ReturnType<typeof setTimeout> | undefined
     const observer = new MutationObserver(() => {
+      observer.disconnect()
+      paginate(body, pageHeightRef.current)
+      observer.observe(body, observeOpts)
       measure()
       setTick((t) => t + 1)
       if (restoringRef.current) return
@@ -262,12 +320,9 @@ export default function CanvasEditor({
         callbacksRef.current.onChange(snapshot)
       }, 300)
     })
-    observer.observe(body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-    })
+    paginate(body, pageHeightRef.current)
+    measure()
+    observer.observe(body, observeOpts)
 
     callbacksRef.current.onReady?.({
       insertHtml: (html: string) => {
@@ -822,7 +877,7 @@ export default function CanvasEditor({
       <div className="canvas-scroll" ref={scrollRef}>
         <div
           className="canvas-stage"
-          style={{ width: stageWidth, height: frameHeight * zoom }}
+          style={{ width: stageWidth, height: sheetHeight * zoom }}
         >
           <FurnitureStrip edge="top" boxes={furniture} zoom={zoom} />
           <iframe
@@ -830,7 +885,7 @@ export default function CanvasEditor({
             title="template canvas"
             style={{
               width: pageWidth ?? '100%',
-              height: frameHeight,
+              height: sheetHeight,
               transform: `scale(${zoom})`,
               transformOrigin: '0 0',
               border: 'none',
@@ -838,6 +893,17 @@ export default function CanvasEditor({
             }}
           />
           <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
+          {/* Physical page boundaries: a line where each printed page ends. */}
+          {pageHeight != null &&
+            Array.from({ length: pageCount - 1 }, (_, i) => (
+              <div
+                key={i}
+                className="page-boundary"
+                style={{ top: (i + 1) * pageHeight * zoom, width: (pageWidth ?? 0) * zoom }}
+              >
+                <span>page {i + 2}</span>
+              </div>
+            ))}
           {cellRect && (
             <>
               <div

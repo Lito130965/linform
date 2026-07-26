@@ -54,6 +54,8 @@ export function prepareFragment(el: Element): void {
 
 export function exportBody(body: HTMLElement): string {
   const clone = body.cloneNode(true) as HTMLElement
+  // Canvas-only pagination spacers never belong in the template.
+  for (const spacer of Array.from(clone.querySelectorAll('[data-lf-spacer]'))) spacer.remove()
   for (const el of [clone, ...Array.from(clone.querySelectorAll('*'))]) {
     // Real qr/barcode src comes back before the canvas-only attr is dropped.
     if (el.hasAttribute(LF_SRC_ATTR)) restoreRealSrc(el)
