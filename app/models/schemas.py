@@ -33,6 +33,25 @@ class TemplateCreate(BaseModel):
     code: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9_\-]+$",
                       description="Stable identifier used by the render API, e.g. 'invoice'")
     name: str = Field(min_length=1, max_length=255)
+    directory_id: int | None = Field(default=None, description="Optional bucket to file it under")
+
+
+class DirectoryCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+
+
+class DirectoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    created_by: str
+    created_at: datetime
+    template_count: int = 0
+
+
+class TemplateDirectoryUpdate(BaseModel):
+    directory_id: int | None = Field(default=None, description="Target bucket, or null to uncategorize")
 
 
 class VersionCreate(BaseModel):
@@ -61,6 +80,7 @@ class TemplateOut(BaseModel):
 
     code: str
     name: str
+    directory_id: int | None = None
     created_at: datetime
 
 

@@ -106,6 +106,22 @@ class Asset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Directory(Base):
+    """A flat organizational bucket for templates (e.g. one per consuming
+    service). Purely for the editor's benefit today — the render API still
+    addresses templates by their stable code, never by directory. The relation
+    exists so a later step can scope render/editor access per directory."""
+
+    __tablename__ = "directories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(150), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (CheckConstraint("name <> ''", name="ck_directory_name_not_empty"),)
+
+
 class Template(Base):
     __tablename__ = "templates"
 
@@ -114,6 +130,11 @@ class Template(Base):
     # the code never does.
     code: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Optional bucket; NULL = uncategorized. SET NULL on directory delete so a
+    # removed bucket never orphans a template into an invalid state.
+    directory_id: Mapped[int | None] = mapped_column(
+        ForeignKey("directories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     versions: Mapped[list["TemplateVersion"]] = relationship(

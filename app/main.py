@@ -6,7 +6,16 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.db import get_session_factory
-from app.routers import admin, assets, assistant, auth, examples, render, templates
+from app.routers import (
+    admin,
+    assets,
+    assistant,
+    auth,
+    directories,
+    examples,
+    render,
+    templates,
+)
 from app.services import accounts
 from app.services.renderer import WeasyPrintRenderer
 
@@ -31,6 +40,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Linform", version="0.1.0", lifespan=lifespan)
 app.include_router(render.router)
 app.include_router(templates.router)
+app.include_router(directories.router)
 app.include_router(assets.router)
 app.include_router(assistant.router)
 app.include_router(auth.router)

@@ -56,6 +56,8 @@ shipping label with QR/barcode, a fixed-layout certificate — live in
 | POST | `/api/templates/{code}/publish/{v}` | Publish a version (publishing an older one = rollback) |
 | GET | `/api/templates/{code}/versions/{v}` | Full version content |
 | GET | `/api/templates/{code}/placeholders` | Fields the template expects — the integration contract |
+| PUT | `/api/templates/{code}/directory` | File a template under a directory (or `null` for General) |
+| GET / POST | `/api/directories` | List / create organizational buckets (editor-side only) |
 | POST | `/api/assets` | Upload an asset (logo, background); returns an immutable `asset://<sha256>` URL |
 | GET | `/api/assets` | List uploaded assets |
 | GET | `/api/assets/{sha256}` | Raw asset bytes |

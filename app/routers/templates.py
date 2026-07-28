@@ -6,13 +6,14 @@ from app.models.schemas import (
     PlaceholdersResponse,
     TemplateCreate,
     TemplateDetailOut,
+    TemplateDirectoryUpdate,
     TemplateOut,
     VersionCreate,
     VersionDetailOut,
     VersionOut,
 )
 from app.core.auth import Principal, require_editor
-from app.services import versioning
+from app.services import directories, versioning
 from app.services.template_engine import TemplateRenderError, extract_placeholders
 from app.services.versioning import ConflictError, NotFoundError
 
@@ -26,10 +27,26 @@ async def list_templates(session: AsyncSession = Depends(get_session)):
 
 @router.post("", response_model=TemplateOut, status_code=201)
 async def create_template(body: TemplateCreate, session: AsyncSession = Depends(get_session)):
+    if body.directory_id is not None:
+        try:
+            await directories.get_directory(session, body.directory_id)
+        except NotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
     try:
-        return await versioning.create_template(session, body.code, body.name)
+        return await versioning.create_template(session, body.code, body.name, body.directory_id)
     except ConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.put("/{code}/directory", response_model=TemplateOut)
+async def set_template_directory(
+    code: str, body: TemplateDirectoryUpdate, session: AsyncSession = Depends(get_session)
+):
+    """Move a template into a bucket, or pass null to send it to General."""
+    try:
+        return await directories.set_template_directory(session, code, body.directory_id)
+    except NotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/{code}", response_model=TemplateDetailOut)
@@ -42,6 +59,7 @@ async def get_template(code: str, session: AsyncSession = Depends(get_session)):
     return TemplateDetailOut(
         code=template.code,
         name=template.name,
+        directory_id=template.directory_id,
         created_at=template.created_at,
         versions=[VersionOut.model_validate(v) for v in versions],
     )

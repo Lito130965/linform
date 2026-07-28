@@ -21,8 +21,10 @@ class ConflictError(Exception):
     pass
 
 
-async def create_template(session: AsyncSession, code: str, name: str) -> Template:
-    template = Template(code=code, name=name)
+async def create_template(
+    session: AsyncSession, code: str, name: str, directory_id: int | None = None
+) -> Template:
+    template = Template(code=code, name=name, directory_id=directory_id)
     session.add(template)
     try:
         await session.commit()
