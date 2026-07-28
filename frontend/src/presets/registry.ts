@@ -53,6 +53,25 @@ const CELL_STYLE =
   'display:inline-block;width:5mm;height:6mm;line-height:6mm;' +
   'border:1px solid #000;text-align:center;font-family:monospace;'
 
+/** Turn a human pattern like `Page {page} of {pages}` into a CSS margin-box
+ * `content` value: `"Page " counter(page) " of " counter(pages)`. Page numbers
+ * MUST come from CSS counters, not a data field — the total page count is only
+ * known after the layout runs, so the consumer cannot supply it. */
+function patternToCounterContent(pattern: string): string {
+  const parts: string[] = []
+  const re = /\{(page|pages)\}/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(pattern)) !== null) {
+    if (m.index > last) parts.push(JSON.stringify(pattern.slice(last, m.index)))
+    parts.push(m[1] === 'pages' ? 'counter(pages)' : 'counter(page)')
+    last = m.index + m[0].length
+  }
+  if (last < pattern.length) parts.push(JSON.stringify(pattern.slice(last)))
+  // A pattern with no token at all still yields a bare page number.
+  return parts.length ? parts.join(' ') : 'counter(page)'
+}
+
 export const PRESETS: Preset[] = [
   {
     id: 'dynamic-table',
@@ -176,6 +195,34 @@ export const PRESETS: Preset[] = [
     generate: (raw) => {
       const p = withDefaults(PRESETS[7], raw)
       return `<img src="{{ ${p.value} | barcode('code128', text=True) }}" style="width:${p.size}mm">`
+    },
+  },
+  {
+    id: 'page-numbers',
+    group: 'Sections',
+    label: 'Page numbers',
+    description:
+      'A page number in the bottom margin of every printed page. Uses CSS ' +
+      'counters, not a data field — the total is only known once the pages are ' +
+      'laid out. Edit the wording, or reduce it to just {page}.',
+    convertsFrom: [],
+    params: [
+      {
+        name: 'pattern',
+        label: 'Pattern — {page} and {pages} become the live counters',
+        kind: 'text',
+        default: 'Page {page} of {pages}',
+      },
+    ],
+    generate: (raw) => {
+      const p = withDefaults(PRESETS[8], raw)
+      const content = patternToCounterContent(p.pattern)
+      // Same mechanism as the header/footer blocks: an @page rule in a body
+      // <style> WeasyPrint honours, leaving the read-only author CSS untouched.
+      return (
+        '<style>@page { margin-bottom: 16mm; @bottom-center { ' +
+        `content: ${content}; font-size: 9pt; color: #555; } }</style>`
+      )
     },
   },
 ]
