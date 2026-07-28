@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import check_render_token
+from app.core.auth import require_render
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.models.database import TemplateVersion
@@ -24,7 +24,7 @@ def get_renderer(request: Request) -> PdfRenderer:
     return request.app.state.renderer
 
 
-@router.post("/render", dependencies=[Depends(check_render_token)])
+@router.post("/render", dependencies=[Depends(require_render)])
 async def render_ad_hoc(
     body: AdHocRenderRequest,
     session: AsyncSession = Depends(get_session),
@@ -73,7 +73,7 @@ async def _render_version(
     )
 
 
-@router.post("/render/{code}", dependencies=[Depends(check_render_token)])
+@router.post("/render/{code}", dependencies=[Depends(require_render)])
 async def render_published(
     code: str,
     data: dict = Body(default_factory=dict),
@@ -91,7 +91,7 @@ async def render_published(
     return await _render_version(row, data, session, renderer, settings)
 
 
-@router.post("/render/{code}/versions/{version}", dependencies=[Depends(check_render_token)])
+@router.post("/render/{code}/versions/{version}", dependencies=[Depends(require_render)])
 async def render_pinned(
     code: str,
     version: int,
@@ -110,7 +110,7 @@ async def render_pinned(
     return await _render_version(row, data, session, renderer, settings)
 
 
-@router.post("/placeholders", dependencies=[Depends(check_render_token)])
+@router.post("/placeholders", dependencies=[Depends(require_render)])
 async def list_placeholders(body: AdHocRenderRequest) -> PlaceholdersResponse:
     try:
         return PlaceholdersResponse(placeholders=extract_placeholders(body.html))

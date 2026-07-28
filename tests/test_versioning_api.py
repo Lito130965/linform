@@ -113,12 +113,13 @@ def test_versions_listed_with_metadata(db_client):
     _create_invoice(db_client)
     db_client.put(
         "/api/templates/invoice",
-        json={"html_content": INVOICE_V1, "comment": "первая версия", "created_by": "analyst"},
+        json={"html_content": INVOICE_V1, "comment": "первая версия"},
     )
     detail = db_client.get("/api/templates/invoice").json()
     v = detail["versions"][0]
     assert v["comment"] == "первая версия"
-    assert v["created_by"] == "analyst"
+    # Authorship comes from the principal; auth is off in tests, so it is "dev".
+    assert v["created_by"] == "dev"
     assert "html_content" not in v  # list view is light
 
     full = db_client.get("/api/templates/invoice/versions/1").json()

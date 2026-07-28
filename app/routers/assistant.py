@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.core.auth import check_admin_token
+from app.core.auth import require_editor
 from app.core.config import Settings, get_settings
 from app.services import assistant
 
@@ -58,7 +58,7 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-@router.post("", dependencies=[Depends(check_admin_token)])
+@router.post("", dependencies=[Depends(require_editor)])
 async def chat(
     body: AssistantRequest, settings: Settings = Depends(get_settings)
 ) -> StreamingResponse:

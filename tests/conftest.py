@@ -51,6 +51,10 @@ def db_client(monkeypatch, tmp_path):
 
     with TestClient(app) as client:
         client.stub_renderer = app.state.renderer
+        # Exposed so auth tests can seed users/keys straight into the same DB
+        # the app reads (the superuser bootstrap normally runs in lifespan from
+        # env vars, which tests do not set).
+        client.db_factory = factory
         yield client
 
     app.dependency_overrides.clear()

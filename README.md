@@ -59,6 +59,18 @@ shipping label with QR/barcode, a fixed-layout certificate — live in
 | POST | `/api/assets` | Upload an asset (logo, background); returns an immutable `asset://<sha256>` URL |
 | GET | `/api/assets` | List uploaded assets |
 | GET | `/api/assets/{sha256}` | Raw asset bytes |
+| POST | `/api/auth/login` | Password login → opaque session token |
+| GET | `/api/auth/me` | Who the current credential is (drives the UI) |
+| POST | `/api/admin/users` | **Superuser**: create an editor/superuser account |
+| POST | `/api/admin/keys` | **Superuser**: mint a render API key (shown once) |
+
+**Accounts and roles.** Set `LINFORM_SUPERUSER` / `LINFORM_SUPERUSER_PASSWORD`
+to enable accounts. The superuser signs in and creates **editor** users (design
+templates, preview, render — but not manage accounts) and **render API keys**
+for consuming applications (render only, revocable one at a time). The static
+`LINFORM_RENDER_TOKEN` / `LINFORM_ADMIN_TOKEN` still work unchanged for
+machine-to-machine use; with nothing configured at all, auth stays off for local
+dev.
 
 Versioning model: versions are **immutable**; exactly one version per template
 is published (enforced by the database, safe with any number of replicas);
@@ -163,6 +175,9 @@ Better to know before you build on it:
 | `LINFORM_RENDER_TOKEN` | *(empty)* | Bearer token for render endpoints only — give this to consuming applications |
 | `LINFORM_ADMIN_TOKEN` | *(empty)* | Bearer token for everything incl. template/asset management — the editor side |
 | `LINFORM_API_TOKEN` | *(empty)* | Legacy single token, counts as both roles. No tokens at all = auth disabled (dev) |
+| `LINFORM_SUPERUSER` | *(empty)* | Bootstrap admin username. Set with the password below to enable user accounts |
+| `LINFORM_SUPERUSER_PASSWORD` | *(empty)* | Bootstrap admin password, re-synced from env on every start (env is the source of truth) |
+| `LINFORM_SESSION_TTL_HOURS` | `168` | How long a browser login stays valid |
 | `LINFORM_RENDER_TIMEOUT_SECONDS` | `30` | Hard render timeout |
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |

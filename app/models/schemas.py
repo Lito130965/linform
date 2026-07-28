@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.database import VersionStatus
+from app.models.database import Role, VersionStatus
 
 
 class AdHocRenderRequest(BaseModel):
@@ -38,7 +38,8 @@ class TemplateCreate(BaseModel):
 class VersionCreate(BaseModel):
     html_content: str = Field(min_length=1)
     comment: str = Field(default="", max_length=2000, description="What changed, like a commit message")
-    created_by: str = Field(default="", max_length=255)
+    # Authorship is taken from the authenticated principal server-side, never
+    # from the request, so a saved version records who really saved it.
 
 
 class VersionOut(BaseModel):
@@ -65,3 +66,65 @@ class TemplateOut(BaseModel):
 
 class TemplateDetailOut(TemplateOut):
     versions: list[VersionOut]
+
+
+# --- auth & accounts -------------------------------------------------------
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=150)
+    password: str = Field(min_length=1)
+
+
+class MeResponse(BaseModel):
+    """Who the current credential is — the UI adapts its affordances to this."""
+
+    authenticated: bool
+    # False only in open dev mode (no auth configured at all).
+    auth_enabled: bool
+    username: str = ""
+    role: str = ""
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=1, max_length=150)
+    password: str = Field(min_length=8, max_length=255)
+    role: Role = Role.editor
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    role: Role
+    is_active: bool
+    created_at: datetime
+
+
+class PasswordUpdate(BaseModel):
+    password: str = Field(min_length=8, max_length=255)
+
+
+class ActiveUpdate(BaseModel):
+    is_active: bool
+
+
+class ApiKeyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+
+
+class ApiKeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    prefix: str
+    created_by: str
+    created_at: datetime
+    last_used_at: datetime | None
+
+
+class ApiKeyCreated(ApiKeyOut):
+    """Returned once at creation — the only time the clear key is visible."""
+
+    key: str

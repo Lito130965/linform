@@ -14,6 +14,16 @@ class Settings(BaseSettings):
     # Everything, including template/asset management — the editor side.
     admin_token: str = ""
 
+    # Bootstrap account. Set both to enable user auth: on startup this user is
+    # upserted with the superuser role and this password's hash, so the env file
+    # stays the single source of truth for the one account that can never be
+    # locked out. The superuser then creates editor users and render API keys
+    # from the UI. Leave empty (and no static tokens) for open dev mode.
+    superuser: str = ""
+    superuser_password: str = ""
+    # How long a browser login stays valid before re-authentication.
+    session_ttl_hours: int = 24 * 7
+
     # SQLite file by default so the service runs with zero configuration;
     # docker-compose overrides this with PostgreSQL.
     database_url: str = "sqlite+aiosqlite:///./linform.db"
