@@ -63,6 +63,16 @@ describe('generated Jinja is what we expect', () => {
     expect(gen('qr', { value: 'oid', size: '30' })).toBe('<img src="{{ oid | qr }}" style="width:30mm">')
     expect(gen('barcode', { value: 't' })).toContain("barcode('code128', text=True)")
   })
+
+  it('page numbers come from live CSS counters, never a data field', () => {
+    const s = gen('page-numbers', { pattern: 'Page {page} of {pages}' })
+    expect(s).toContain('@bottom-center')
+    expect(s).toContain('content: "Page " counter(page) " of " counter(pages);')
+    // The count is unknowable to the consumer, so it must not be a placeholder.
+    expect(s).not.toContain('{{')
+    // Reducible to just the bare number.
+    expect(gen('page-numbers', { pattern: '{page}' })).toContain('content: counter(page);')
+  })
 })
 
 describe('self-contained presets also survive the DOM leg', () => {

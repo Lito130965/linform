@@ -14,13 +14,31 @@ class Settings(BaseSettings):
     # Everything, including template/asset management — the editor side.
     admin_token: str = ""
 
+    # Bootstrap account. Set both to enable user auth: on startup this user is
+    # upserted with the superuser role and this password's hash, so the env file
+    # stays the single source of truth for the one account that can never be
+    # locked out. The superuser then creates editor users and render API keys
+    # from the UI. Leave empty (and no static tokens) for open dev mode.
+    superuser: str = ""
+    superuser_password: str = ""
+    # How long a browser login stays valid before re-authentication.
+    session_ttl_hours: int = 24 * 7
+
     # SQLite file by default so the service runs with zero configuration;
     # docker-compose overrides this with PostgreSQL.
     database_url: str = "sqlite+aiosqlite:///./linform.db"
 
+    # Where the built-in showcase examples live. Empty = the examples/ folder
+    # shipped alongside the app; override only for an unusual layout.
+    examples_dir: str = ""
+
     # Rendering
     render_timeout_seconds: float = 30.0
     render_max_workers: int = 2
+    # Backpressure ceiling: once this many renders are in flight, further
+    # requests are shed with 429 instead of queueing without bound. 0 derives
+    # it as render_max_workers * 2 (the pool plus a small burst buffer).
+    render_max_concurrency: int = 0
 
     # Strict mode: fail the render when the payload is missing a placeholder,
     # instead of silently rendering an empty value.

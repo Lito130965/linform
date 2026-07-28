@@ -28,6 +28,67 @@ class VersionStatus(str, enum.Enum):
     archived = "archived"
 
 
+class Role(str, enum.Enum):
+    """Who a human user is. `superuser` is bootstrapped from the environment and
+    manages users and API keys; `editor` designs templates and previews them but
+    cannot manage accounts. Consumer applications are not users — they render
+    with API keys, which are always render-only."""
+
+    superuser = "superuser"
+    editor = "editor"
+
+
+class User(Base):
+    """A human who signs into the editor UI. Passwords are stored slow-hashed;
+    the clear value never touches the database."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=20))
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (CheckConstraint("username <> ''", name="ck_user_username_not_empty"),)
+
+
+class ApiKey(Base):
+    """A render credential a consuming application sends as a Bearer token.
+    Minted by a superuser, revocable one at a time. Only the SHA-256 digest is
+    stored; the clear key is shown once, at creation. Always render-scoped."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(150))
+    # First few chars of the clear key, kept for display so a superuser can tell
+    # rows apart without ever seeing the secret again.
+    prefix: Mapped[str] = mapped_column(String(12))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(150), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class LoginSession(Base):
+    """An opaque server-side session issued after a password login. Stored by
+    digest and bounded by `expires_at`; deleting the user's rows (or the row
+    itself on logout) revokes access immediately — the reason we keep sessions
+    in the database instead of handing out self-contained JWTs."""
+
+    __tablename__ = "login_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped["User"] = relationship()
+
+
 class Asset(Base):
     """Uploaded resource (logo, font, background) referenced from templates
     as asset://<sha256>. Content-addressed and immutable: replacing a logo
@@ -45,6 +106,22 @@ class Asset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Directory(Base):
+    """A flat organizational bucket for templates (e.g. one per consuming
+    service). Purely for the editor's benefit today — the render API still
+    addresses templates by their stable code, never by directory. The relation
+    exists so a later step can scope render/editor access per directory."""
+
+    __tablename__ = "directories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(150), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (CheckConstraint("name <> ''", name="ck_directory_name_not_empty"),)
+
+
 class Template(Base):
     __tablename__ = "templates"
 
@@ -53,6 +130,11 @@ class Template(Base):
     # the code never does.
     code: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Optional bucket; NULL = uncategorized. SET NULL on directory delete so a
+    # removed bucket never orphans a template into an invalid state.
+    directory_id: Mapped[int | None] = mapped_column(
+        ForeignKey("directories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     versions: Mapped[list["TemplateVersion"]] = relationship(

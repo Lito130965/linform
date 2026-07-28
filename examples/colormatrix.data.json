@@ -1,0 +1,50 @@
+{
+  "year": "2026",
+  "months": ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+  "rows": [
+    {
+      "service": "API gateway",
+      "cells": [
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "Degr.", "bg": "#fdeecb", "fg": "#7a5200" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" }
+      ]
+    },
+    {
+      "service": "Render workers",
+      "cells": [
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "Down", "bg": "#f7d4d1", "fg": "#8a1c14" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "Degr.", "bg": "#fdeecb", "fg": "#7a5200" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" }
+      ]
+    },
+    {
+      "service": "Database",
+      "cells": [
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" }
+      ]
+    },
+    {
+      "service": "Object storage",
+      "cells": [
+        { "label": "Degr.", "bg": "#fdeecb", "fg": "#7a5200" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "Down", "bg": "#f7d4d1", "fg": "#8a1c14" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" },
+        { "label": "OK", "bg": "#d7f3e3", "fg": "#12603a" }
+      ]
+    }
+  ]
+}

@@ -39,7 +39,8 @@
     { "description": "Final acceptance support", "qty": "6", "unit_price": "50.00", "amount": "300.00" }
   ],
   "subtotal": "22 580.00",
+  "discount": "− 1 129.00",
   "vat_rate": "20%",
-  "vat_amount": "4 516.00",
-  "total": "27 096.00"
+  "vat_amount": "4 290.20",
+  "total": "25 741.20"
 }

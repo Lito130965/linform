@@ -3,14 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.models.schemas import AssetOut
-from app.core.auth import check_admin_token
+from app.core.auth import require_editor
 from app.services import assets as assets_service
 from app.services.assets import AssetError
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
 
-@router.post("", response_model=AssetOut, status_code=201, dependencies=[Depends(check_admin_token)])
+@router.post("", response_model=AssetOut, status_code=201, dependencies=[Depends(require_editor)])
 async def upload_asset(file: UploadFile, session: AsyncSession = Depends(get_session)):
     data = await file.read()
     try:
@@ -31,7 +31,7 @@ async def upload_asset(file: UploadFile, session: AsyncSession = Depends(get_ses
     )
 
 
-@router.get("", response_model=list[AssetOut], dependencies=[Depends(check_admin_token)])
+@router.get("", response_model=list[AssetOut], dependencies=[Depends(require_editor)])
 async def list_assets(session: AsyncSession = Depends(get_session)):
     return [
         AssetOut(

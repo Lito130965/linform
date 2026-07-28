@@ -72,6 +72,7 @@
 
   <table class="totals">
     <tr><td>Subtotal:</td><td style="width: 30mm">{{ subtotal }}</td></tr>
+    {% if discount %}<tr><td>Discount:</td><td>{{ discount }}</td></tr>{% endif %}
     <tr><td>VAT ({{ vat_rate }}):</td><td>{{ vat_amount }}</td></tr>
     <tr class="grand"><td>Total due:</td><td>{{ total }}</td></tr>
   </table>

@@ -11,6 +11,10 @@ services:
       LINFORM_API_TOKEN: "${LINFORM_API_TOKEN:-}"
       LINFORM_RENDER_TOKEN: "${LINFORM_RENDER_TOKEN:-}"
       LINFORM_ADMIN_TOKEN: "${LINFORM_ADMIN_TOKEN:-}"
+      # Accounts: set both to enable user login; the superuser then manages the
+      # rest from the UI. Env stays the source of truth for this one account.
+      LINFORM_SUPERUSER: "${LINFORM_SUPERUSER:-}"
+      LINFORM_SUPERUSER_PASSWORD: "${LINFORM_SUPERUSER_PASSWORD:-}"
       # AI assistant (BYOK) — empty key means the feature stays off.
       LINFORM_AI_BASE_URL: "${LINFORM_AI_BASE_URL:-https://api.openai.com/v1/}"
       LINFORM_AI_API_KEY: "${LINFORM_AI_API_KEY:-}"
@@ -18,6 +22,7 @@ services:
       LINFORM_AI_SEND_TEST_DATA: "${LINFORM_AI_SEND_TEST_DATA:-false}"
       LINFORM_RENDER_TIMEOUT_SECONDS: "${LINFORM_RENDER_TIMEOUT_SECONDS:-30}"
       LINFORM_RENDER_MAX_WORKERS: "${LINFORM_RENDER_MAX_WORKERS:-2}"
+      LINFORM_RENDER_MAX_CONCURRENCY: "${LINFORM_RENDER_MAX_CONCURRENCY:-0}"
     depends_on:
       - db
 

@@ -56,9 +56,24 @@ shipping label with QR/barcode, a fixed-layout certificate — live in
 | POST | `/api/templates/{code}/publish/{v}` | Publish a version (publishing an older one = rollback) |
 | GET | `/api/templates/{code}/versions/{v}` | Full version content |
 | GET | `/api/templates/{code}/placeholders` | Fields the template expects — the integration contract |
+| PUT | `/api/templates/{code}/directory` | File a template under a directory (or `null` for General) |
+| GET / POST | `/api/directories` | List / create organizational buckets (editor-side only) |
 | POST | `/api/assets` | Upload an asset (logo, background); returns an immutable `asset://<sha256>` URL |
 | GET | `/api/assets` | List uploaded assets |
 | GET | `/api/assets/{sha256}` | Raw asset bytes |
+| GET | `/api/examples` | Built-in showcase examples (drives the editor gallery) |
+| POST | `/api/auth/login` | Password login → opaque session token |
+| GET | `/api/auth/me` | Who the current credential is (drives the UI) |
+| POST | `/api/admin/users` | **Superuser**: create an editor/superuser account |
+| POST | `/api/admin/keys` | **Superuser**: mint a render API key (shown once) |
+
+**Accounts and roles.** Set `LINFORM_SUPERUSER` / `LINFORM_SUPERUSER_PASSWORD`
+to enable accounts. The superuser signs in and creates **editor** users (design
+templates, preview, render — but not manage accounts) and **render API keys**
+for consuming applications (render only, revocable one at a time). The static
+`LINFORM_RENDER_TOKEN` / `LINFORM_ADMIN_TOKEN` still work unchanged for
+machine-to-machine use; with nothing configured at all, auth stays off for local
+dev.
 
 Versioning model: versions are **immutable**; exactly one version per template
 is published (enforced by the database, safe with any number of replicas);
@@ -149,9 +164,11 @@ Better to know before you build on it:
   editor behind your internal network and hand consuming applications a
   render-only token (see below), which already prevents a leaked service token
   from changing templates.
-- **Rendering is synchronous.** One request, one PDF, with a hard timeout.
-  Bulk generation ("10 000 invoices") is the calling application's job; Linform
-  gives it an idempotent building block.
+- **Rendering is synchronous.** One request, one PDF, with a hard timeout and a
+  hard in-flight ceiling — past it the service replies `429 Retry-After` instead
+  of queueing without bound. Bulk generation ("10 000 invoices") and any retry
+  or async orchestration are the calling application's job; Linform gives it an
+  idempotent building block.
 - **No business data is stored.** Payloads are rendered and forgotten. That is
   deliberate, and it means Linform cannot re-render a document you did not keep
   the data for — store the version number alongside your document and pin it.
@@ -163,8 +180,12 @@ Better to know before you build on it:
 | `LINFORM_RENDER_TOKEN` | *(empty)* | Bearer token for render endpoints only — give this to consuming applications |
 | `LINFORM_ADMIN_TOKEN` | *(empty)* | Bearer token for everything incl. template/asset management — the editor side |
 | `LINFORM_API_TOKEN` | *(empty)* | Legacy single token, counts as both roles. No tokens at all = auth disabled (dev) |
+| `LINFORM_SUPERUSER` | *(empty)* | Bootstrap admin username. Set with the password below to enable user accounts |
+| `LINFORM_SUPERUSER_PASSWORD` | *(empty)* | Bootstrap admin password, re-synced from env on every start (env is the source of truth) |
+| `LINFORM_SESSION_TTL_HOURS` | `168` | How long a browser login stays valid |
 | `LINFORM_RENDER_TIMEOUT_SECONDS` | `30` | Hard render timeout |
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
+| `LINFORM_RENDER_MAX_CONCURRENCY` | `0` (→ workers × 2) | In-flight ceiling; over it, renders get `429 Retry-After` |
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |
 | `LINFORM_ALLOW_EXTERNAL_URLS` | `false` | Allow http(s) resources in templates |
 | `LINFORM_ALLOWED_URL_HOSTS` | `[]` | Host allowlist when external URLs are on |
