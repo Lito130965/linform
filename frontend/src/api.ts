@@ -20,6 +20,37 @@ export interface VersionDetail extends VersionInfo {
   html_content: string
 }
 
+export type Role = 'superuser' | 'editor'
+
+export interface Me {
+  authenticated: boolean
+  auth_enabled: boolean
+  username: string
+  role: '' | Role | 'render'
+}
+
+export interface UserOut {
+  id: number
+  username: string
+  role: Role
+  is_active: boolean
+  created_at: string
+}
+
+export interface ApiKeyOut {
+  id: number
+  name: string
+  prefix: string
+  created_by: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface ApiKeyCreated extends ApiKeyOut {
+  /** The clear key — shown once, never retrievable again. */
+  key: string
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -41,26 +72,40 @@ async function parseError(resp: Response): Promise<ApiError> {
   return new ApiError(resp.status, detail)
 }
 
-const TOKEN_KEY = 'linform_admin_token'
+const TOKEN_KEY = 'linform_session'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string | null): void {
+  if (token) localStorage.setItem(TOKEN_KEY, token)
+  else localStorage.removeItem(TOKEN_KEY)
+}
 
 function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem(TOKEN_KEY)
+  const token = getToken()
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-/** fetch with the stored admin token; on 401 asks for a token once and
- * retries, so a tokened deployment stays usable without a login screen. */
-async function authFetch(path: string, init: RequestInit = {}, retried = false): Promise<Response> {
+/** The app registers a callback so a token that stops working anywhere drops
+ * the whole UI back to the login screen — no per-call prompt, no half-authed
+ * state. */
+let onAuthLost: (() => void) | null = null
+export function setAuthLostHandler(fn: (() => void) | null): void {
+  onAuthLost = fn
+}
+
+/** fetch with the stored session token. A 401 while we *hold* a token means it
+ * expired or was revoked: clear it and let the app show the login screen. */
+async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const resp = await fetch(path, {
     ...init,
     headers: { ...authHeaders(), ...(init.headers ?? {}) },
   })
-  if (resp.status === 401 && !retried) {
-    const entered = window.prompt('Access token (LINFORM_ADMIN_TOKEN):')
-    if (entered && entered.trim()) {
-      localStorage.setItem(TOKEN_KEY, entered.trim())
-      return authFetch(path, init, true)
-    }
+  if (resp.status === 401 && getToken()) {
+    setToken(null)
+    onAuthLost?.()
   }
   return resp
 }
@@ -176,6 +221,70 @@ export async function* assistantChat(
 }
 
 export const api = {
+  me: () => request<Me>('/api/auth/me'),
+
+  async login(username: string, password: string): Promise<Me> {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+    if (!resp.ok) throw await parseError(resp)
+    const body = (await resp.json()) as { token: string; username: string; role: Role }
+    setToken(body.token)
+    return { authenticated: true, auth_enabled: true, username: body.username, role: body.role }
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await authFetch('/api/auth/logout', { method: 'POST' })
+    } finally {
+      setToken(null)
+    }
+  },
+
+  // --- superuser account management ---
+  listUsers: () => request<UserOut[]>('/api/admin/users'),
+
+  createUser: (username: string, password: string, role: Role) =>
+    request<UserOut>('/api/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, role }),
+    }),
+
+  setUserActive: (id: number, is_active: boolean) =>
+    request<UserOut>(`/api/admin/users/${id}/active`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_active }),
+    }),
+
+  async setUserPassword(id: number, password: string): Promise<void> {
+    const resp = await authFetch(`/api/admin/users/${id}/password`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+    if (!resp.ok) throw await parseError(resp)
+  },
+
+  async deleteUser(id: number): Promise<void> {
+    const resp = await authFetch(`/api/admin/users/${id}`, { method: 'DELETE' })
+    if (!resp.ok) throw await parseError(resp)
+  },
+
+  listKeys: () => request<ApiKeyOut[]>('/api/admin/keys'),
+
+  createKey: (name: string) =>
+    request<ApiKeyCreated>('/api/admin/keys', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  async deleteKey(id: number): Promise<void> {
+    const resp = await authFetch(`/api/admin/keys/${id}`, { method: 'DELETE' })
+    if (!resp.ok) throw await parseError(resp)
+  },
+
   listTemplates: () => request<TemplateInfo[]>('/api/templates'),
 
   assistantStatus: () => request<AssistantStatus>('/api/assistant/status'),
