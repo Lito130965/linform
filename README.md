@@ -161,9 +161,11 @@ Better to know before you build on it:
   editor behind your internal network and hand consuming applications a
   render-only token (see below), which already prevents a leaked service token
   from changing templates.
-- **Rendering is synchronous.** One request, one PDF, with a hard timeout.
-  Bulk generation ("10 000 invoices") is the calling application's job; Linform
-  gives it an idempotent building block.
+- **Rendering is synchronous.** One request, one PDF, with a hard timeout and a
+  hard in-flight ceiling — past it the service replies `429 Retry-After` instead
+  of queueing without bound. Bulk generation ("10 000 invoices") and any retry
+  or async orchestration are the calling application's job; Linform gives it an
+  idempotent building block.
 - **No business data is stored.** Payloads are rendered and forgotten. That is
   deliberate, and it means Linform cannot re-render a document you did not keep
   the data for — store the version number alongside your document and pin it.
@@ -180,6 +182,7 @@ Better to know before you build on it:
 | `LINFORM_SESSION_TTL_HOURS` | `168` | How long a browser login stays valid |
 | `LINFORM_RENDER_TIMEOUT_SECONDS` | `30` | Hard render timeout |
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
+| `LINFORM_RENDER_MAX_CONCURRENCY` | `0` (→ workers × 2) | In-flight ceiling; over it, renders get `429 Retry-After` |
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |
 | `LINFORM_ALLOW_EXTERNAL_URLS` | `false` | Allow http(s) resources in templates |
 | `LINFORM_ALLOWED_URL_HOSTS` | `[]` | Host allowlist when external URLs are on |

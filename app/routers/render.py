@@ -8,7 +8,7 @@ from app.models.database import TemplateVersion
 from app.models.schemas import AdHocRenderRequest, PlaceholdersResponse
 from app.services import versioning
 from app.services.assets import AssetError, inline_assets
-from app.services.renderer import PdfRenderer, RenderError, RenderTimeout
+from app.services.renderer import PdfRenderer, RenderBusy, RenderError, RenderTimeout
 from app.services.template_engine import (
     TemplateRenderError,
     extract_placeholders,
@@ -39,6 +39,11 @@ async def render_ad_hoc(
         raise HTTPException(status_code=422, detail=str(exc))
     try:
         pdf = await renderer.render_pdf(html)
+    except RenderBusy as exc:
+        # Backpressure, not a client error: tell them to come back.
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": "2"}
+        )
     except RenderTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc))
     except RenderError as exc:
@@ -62,6 +67,11 @@ async def _render_version(
         raise HTTPException(status_code=422, detail=str(exc))
     try:
         pdf = await renderer.render_pdf(html)
+    except RenderBusy as exc:
+        # Backpressure, not a client error: tell them to come back.
+        raise HTTPException(
+            status_code=429, detail=str(exc), headers={"Retry-After": "2"}
+        )
     except RenderTimeout as exc:
         raise HTTPException(status_code=504, detail=str(exc))
     except RenderError as exc:

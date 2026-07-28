@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
         timeout_seconds=settings.render_timeout_seconds,
         allow_external_urls=settings.allow_external_urls,
         allowed_url_hosts=settings.allowed_url_hosts,
+        max_concurrency=settings.render_max_concurrency,
     )
     # Sync the env-defined superuser into the database (no-op if unset).
     async with get_session_factory()() as session:

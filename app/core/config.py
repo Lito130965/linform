@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Rendering
     render_timeout_seconds: float = 30.0
     render_max_workers: int = 2
+    # Backpressure ceiling: once this many renders are in flight, further
+    # requests are shed with 429 instead of queueing without bound. 0 derives
+    # it as render_max_workers * 2 (the pool plus a small burst buffer).
+    render_max_concurrency: int = 0
 
     # Strict mode: fail the render when the payload is missing a placeholder,
     # instead of silently rendering an empty value.

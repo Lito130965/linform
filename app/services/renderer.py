@@ -27,6 +27,32 @@ class RenderTimeout(RenderError):
     pass
 
 
+class RenderBusy(RenderError):
+    """Too many renders already in flight — shed load with 429 instead of
+    queueing unboundedly. Rendering is deliberately synchronous with a hard
+    ceiling; bulk generation is the calling application's job."""
+
+
+class ConcurrencyLimiter:
+    """A non-blocking in-flight counter. The event loop is single-threaded, so
+    try_acquire/release never race between awaits — no lock needed. Unlike an
+    asyncio.Semaphore, a full limiter refuses immediately rather than waiting,
+    which is exactly the backpressure we want to surface as 429."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self.inflight = 0
+
+    def try_acquire(self) -> bool:
+        if self.inflight >= self.limit:
+            return False
+        self.inflight += 1
+        return True
+
+    def release(self) -> None:
+        self.inflight -= 1
+
+
 class PdfRenderer(Protocol):
     async def render_pdf(self, html: str) -> bytes: ...
 
@@ -71,13 +97,29 @@ class WeasyPrintRenderer:
         timeout_seconds: float,
         allow_external_urls: bool,
         allowed_url_hosts: list[str],
+        max_concurrency: int = 0,
     ):
         self._pool = ProcessPoolExecutor(max_workers=max_workers)
         self._timeout = timeout_seconds
         self._allow_external = allow_external_urls
         self._allowed_hosts = allowed_url_hosts
+        # 0 = derive: a small queue over the pool absorbs bursts without letting
+        # the backlog grow without bound.
+        limit = max_concurrency if max_concurrency > 0 else max_workers * 2
+        self._limiter = ConcurrencyLimiter(limit)
 
     async def render_pdf(self, html: str) -> bytes:
+        if not self._limiter.try_acquire():
+            raise RenderBusy(
+                f"Server is at capacity ({self._limiter.limit} renders in flight). "
+                "Retry shortly."
+            )
+        try:
+            return await self._render(html)
+        finally:
+            self._limiter.release()
+
+    async def _render(self, html: str) -> bytes:
         loop = asyncio.get_running_loop()
         started = time.monotonic()
         future = loop.run_in_executor(
