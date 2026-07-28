@@ -4,17 +4,18 @@
  * A DOM-based editor must never let the template's <style> blocks become
  * editable content or be re-serialized through a model that reorders rules
  * or drops @page. So the template is split string-level into prefix /
- * editable body / suffix; the style TEXTS are injected into the canvas
+ * editable body / suffix; the style TEXTS are surfaced to the canvas
  * read-only, and reassembly is plain concatenation.
  *
  * <style> in the body is not code-only: the header/footer blocks and the
  * page-numbers preset put their @page rules there on purpose (WeasyPrint
  * honours a body <style>, and it keeps the read-only author CSS untouched).
- * Such blocks are HOISTED to the top of the body on entering Visual — the
- * canvas shows their text read-only just like a head <style>, the running
- * elements they drive stay editable in the body, and the only thing that
- * ever moves is page-level CSS, whose position does not affect rendering.
- * Round-trip stays byte-exact whenever the body has no <style> at all.
+ * Such blocks are left EXACTLY where they are — a <style> element is
+ * display:none, so it never becomes editable content, and leaving it in place
+ * keeps the round-trip byte-exact (moving it would reorder rules for no
+ * rendering benefit). Its text is additionally collected into `styles` so the
+ * canvas can visualise the page geometry those rules define; applying the same
+ * rule twice is a no-op.
  */
 
 export type SplitResult =
@@ -29,28 +30,19 @@ function extractStyleTexts(fragment: string): string {
   return parts.join('\n')
 }
 
-/** Pull every <style> out of the editable body and append the nodes to the
- * end of the prefix (i.e. to the top of the body region), so they render in
- * the canvas but never sit in editable content. */
-function hoistBodyStyles(prefix: string, body: string): { prefix: string; body: string } {
-  const nodes = body.match(STYLE_BLOCK_RE)
-  if (!nodes) return { prefix, body }
-  return { prefix: prefix + nodes.join(''), body: body.replace(STYLE_BLOCK_RE, '') }
-}
-
 export function splitForVisual(html: string): SplitResult {
   const bodyOpen = /<body\b[^>]*>/i.exec(html)
   if (bodyOpen) {
     const closeIdx = html.toLowerCase().lastIndexOf('</body>')
     if (closeIdx === -1) return { ok: false, reason: '<body> is never closed' }
     const bodyStart = bodyOpen.index + bodyOpen[0].length
-    const hoisted = hoistBodyStyles(html.slice(0, bodyStart), html.slice(bodyStart, closeIdx))
     return {
       ok: true,
-      prefix: hoisted.prefix,
-      body: hoisted.body,
+      prefix: html.slice(0, bodyStart),
+      body: html.slice(bodyStart, closeIdx),
       suffix: html.slice(closeIdx),
-      styles: extractStyleTexts(hoisted.prefix),
+      // Every style in the document (head and body) — read-only canvas CSS.
+      styles: extractStyleTexts(html),
     }
   }
 
@@ -87,8 +79,7 @@ export function splitForVisual(html: string): SplitResult {
   if (/<(html|head)\b/i.test(html.slice(i))) {
     return { ok: false, reason: 'document markup without <body> — this template is code-only' }
   }
-  const hoisted = hoistBodyStyles(html.slice(0, i), html.slice(i))
-  return { ok: true, prefix: hoisted.prefix, body: hoisted.body, suffix: '', styles: extractStyleTexts(hoisted.prefix) }
+  return { ok: true, prefix: html.slice(0, i), body: html.slice(i), suffix: '', styles: extractStyleTexts(html) }
 }
 
 export function joinFromVisual(prefix: string, body: string, suffix: string): string {

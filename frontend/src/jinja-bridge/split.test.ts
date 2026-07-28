@@ -52,27 +52,26 @@ describe('splitForVisual', () => {
     expect(res.body).toBe('<div>x</div>')
   })
 
-  it('hoists a body style block to the top instead of going code-only', () => {
-    // Furniture (header/footer/page-numbers) lives in body <style>; it becomes
-    // read-only canvas CSS, and only page-level CSS is relocated.
-    const res = splitForVisual('<div>x</div><style>late { }</style><div>y</div>')
+  it('keeps a body style block in place (byte-exact) and still surfaces it to the canvas', () => {
+    // Furniture (header/footer/page-numbers) lives in body <style>. A <style>
+    // is display:none, so it never becomes editable content — leaving it where
+    // it is keeps the round-trip byte-exact; its text is surfaced separately.
+    const html = '<div>x</div><style>late { }</style><div>y</div>'
+    const res = splitForVisual(html)
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    expect(res.styles).toContain('late { }')
-    expect(res.body).toBe('<div>x</div><div>y</div>') // no <style> left in the body
-    // Reassembly still yields a valid document (style moved to the front).
-    expect(joinFromVisual(res.prefix, res.body, res.suffix)).toBe(
-      '<style>late { }</style><div>x</div><div>y</div>',
-    )
+    expect(res.styles).toContain('late { }') // surfaced for the canvas
+    expect(res.body).toBe(html) // nothing moved
+    expect(joinFromVisual(res.prefix, res.body, res.suffix)).toBe(html) // byte-exact
   })
 
-  it('supports a body <style> in a full document (round-trip byte-exact when already at the top)', () => {
+  it('supports a body <style> in a full document, byte-exact', () => {
     const html = '<html><body><style>x { }</style><p>t</p></body></html>'
     const res = splitForVisual(html)
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.styles).toContain('x { }')
-    expect(res.body).toBe('<p>t</p>')
+    expect(res.body).toBe('<style>x { }</style><p>t</p>')
     expect(joinFromVisual(res.prefix, res.body, res.suffix)).toBe(html)
   })
 
