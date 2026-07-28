@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app.services import examples
+from app.services.template_engine import render_html
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
 
@@ -31,6 +32,16 @@ def test_get_example_returns_html_and_data(db_client):
 
 def test_unknown_example_is_404(db_client):
     assert db_client.get("/api/examples/nope").status_code == 404
+
+
+@pytest.mark.parametrize("meta", examples.list_examples(), ids=lambda m: m["id"])
+def test_every_example_renders_through_the_template_engine(meta):
+    """Compile + render each example with its own sample data. Catches Jinja
+    syntax errors — including the sneaky kind hidden in an HTML comment, since
+    Jinja parses comments too — without needing WeasyPrint installed."""
+    ex = examples.get_example(meta["id"])
+    html = render_html(ex["html"], ex["data"], strict=False)
+    assert html  # produced output, did not raise
 
 
 @pytest.mark.parametrize("meta", examples.list_examples(), ids=lambda m: m["id"])
