@@ -51,6 +51,18 @@ export interface ApiKeyCreated extends ApiKeyOut {
   key: string
 }
 
+export interface ExampleMeta {
+  id: string
+  title: string
+  description: string
+  tags: string[]
+}
+
+export interface ExampleDetail extends ExampleMeta {
+  html: string
+  data: Record<string, unknown>
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -286,6 +298,10 @@ export const api = {
   },
 
   listTemplates: () => request<TemplateInfo[]>('/api/templates'),
+
+  listExamples: () => request<ExampleMeta[]>('/api/examples'),
+
+  getExample: (id: string) => request<ExampleDetail>(`/api/examples/${id}`),
 
   assistantStatus: () => request<AssistantStatus>('/api/assistant/status'),
 

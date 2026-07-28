@@ -1,0 +1,15 @@
+{
+  "company": "Globex Corporation",
+  "period": "Q2 2026",
+  "date": "28 July 2026",
+  "summary": "Revenue grew across every region this quarter, led by the logistics segment. Operating margin held steady as headcount investment was offset by automation savings in fulfilment.",
+  "metrics": [
+    { "name": "Revenue", "current": "12 480 000", "previous": "11 020 000" },
+    { "name": "Gross margin", "current": "41.2%", "previous": "40.8%" },
+    { "name": "Active customers", "current": "18 340", "previous": "16 900" },
+    { "name": "Net promoter score", "current": "62", "previous": "58" }
+  ],
+  "notes": "These figures are unaudited and provided for internal review. Currency and date formatting are the consuming application's responsibility; Linform renders exactly what it is sent.",
+  "report_url": "https://example.com/reports/q2-2026",
+  "doc_no": "RPT-2026-Q2-0007"
+}

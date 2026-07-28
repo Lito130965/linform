@@ -36,15 +36,31 @@ const STARTER_TEMPLATE = `<style>
 <p>Hello, {{ name }}!</p>
 `
 
+/** An example opened in the editor as a throwaway: fully editable and
+ * renderable, but never saved — reload drops it. */
+export interface ScratchDoc {
+  id: string
+  title: string
+  html: string
+  data: string
+}
+
 export default function Editor({
   code,
   overlayPanels = false,
+  scratch = null,
+  onExitScratch,
 }: {
   code: string
   /** float the assistant and history over the preview instead of giving them a
    * column of their own — below ~1600px a fixed column starves the canvas */
   overlayPanels?: boolean
+  /** When set, the editor runs in scratch mode: no load from the API, no
+   * Save/Publish/History — an example playground that never persists. */
+  scratch?: ScratchDoc | null
+  onExitScratch?: () => void
 }) {
+  const isScratch = scratch !== null
   const [detail, setDetail] = useState<TemplateDetail | null>(null)
   const [loadedVersion, setLoadedVersion] = useState<number | null>(null)
   const [html, setHtml] = useState('')
@@ -102,6 +118,15 @@ export default function Editor({
 
   // Initial load: prefer the published version, else the newest, else a starter.
   useEffect(() => {
+    // Scratch mode seeds straight from the example — no template to fetch.
+    if (scratch) {
+      setDetail(null)
+      setHtml(scratch.html)
+      setTestData(scratch.data)
+      setLoadedVersion(null)
+      setDirty(false)
+      return
+    }
     api
       .getTemplate(code)
       .then(async (d) => {
@@ -118,7 +143,7 @@ export default function Editor({
         }
       })
       .catch((e) => setError(e.message))
-  }, [code, loadVersion])
+  }, [code, loadVersion, scratch])
 
   const refreshDetail = async () => setDetail(await api.getTemplate(code))
 
@@ -280,8 +305,12 @@ export default function Editor({
     <div className="editor">
       <header className="toolbar">
         <div className="template-title">
-          <strong>{detail?.name ?? code}</strong>
-          <span className="template-code">{code}</span>
+          <strong>{isScratch ? scratch!.title : (detail?.name ?? code)}</strong>
+          {isScratch ? (
+            <span className="template-code example-badge">example · not saved</span>
+          ) : (
+            <span className="template-code">{code}</span>
+          )}
         </div>
 
         <div className="mode-toggle">
@@ -300,49 +329,57 @@ export default function Editor({
           </button>
         </div>
 
-        <select
-          value={loadedVersion ?? ''}
-          onChange={(e) => switchVersion(Number(e.target.value))}
-          disabled={!detail?.versions.length}
-        >
-          {!detail?.versions.length && <option value="">no versions yet</option>}
-          {detail?.versions
-            .slice()
-            .reverse()
-            .map((v) => (
-              <option key={v.version} value={v.version}>
-                v{v.version} · {v.status}
-                {v.comment ? ` · ${v.comment.slice(0, 40)}` : ''}
-              </option>
-            ))}
-        </select>
+        {isScratch ? (
+          <button className="btn" onClick={onExitScratch}>
+            ← Back to examples
+          </button>
+        ) : (
+          <>
+            <select
+              value={loadedVersion ?? ''}
+              onChange={(e) => switchVersion(Number(e.target.value))}
+              disabled={!detail?.versions.length}
+            >
+              {!detail?.versions.length && <option value="">no versions yet</option>}
+              {detail?.versions
+                .slice()
+                .reverse()
+                .map((v) => (
+                  <option key={v.version} value={v.version}>
+                    v{v.version} · {v.status}
+                    {v.comment ? ` · ${v.comment.slice(0, 40)}` : ''}
+                  </option>
+                ))}
+            </select>
 
-        <input
-          className="comment-input"
-          placeholder="What changed? (like a commit message)"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-        />
-        <button className="btn primary" onClick={save} disabled={busy || !html.trim()}>
-          Save as new version
-        </button>
-        <button
-          className="btn publish"
-          onClick={() => publishVersion(loadedVersion)}
-          disabled={busy || loadedVersion == null || dirty || loadedVersion === publishedVersion}
-          title={
-            dirty
-              ? 'Save your changes as a version first'
-              : loadedVersion === publishedVersion
-                ? 'This version is already published'
-                : 'Make this version the one consumers render'
-          }
-        >
-          {loadedVersion != null && loadedVersion === publishedVersion ? 'Published' : 'Publish'}
-        </button>
-        <button className="btn" onClick={() => setShowHistory(!showHistory)}>
-          History
-        </button>
+            <input
+              className="comment-input"
+              placeholder="What changed? (like a commit message)"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+            />
+            <button className="btn primary" onClick={save} disabled={busy || !html.trim()}>
+              Save as new version
+            </button>
+            <button
+              className="btn publish"
+              onClick={() => publishVersion(loadedVersion)}
+              disabled={busy || loadedVersion == null || dirty || loadedVersion === publishedVersion}
+              title={
+                dirty
+                  ? 'Save your changes as a version first'
+                  : loadedVersion === publishedVersion
+                    ? 'This version is already published'
+                    : 'Make this version the one consumers render'
+              }
+            >
+              {loadedVersion != null && loadedVersion === publishedVersion ? 'Published' : 'Publish'}
+            </button>
+            <button className="btn" onClick={() => setShowHistory(!showHistory)}>
+              History
+            </button>
+          </>
+        )}
         {assistant?.enabled && (
           <button
             className={showAssistant ? 'btn mode active' : 'btn'}
@@ -352,7 +389,7 @@ export default function Editor({
             ✨ Assistant
           </button>
         )}
-        {dirty && <span className="dirty-badge">unsaved</span>}
+        {!isScratch && dirty && <span className="dirty-badge">unsaved</span>}
       </header>
 
       {error && <div className="error-box">{error}</div>}

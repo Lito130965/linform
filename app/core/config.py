@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # docker-compose overrides this with PostgreSQL.
     database_url: str = "sqlite+aiosqlite:///./linform.db"
 
+    # Where the built-in showcase examples live. Empty = the examples/ folder
+    # shipped alongside the app; override only for an unusual layout.
+    examples_dir: str = ""
+
     # Rendering
     render_timeout_seconds: float = 30.0
     render_max_workers: int = 2

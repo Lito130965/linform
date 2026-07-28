@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import TemplateList from './components/TemplateList'
-import Editor from './components/Editor'
+import Editor, { type ScratchDoc } from './components/Editor'
+import ExamplesGallery from './components/ExamplesGallery'
 import Login from './components/Login'
 import AccountsPanel from './components/AccountsPanel'
 import { api, setAuthLostHandler, type Me } from './api'
@@ -8,6 +9,8 @@ import { layoutFor, useViewportWidth } from './layout'
 
 export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
+  const [showGallery, setShowGallery] = useState(false)
+  const [scratch, setScratch] = useState<ScratchDoc | null>(null)
   const [me, setMe] = useState<Me | null>(null)
   const [ready, setReady] = useState(false)
   const [accountsOpen, setAccountsOpen] = useState(false)
@@ -91,10 +94,23 @@ export default function App() {
         {sidebarOpen && (
           <>
             <h1 className="logo">Linform</h1>
+            <button
+              className={showGallery ? 'nav-item active' : 'nav-item'}
+              onClick={() => {
+                setShowGallery(true)
+                setScratch(null)
+                setSelected(null)
+                if (layout.collapseSidebar) setSidebarOpen(false)
+              }}
+            >
+              ★ Examples
+            </button>
             <TemplateList
               selected={selected}
               onSelect={(code) => {
                 setSelected(code)
+                setShowGallery(false)
+                setScratch(null)
                 if (layout.collapseSidebar) setSidebarOpen(false)
               }}
             />
@@ -118,7 +134,17 @@ export default function App() {
         )}
       </aside>
       <main className="main">
-        {selected ? (
+        {scratch ? (
+          <Editor
+            key={`scratch:${scratch.id}`}
+            code={scratch.id}
+            scratch={scratch}
+            onExitScratch={() => setScratch(null)}
+            overlayPanels={layout.overlayPanels}
+          />
+        ) : showGallery ? (
+          <ExamplesGallery onOpen={(doc) => setScratch(doc)} />
+        ) : selected ? (
           <Editor key={selected} code={selected} overlayPanels={layout.overlayPanels} />
         ) : (
           <div className="empty-state">Select or create a template to start editing</div>

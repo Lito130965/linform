@@ -1,0 +1,52 @@
+<!-- Status matrix: a table where each cell carries its own background and text
+     colour, the way the editor's two cell-colour palettes write them (inline
+     background + color on the td). A dynamic {% for %} builds the rows; the
+     per-cell colours come straight from the data.
+     (Note: Jinja parses HTML comments too, so no literal tag syntax here.) -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 20mm; }
+  body { font-family: 'Liberation Sans', sans-serif; font-size: 11pt; color: #111; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; }
+  .sub { color: #666; margin-bottom: 7mm; }
+  table.grid { width: 100%; border-collapse: collapse; }
+  .grid th { background: #33373f; color: #fff; border: 1px solid #33373f; padding: 2.5mm 3mm; font-size: 9pt; text-align: center; }
+  .grid th.row { text-align: left; }
+  .grid td { border: 1px solid #d0d0d0; padding: 2.5mm 3mm; text-align: center; font-weight: 600; }
+  .grid td.svc { text-align: left; font-weight: 400; background: #f4f4f6; }
+  .legend { margin-top: 6mm; font-size: 9pt; color: #555; }
+  .chip { display: inline-block; width: 4mm; height: 4mm; border-radius: 1mm; vertical-align: middle; margin: 0 1.5mm 0 4mm; }
+</style>
+</head>
+<body>
+  <h1>Service status — {{ year }}</h1>
+  <div class="sub">Uptime review across regions</div>
+
+  <table class="grid">
+    <thead>
+      <tr>
+        <th class="row">Service</th>
+        {% for month in months %}<th>{{ month }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="svc">{{ row.service }}</td>
+        {% for cell in row.cells %}
+        <td style="background: {{ cell.bg }}; color: {{ cell.fg }};">{{ cell.label }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="legend">
+    <span class="chip" style="background:#d7f3e3;"></span> Operational
+    <span class="chip" style="background:#fdeecb;"></span> Degraded
+    <span class="chip" style="background:#f7d4d1;"></span> Outage
+  </div>
+</body>
+</html>

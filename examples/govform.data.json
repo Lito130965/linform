@@ -1,0 +1,13 @@
+{
+  "applicant": "Jane Example",
+  "date": "28 July 2026",
+  "account": "40817810099",
+  "reference": "REQ-000512",
+  "items": [
+    { "name": "Access badge", "qty": "2" },
+    { "name": "Parking permit", "qty": "1" },
+    { "name": "Locker assignment", "qty": "1" }
+  ],
+  "agree": true,
+  "express": false
+}

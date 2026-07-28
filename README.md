@@ -59,6 +59,7 @@ shipping label with QR/barcode, a fixed-layout certificate — live in
 | POST | `/api/assets` | Upload an asset (logo, background); returns an immutable `asset://<sha256>` URL |
 | GET | `/api/assets` | List uploaded assets |
 | GET | `/api/assets/{sha256}` | Raw asset bytes |
+| GET | `/api/examples` | Built-in showcase examples (drives the editor gallery) |
 | POST | `/api/auth/login` | Password login → opaque session token |
 | GET | `/api/auth/me` | Who the current credential is (drives the UI) |
 | POST | `/api/admin/users` | **Superuser**: create an editor/superuser account |

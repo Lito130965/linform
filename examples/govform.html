@@ -1,0 +1,67 @@
+<!-- Application form: a SYNTHETIC comb-field form, not a real government blank.
+     Shows: the character-cells preset (one box per glyph), rows padded to a
+     fixed count (the pad-empty-rows preset), and checkbox glyphs from booleans.
+     The comb and pad markup is byte-identical to what those presets insert, so
+     clicking the preset reproduces exactly what you see here.
+     (Note: Jinja parses HTML comments too, so no literal tag syntax here.) -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: 'Liberation Sans', sans-serif; font-size: 11pt; color: #111; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; }
+  .sub { color: #666; margin-bottom: 7mm; }
+  .field { margin-bottom: 5mm; }
+  .field .label { font-size: 8pt; text-transform: uppercase; color: #888; letter-spacing: .5px; margin-bottom: 1.5mm; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 3mm; }
+  .items th { background: #f0f0f0; border: 1px solid #999; padding: 2mm 3mm; font-size: 9pt; text-align: left; }
+  .items td { border: 1px solid #bbb; padding: 2mm 3mm; height: 7mm; }
+  .items .n { width: 10mm; text-align: right; }
+  .items .q { width: 24mm; text-align: right; }
+  .options { margin-top: 6mm; line-height: 1.9; }
+  .box { font-size: 13pt; margin-right: 2mm; }
+  .sign { margin-top: 14mm; display: flex; justify-content: space-between; }
+  .sign .line { border-top: 1px solid #000; width: 60mm; padding-top: 1.5mm; font-size: 9pt; color: #555; }
+</style>
+</head>
+<body>
+  <h1>Service request form</h1>
+  <div class="sub">Applicant: {{ applicant }} · {{ date }}</div>
+
+  <div class="field">
+    <div class="label">Account number</div>
+    <span style="white-space:nowrap;">{% for ch in account %}<span style="display:inline-block;width:5mm;height:6mm;line-height:6mm;border:1px solid #000;text-align:center;font-family:monospace;">{{ ch }}</span>{% endfor %}</span>
+  </div>
+
+  <div class="field">
+    <div class="label">Reference id</div>
+    <span style="white-space:nowrap;">{% for ch in reference %}<span style="display:inline-block;width:5mm;height:6mm;line-height:6mm;border:1px solid #000;text-align:center;font-family:monospace;">{{ ch }}</span>{% endfor %}</span>
+  </div>
+
+  <div class="field">
+    <div class="label">Requested items</div>
+    <table class="items">
+      <thead>
+        <tr><th class="n">#</th><th>Item</th><th class="q">Quantity</th></tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr><td class="n">{{ loop.index }}</td><td>{{ item.name }}</td><td class="q">{{ item.qty }}</td></tr>
+        {% endfor %}
+        {% for _ in range(items|length, 8) %}<tr><td class="n">&nbsp;</td><td>&nbsp;</td><td class="q">&nbsp;</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="options">
+    <div><span class="box">{{ '☑' if agree else '☐' }}</span> I confirm the information above is correct</div>
+    <div><span class="box">{{ '☑' if express else '☐' }}</span> Express processing requested</div>
+  </div>
+
+  <div class="sign">
+    <div class="line">Applicant signature</div>
+    <div class="line">Date</div>
+  </div>
+</body>
+</html>

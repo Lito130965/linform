@@ -128,3 +128,17 @@ class ApiKeyCreated(ApiKeyOut):
     """Returned once at creation — the only time the clear key is visible."""
 
     key: str
+
+
+# --- showcase examples -----------------------------------------------------
+
+class ExampleMeta(BaseModel):
+    id: str
+    title: str
+    description: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class ExampleDetail(ExampleMeta):
+    html: str
+    data: dict = Field(default_factory=dict)

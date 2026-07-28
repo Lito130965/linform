@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.db import get_session_factory
-from app.routers import admin, assets, assistant, auth, render, templates
+from app.routers import admin, assets, assistant, auth, examples, render, templates
 from app.services import accounts
 from app.services.renderer import WeasyPrintRenderer
 
@@ -35,6 +35,7 @@ app.include_router(assets.router)
 app.include_router(assistant.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(examples.router)
 
 
 @app.get("/health")

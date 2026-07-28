@@ -29,6 +29,9 @@ RUN pip install --no-cache-dir .
 
 COPY alembic.ini docker-entrypoint.sh ./
 COPY alembic ./alembic
+# Showcase examples the editor gallery serves (single source of truth with the
+# curl-able examples/ folder). parents[2] from app/services resolves here.
+COPY examples ./examples
 COPY --from=ui /ui/dist ./app/static
 
 EXPOSE 8000

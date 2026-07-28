@@ -1,0 +1,40 @@
+{
+  "examples": [
+    {
+      "id": "certificate",
+      "title": "Certificate — static one-pager",
+      "description": "Plain text, a fixed table and simple {{ variables }} on an absolutely-positioned A4 landscape sheet. The gentlest introduction.",
+      "tags": ["static", "variables", "absolute layout"]
+    },
+    {
+      "id": "invoice",
+      "title": "Invoice — table that flows across pages",
+      "description": "A {% for %} table with a repeating header, a conditional discount row that only appears when the field is set, page numbers from CSS counters, and totals the consumer computes.",
+      "tags": ["dynamic table", "conditional", "multi-page", "page numbers"]
+    },
+    {
+      "id": "govform",
+      "title": "Application form — comb fields",
+      "description": "One box per character of an id (the character-cells preset), rows padded to a fixed count, and checkboxes driven by booleans. A synthetic form, not a real one.",
+      "tags": ["character cells", "padded rows", "checkboxes"]
+    },
+    {
+      "id": "report",
+      "title": "Report — background, header/footer, codes",
+      "description": "A full-bleed page background, a header and footer that repeat on every page, page numbers, and a scannable QR and barcode drawn by the server.",
+      "tags": ["background", "header/footer", "QR", "barcode"]
+    },
+    {
+      "id": "colormatrix",
+      "title": "Status matrix — coloured cells",
+      "description": "A table where each cell carries its own background and text colour — the two-palette cell styling, shown as a status grid.",
+      "tags": ["cell background", "text colour", "table"]
+    },
+    {
+      "id": "shipping_label",
+      "title": "Shipping label — fixed-size media",
+      "description": "A compact fixed label with a QR for lookup and a Code128 barcode, each sized in exact millimetres.",
+      "tags": ["fixed size", "QR", "barcode"]
+    }
+  ]
+}

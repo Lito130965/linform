@@ -1,0 +1,72 @@
+<!-- Report: a full-bleed page background, a header and footer that repeat on
+     every page (the running-element pattern the header/footer blocks insert),
+     page numbers from the page-numbers preset, and a server-drawn QR + barcode
+     from the code presets. Every furniture/code snippet below is byte-identical
+     to what the corresponding block or preset inserts.
+     (Note: Jinja parses HTML comments too, so no literal tag syntax here.) -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  /* A full-bleed page tint — the background reaches the paper edge because it
+     paints the page box itself, not a margin-boxed element. */
+  @page { size: A4; margin: 26mm 18mm; background: #f5f7fb; }
+  body { font-family: 'Liberation Sans', sans-serif; font-size: 11pt; color: #1a1c22; line-height: 1.4; }
+  h1 { font-size: 18pt; margin: 0 0 1mm; color: #2b3a67; }
+  .lede { color: #555; margin-bottom: 7mm; }
+  h2 { font-size: 12pt; color: #2b3a67; border-bottom: 2px solid #c9d3ec; padding-bottom: 1mm; margin-top: 7mm; }
+  table.data { width: 100%; border-collapse: collapse; margin-top: 3mm; }
+  .data th { background: #e5ebf7; border: 1px solid #b9c4dd; padding: 2mm 3mm; text-align: left; font-size: 9pt; }
+  .data td { border: 1px solid #cdd6e8; padding: 2mm 3mm; }
+  .data .num { text-align: right; white-space: nowrap; }
+  .codes { margin-top: 8mm; display: flex; gap: 12mm; align-items: flex-end; }
+  .codes .cap { font-size: 8pt; color: #888; margin-top: 1.5mm; }
+  p { text-align: justify; }
+</style>
+</head>
+<body>
+  <!-- Page header (running-element block) -->
+  <style>@page { margin-top: 24mm; @top-center { content: element(lf-header); } }</style>
+  <div style="position: running(lf-header); font-size: 9pt; text-align: center; color: #555;">{{ company }} — Quarterly report {{ period }}</div>
+
+  <!-- Page footer (running-element block), kept to the left so the page number can sit centre -->
+  <style>@page { margin-bottom: 24mm; @bottom-left { content: element(lf-footer); } }</style>
+  <div style="position: running(lf-footer); font-size: 8pt; color: #888;">Confidential · {{ company }}</div>
+
+  <!-- Page numbers (page-numbers preset) -->
+  <style>@page { margin-bottom: 16mm; @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #555; } }</style>
+
+  <h1>Quarterly report</h1>
+  <div class="lede">{{ company }} · {{ period }} · prepared {{ date }}</div>
+
+  <p>{{ summary }}</p>
+
+  <h2>Key figures</h2>
+  <table class="data">
+    <thead>
+      <tr><th>Metric</th><th class="num">This quarter</th><th class="num">Last quarter</th></tr>
+    </thead>
+    <tbody>
+      {% for row in metrics %}
+      <tr><td>{{ row.name }}</td><td class="num">{{ row.current }}</td><td class="num">{{ row.previous }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Notes</h2>
+  <p>{{ notes }}</p>
+
+  <div class="codes">
+    <div>
+      <!-- QR code preset: a scannable link to the full report -->
+      <img src="{{ report_url | qr }}" style="width:28mm">
+      <div class="cap">Scan for the full report</div>
+    </div>
+    <div>
+      <!-- Barcode preset: Code128 with the document number underneath -->
+      <img src="{{ doc_no | barcode('code128', text=True) }}" style="width:60mm">
+      <div class="cap">Document number</div>
+    </div>
+  </div>
+</body>
+</html>
