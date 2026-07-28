@@ -1,37 +1,42 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, ApiError, type ApiKeyCreated, type ApiKeyOut, type Role, type UserOut } from '../api'
+import { api, ApiError, type ApiKeyCreated, type ApiKeyOut, type Me, type Role, type UserOut } from '../api'
+import { getBoolPref, PREF_SHOW_CODES, setBoolPref } from '../prefs'
 
-/** Superuser-only account management, shown as a modal over the editor. Two
- * things live here: the human editor accounts, and the render API keys that
- * consuming applications authenticate with. A newly minted key is shown once —
- * there is no way to retrieve it later, by design. */
-export default function AccountsPanel({ me, onClose }: { me: string; onClose: () => void }) {
-  const [tab, setTab] = useState<'users' | 'keys'>('users')
+/** The Settings page (a nav tab, not a modal). Content adapts to the signed-in
+ * principal: a superuser manages users and render keys; everyone gets the UI
+ * preferences. In dev mode (auth off) the account sections are replaced by a
+ * note on how to enable accounts. */
+export default function SettingsPanel({ me }: { me: Me }) {
+  const canManage = me.auth_enabled && me.role === 'superuser'
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog accounts" onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-head">
-          <strong>Accounts</strong>
-          <div className="accounts-tabs">
-            <button
-              className={`btn small ${tab === 'users' ? 'primary' : ''}`}
-              onClick={() => setTab('users')}
-            >
-              Users
-            </button>
-            <button
-              className={`btn small ${tab === 'keys' ? 'primary' : ''}`}
-              onClick={() => setTab('keys')}
-            >
-              Render keys
-            </button>
-          </div>
-          <button className="btn small" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        {tab === 'users' ? <Users me={me} /> : <Keys />}
-      </div>
+    <div className="settings">
+      <h1>Settings</h1>
+
+      {canManage ? (
+        <>
+          <UsersSection me={me.username} />
+          <KeysSection />
+        </>
+      ) : me.auth_enabled ? (
+        <section className="settings-section">
+          <h2>Account</h2>
+          <p className="muted">
+            Signed in as <strong>{me.username}</strong> ({me.role}). Account and key management is
+            available to superusers.
+          </p>
+        </section>
+      ) : (
+        <section className="settings-section">
+          <h2>Accounts</h2>
+          <p className="muted">
+            Authentication is disabled (dev mode). Set <code>LINFORM_SUPERUSER</code> and{' '}
+            <code>LINFORM_SUPERUSER_PASSWORD</code> to enable login and manage users and render keys
+            here.
+          </p>
+        </section>
+      )}
+
+      <PreferencesSection />
     </div>
   )
 }
@@ -42,7 +47,7 @@ function useError(): [string | null, (e: unknown) => void, () => void] {
   return [error, report, () => setError(null)]
 }
 
-function Users({ me }: { me: string }) {
+function UsersSection({ me }: { me: string }) {
   const [users, setUsers] = useState<UserOut[]>([])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -67,9 +72,9 @@ function Users({ me }: { me: string }) {
     }
   }
 
-  async function toggleActive(u: UserOut) {
+  const withReload = (fn: () => Promise<unknown>) => async () => {
     try {
-      await api.setUserActive(u.id, !u.is_active)
+      await fn()
       await reload()
     } catch (err) {
       report(err)
@@ -86,18 +91,9 @@ function Users({ me }: { me: string }) {
     }
   }
 
-  async function remove(u: UserOut) {
-    if (!window.confirm(`Delete user ${u.username}?`)) return
-    try {
-      await api.deleteUser(u.id)
-      await reload()
-    } catch (err) {
-      report(err)
-    }
-  }
-
   return (
-    <div className="accounts-body">
+    <section className="settings-section">
+      <h2>Users</h2>
       <form className="accounts-new" onSubmit={create}>
         <input placeholder="username" value={username} onChange={(e) => setUsername(e.target.value)} />
         <input
@@ -137,10 +133,20 @@ function Users({ me }: { me: string }) {
                 <button className="btn small" onClick={() => resetPassword(u)}>
                   Password
                 </button>
-                <button className="btn small" onClick={() => toggleActive(u)} disabled={u.username === me}>
+                <button
+                  className="btn small"
+                  onClick={withReload(() => api.setUserActive(u.id, !u.is_active))}
+                  disabled={u.username === me}
+                >
                   {u.is_active ? 'Disable' : 'Enable'}
                 </button>
-                <button className="btn small danger" onClick={() => remove(u)} disabled={u.username === me}>
+                <button
+                  className="btn small danger"
+                  onClick={withReload(async () => {
+                    if (window.confirm(`Delete user ${u.username}?`)) await api.deleteUser(u.id)
+                  })}
+                  disabled={u.username === me}
+                >
                   Delete
                 </button>
               </td>
@@ -148,11 +154,11 @@ function Users({ me }: { me: string }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </section>
   )
 }
 
-function Keys() {
+function KeysSection() {
   const [keys, setKeys] = useState<ApiKeyOut[]>([])
   const [name, setName] = useState('')
   const [fresh, setFresh] = useState<ApiKeyCreated | null>(null)
@@ -167,8 +173,7 @@ function Keys() {
     e.preventDefault()
     clear()
     try {
-      const created = await api.createKey(name.trim())
-      setFresh(created)
+      setFresh(await api.createKey(name.trim()))
       setName('')
       await reload()
     } catch (err) {
@@ -188,13 +193,10 @@ function Keys() {
   }
 
   return (
-    <div className="accounts-body">
+    <section className="settings-section">
+      <h2>Render API keys</h2>
       <form className="accounts-new" onSubmit={create}>
-        <input
-          placeholder="key name, e.g. billing-app"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
+        <input placeholder="key name, e.g. billing-app" value={name} onChange={(e) => setName(e.target.value)} />
         <button className="btn primary" type="submit" disabled={!name.trim()}>
           Mint render key
         </button>
@@ -235,6 +237,27 @@ function Keys() {
           ))}
         </tbody>
       </table>
-    </div>
+    </section>
+  )
+}
+
+function PreferencesSection() {
+  const [showCodes, setShowCodes] = useState(() => getBoolPref(PREF_SHOW_CODES, true))
+  return (
+    <section className="settings-section">
+      <h2>Preferences</h2>
+      <label className="pref-row">
+        <input
+          type="checkbox"
+          checked={showCodes}
+          onChange={(e) => {
+            setShowCodes(e.target.checked)
+            setBoolPref(PREF_SHOW_CODES, e.target.checked)
+          }}
+        />
+        Show template codes in the journal
+      </label>
+      <p className="muted">These preferences are stored in this browser only.</p>
+    </section>
   )
 }

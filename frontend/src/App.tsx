@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react'
-import TemplateList from './components/TemplateList'
+import TemplateJournal from './components/TemplateJournal'
 import Editor, { type ScratchDoc } from './components/Editor'
 import ExamplesGallery from './components/ExamplesGallery'
+import SettingsPanel from './components/SettingsPanel'
 import Login from './components/Login'
-import AccountsPanel from './components/AccountsPanel'
 import { api, setAuthLostHandler, type Me } from './api'
 import { layoutFor, useViewportWidth } from './layout'
 
+type Tab = 'templates' | 'examples' | 'settings'
+
 export default function App() {
+  const [tab, setTab] = useState<Tab>('templates')
   const [selected, setSelected] = useState<string | null>(null)
-  const [showGallery, setShowGallery] = useState(false)
   const [scratch, setScratch] = useState<ScratchDoc | null>(null)
   const [me, setMe] = useState<Me | null>(null)
   const [ready, setReady] = useState(false)
-  const [accountsOpen, setAccountsOpen] = useState(false)
   const width = useViewportWidth()
   const layout = layoutFor(width)
   const [sidebarOpen, setSidebarOpen] = useState(!layout.collapseSidebar)
@@ -61,17 +62,18 @@ export default function App() {
     )
   }
 
-  // While the list floats it is out of flow, so the rail's 44px has to be held
-  // open by the shell — otherwise the editor jumps sideways as it opens.
   const overlaidSidebar = layout.collapseSidebar && sidebarOpen
-  const sidebarClass = [
-    'sidebar',
-    sidebarOpen ? '' : 'collapsed',
-    // Once folded, reopening must not shove the editor sideways.
-    overlaidSidebar ? 'overlay' : '',
-  ]
+  const sidebarClass = ['sidebar', sidebarOpen ? '' : 'collapsed', overlaidSidebar ? 'overlay' : '']
     .filter(Boolean)
     .join(' ')
+
+  // Switching tab always drops any open document, so the tab's landing shows.
+  const go = (t: Tab) => {
+    setTab(t)
+    setSelected(null)
+    setScratch(null)
+    if (layout.collapseSidebar) setSidebarOpen(false)
+  }
 
   const showAccount = me?.auth_enabled && me?.authenticated
 
@@ -80,13 +82,19 @@ export default function App() {
     setMe((m) => (m ? { ...m, authenticated: false } : m))
   }
 
+  const navItem = (t: Tab, label: string) => (
+    <button className={tab === t ? 'nav-item active' : 'nav-item'} onClick={() => go(t)}>
+      {label}
+    </button>
+  )
+
   return (
     <div className={overlaidSidebar ? 'app rail-held' : 'app'}>
       <aside className={sidebarClass}>
         <button
           className="sidebar-toggle"
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          title={sidebarOpen ? 'Hide the template list' : 'Show the template list'}
+          title={sidebarOpen ? 'Hide the navigation' : 'Show the navigation'}
           aria-expanded={sidebarOpen}
         >
           ☰
@@ -94,37 +102,17 @@ export default function App() {
         {sidebarOpen && (
           <>
             <h1 className="logo">Linform</h1>
-            <button
-              className={showGallery ? 'nav-item active' : 'nav-item'}
-              onClick={() => {
-                setShowGallery(true)
-                setScratch(null)
-                setSelected(null)
-                if (layout.collapseSidebar) setSidebarOpen(false)
-              }}
-            >
-              ★ Examples
-            </button>
-            <TemplateList
-              selected={selected}
-              onSelect={(code) => {
-                setSelected(code)
-                setShowGallery(false)
-                setScratch(null)
-                if (layout.collapseSidebar) setSidebarOpen(false)
-              }}
-            />
+            <nav className="nav">
+              {navItem('templates', '▤ Templates')}
+              {navItem('examples', '★ Examples')}
+              {navItem('settings', '⚙ Settings')}
+            </nav>
             {showAccount && (
               <div className="account-bar">
                 <div className="account-who">
                   <span className="account-name">{me!.username}</span>
                   <span className="account-role">{me!.role}</span>
                 </div>
-                {me!.role === 'superuser' && (
-                  <button className="btn small" onClick={() => setAccountsOpen(true)}>
-                    Accounts
-                  </button>
-                )}
                 <button className="btn small" onClick={logout}>
                   Sign out
                 </button>
@@ -134,7 +122,9 @@ export default function App() {
         )}
       </aside>
       <main className="main">
-        {scratch ? (
+        {selected ? (
+          <Editor key={selected} code={selected} overlayPanels={layout.overlayPanels} />
+        ) : scratch ? (
           <Editor
             key={`scratch:${scratch.id}`}
             code={scratch.id}
@@ -142,17 +132,14 @@ export default function App() {
             onExitScratch={() => setScratch(null)}
             overlayPanels={layout.overlayPanels}
           />
-        ) : showGallery ? (
+        ) : tab === 'templates' ? (
+          <TemplateJournal onOpen={(code) => setSelected(code)} />
+        ) : tab === 'examples' ? (
           <ExamplesGallery onOpen={(doc) => setScratch(doc)} />
-        ) : selected ? (
-          <Editor key={selected} code={selected} overlayPanels={layout.overlayPanels} />
         ) : (
-          <div className="empty-state">Select or create a template to start editing</div>
+          me && <SettingsPanel me={me} />
         )}
       </main>
-      {accountsOpen && me && (
-        <AccountsPanel me={me.username} onClose={() => setAccountsOpen(false)} />
-      )}
     </div>
   )
 }

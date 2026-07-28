@@ -9,7 +9,16 @@ export interface VersionInfo {
 export interface TemplateInfo {
   code: string
   name: string
+  directory_id: number | null
   created_at: string
+}
+
+export interface DirectoryInfo {
+  id: number
+  name: string
+  created_by: string
+  created_at: string
+  template_count: number
 }
 
 export interface TemplateDetail extends TemplateInfo {
@@ -315,10 +324,36 @@ export const api = {
     return resp.json()
   },
 
-  createTemplate: (code: string, name: string) =>
+  createTemplate: (code: string, name: string, directory_id: number | null = null) =>
     request<TemplateInfo>('/api/templates', {
       method: 'POST',
-      body: JSON.stringify({ code, name }),
+      body: JSON.stringify({ code, name, directory_id }),
+    }),
+
+  // --- directories (flat buckets) ---
+  listDirectories: () => request<DirectoryInfo[]>('/api/directories'),
+
+  createDirectory: (name: string) =>
+    request<DirectoryInfo>('/api/directories', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  renameDirectory: (id: number, name: string) =>
+    request<DirectoryInfo>(`/api/directories/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+
+  async deleteDirectory(id: number): Promise<void> {
+    const resp = await authFetch(`/api/directories/${id}`, { method: 'DELETE' })
+    if (!resp.ok) throw await parseError(resp)
+  },
+
+  moveTemplate: (code: string, directory_id: number | null) =>
+    request<TemplateInfo>(`/api/templates/${code}/directory`, {
+      method: 'PUT',
+      body: JSON.stringify({ directory_id }),
     }),
 
   getTemplate: (code: string) => request<TemplateDetail>(`/api/templates/${code}`),
