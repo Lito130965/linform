@@ -1,13 +1,20 @@
 /**
  * Template splitting for the visual editor.
  *
- * A DOM-based editor must never see the template's <style> blocks or
- * document scaffolding: GrapesJS would re-serialize CSS through its own
- * model (reordering rules, dropping @page — the print-critical parts).
- * So the template is split string-level into prefix / editable body /
- * suffix; only the body enters the canvas, the style texts are injected
- * into the canvas read-only, and reassembly is plain concatenation —
- * which keeps the no-edit round-trip byte-exact.
+ * A DOM-based editor must never let the template's <style> blocks become
+ * editable content or be re-serialized through a model that reorders rules
+ * or drops @page. So the template is split string-level into prefix /
+ * editable body / suffix; the style TEXTS are injected into the canvas
+ * read-only, and reassembly is plain concatenation.
+ *
+ * <style> in the body is not code-only: the header/footer blocks and the
+ * page-numbers preset put their @page rules there on purpose (WeasyPrint
+ * honours a body <style>, and it keeps the read-only author CSS untouched).
+ * Such blocks are HOISTED to the top of the body on entering Visual — the
+ * canvas shows their text read-only just like a head <style>, the running
+ * elements they drive stay editable in the body, and the only thing that
+ * ever moves is page-level CSS, whose position does not affect rendering.
+ * Round-trip stays byte-exact whenever the body has no <style> at all.
  */
 
 export type SplitResult =
@@ -22,18 +29,29 @@ function extractStyleTexts(fragment: string): string {
   return parts.join('\n')
 }
 
+/** Pull every <style> out of the editable body and append the nodes to the
+ * end of the prefix (i.e. to the top of the body region), so they render in
+ * the canvas but never sit in editable content. */
+function hoistBodyStyles(prefix: string, body: string): { prefix: string; body: string } {
+  const nodes = body.match(STYLE_BLOCK_RE)
+  if (!nodes) return { prefix, body }
+  return { prefix: prefix + nodes.join(''), body: body.replace(STYLE_BLOCK_RE, '') }
+}
+
 export function splitForVisual(html: string): SplitResult {
   const bodyOpen = /<body\b[^>]*>/i.exec(html)
   if (bodyOpen) {
     const closeIdx = html.toLowerCase().lastIndexOf('</body>')
     if (closeIdx === -1) return { ok: false, reason: '<body> is never closed' }
     const bodyStart = bodyOpen.index + bodyOpen[0].length
-    const prefix = html.slice(0, bodyStart)
-    const body = html.slice(bodyStart, closeIdx)
-    if (/<style\b/i.test(body)) {
-      return { ok: false, reason: '<style> inside <body> — this template is code-only' }
+    const hoisted = hoistBodyStyles(html.slice(0, bodyStart), html.slice(bodyStart, closeIdx))
+    return {
+      ok: true,
+      prefix: hoisted.prefix,
+      body: hoisted.body,
+      suffix: html.slice(closeIdx),
+      styles: extractStyleTexts(hoisted.prefix),
     }
-    return { ok: true, prefix, body, suffix: html.slice(closeIdx), styles: extractStyleTexts(prefix) }
   }
 
   // Headless template: doctype, comments and <style> blocks at the very
@@ -66,15 +84,11 @@ export function splitForVisual(html: string): SplitResult {
     }
     break
   }
-  const prefix = html.slice(0, i)
-  const body = html.slice(i)
-  if (/<style\b/i.test(body)) {
-    return { ok: false, reason: '<style> below the content — this template is code-only' }
-  }
-  if (/<(html|head)\b/i.test(body)) {
+  if (/<(html|head)\b/i.test(html.slice(i))) {
     return { ok: false, reason: 'document markup without <body> — this template is code-only' }
   }
-  return { ok: true, prefix, body, suffix: '', styles: extractStyleTexts(prefix) }
+  const hoisted = hoistBodyStyles(html.slice(0, i), html.slice(i))
+  return { ok: true, prefix: hoisted.prefix, body: hoisted.body, suffix: '', styles: extractStyleTexts(hoisted.prefix) }
 }
 
 export function joinFromVisual(prefix: string, body: string, suffix: string): string {

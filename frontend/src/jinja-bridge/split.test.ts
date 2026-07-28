@@ -52,16 +52,28 @@ describe('splitForVisual', () => {
     expect(res.body).toBe('<div>x</div>')
   })
 
-  it('rejects style blocks in the middle of content', () => {
+  it('hoists a body style block to the top instead of going code-only', () => {
+    // Furniture (header/footer/page-numbers) lives in body <style>; it becomes
+    // read-only canvas CSS, and only page-level CSS is relocated.
     const res = splitForVisual('<div>x</div><style>late { }</style><div>y</div>')
-    expect(res.ok).toBe(false)
-    if (res.ok) return
-    expect(res.reason).toContain('code-only')
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.styles).toContain('late { }')
+    expect(res.body).toBe('<div>x</div><div>y</div>') // no <style> left in the body
+    // Reassembly still yields a valid document (style moved to the front).
+    expect(joinFromVisual(res.prefix, res.body, res.suffix)).toBe(
+      '<style>late { }</style><div>x</div><div>y</div>',
+    )
   })
 
-  it('rejects style inside body of a full document', () => {
-    const res = splitForVisual('<html><body><style>x { }</style><p>t</p></body></html>')
-    expect(res.ok).toBe(false)
+  it('supports a body <style> in a full document (round-trip byte-exact when already at the top)', () => {
+    const html = '<html><body><style>x { }</style><p>t</p></body></html>'
+    const res = splitForVisual(html)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.styles).toContain('x { }')
+    expect(res.body).toBe('<p>t</p>')
+    expect(joinFromVisual(res.prefix, res.body, res.suffix)).toBe(html)
   })
 
   it('handles a template with no styles at all', () => {
