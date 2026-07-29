@@ -39,6 +39,13 @@ def render_html(template_source: str, data: dict, *, strict: bool = True) -> str
         # A symbol the data cannot encode is the template author's problem, not
         # a server fault: surface it like any other template error.
         raise TemplateRenderError(f"Barcode error: {exc}") from exc
+    except OverflowError as exc:
+        # The sandbox refuses range() above MAX_RANGE (100_000) — a real guard
+        # against a template that would build an enormous document. It arrives
+        # as a bare OverflowError, which without this became a 500: the caller
+        # would be told the server broke, when what they need to hear is which
+        # part of their template to fix.
+        raise TemplateRenderError(f"Template asks for too much at once: {exc}") from exc
 
 
 def validate_template(template_source: str) -> None:
@@ -78,6 +85,13 @@ def render_version_html(version_id: int, template_source: str, data: dict, *, st
         # A symbol the data cannot encode is the template author's problem, not
         # a server fault: surface it like any other template error.
         raise TemplateRenderError(f"Barcode error: {exc}") from exc
+    except OverflowError as exc:
+        # The sandbox refuses range() above MAX_RANGE (100_000) — a real guard
+        # against a template that would build an enormous document. It arrives
+        # as a bare OverflowError, which without this became a 500: the caller
+        # would be told the server broke, when what they need to hear is which
+        # part of their template to fix.
+        raise TemplateRenderError(f"Template asks for too much at once: {exc}") from exc
 
 
 def extract_placeholders(template_source: str) -> list[str]:

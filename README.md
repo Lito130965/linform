@@ -186,6 +186,30 @@ Better to know before you build on it:
   renderer only. Use the canvas to author and the PDF preview beside it to
   confirm; where they disagree, the PDF is right.
 
+## Golden PDF tests
+
+`tests/test_golden_pdfs.py` renders every example in `examples/` and checks the
+**PDF**, not just that one came back: exact page count, page-by-page text against
+`tests/golden/<id>.txt`, page geometry, and that QR/barcode symbols reach the
+page as vector drawings. A WeasyPrint upgrade, a font change in the base image
+or an edit to a CSS preset moves layout across every template at once — this is
+what notices.
+
+Pixel comparison is deliberately not done: it breaks on a font patch release and
+reports "17 000 pixels differ", which names nothing. Text plus geometry catches
+the same regressions and says what moved.
+
+When a change is *meant* to change the output:
+
+```bash
+python -m tests.regenerate_golden          # or: ... regenerate_golden invoice
+```
+
+Commit the regenerated files **on their own**, with the diff read in review.
+Folding a golden update into a feature commit is how a layout regression gets
+blessed without anyone looking at it. The script needs WeasyPrint's native
+libraries, so run it in the Docker image or on Linux.
+
 ## Configuration
 
 | Env variable | Default | Meaning |

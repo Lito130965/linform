@@ -1,0 +1,46 @@
+Invoice INV-2026-0042
+20 July 2026
+FROM
+Acme Services LLC
+12 Example street, Springfield
+Tax ID 123456789
+BILL TO
+Globex Corporation
+742 Evergreen Terrace, Shelbyville
+Tax ID 987654321
+# Description Qty Unit price Amount
+1 Design work, landing page 1 1 200.00 1 200.00
+2 Frontend development 80 45.00 3 600.00
+3 Backend development 64 50.00 3 200.00
+4 Project management 20 40.00 800.00
+5 QA and testing 32 35.00 1 120.00
+6 Documentation 12 30.00 360.00
+7 Deployment and CI setup 8 55.00 440.00
+8 Support, June 10 42.00 420.00
+9 Support, July 10 42.00 420.00
+10 SSL certificates, 2 years 2 90.00 180.00
+11 Hosting, annual 1 600.00 600.00
+12 Monitoring setup 6 48.00 288.00
+13 Load testing 16 44.00 704.00
+14 Security review 24 60.00 1 440.00
+15 Accessibility audit 12 38.00 456.00
+16 Performance tuning 18 52.00 936.00
+17 Training session for staff 4 120.00 480.00
+18 Data migration 26 47.00 1 222.00
+19 API integration, payments 30 49.00 1 470.00
+Invoice INV-2026-0042 Page 1 of 2
+
+========== PAGE BREAK ==========
+
+# Description Qty Unit price Amount
+20 API integration, logistics 22 49.00 1 078.00
+21 Email templates 9 33.00 297.00
+22 Analytics dashboards 14 46.00 644.00
+23 Backup configuration 5 41.00 205.00
+24 Content entry 40 18.00 720.00
+25 Final acceptance support 6 50.00 300.00
+Subtotal: 22 580.00
+Discount: − 1 129.00
+V AT (20%): 4 290.20
+Total due: 25 741.20
+Invoice INV-2026-0042 Page 2 of 2
