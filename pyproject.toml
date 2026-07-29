@@ -22,6 +22,11 @@ dependencies = [
     # system libraries, so the container stays as light as WeasyPrint left it.
     "segno>=1.6",
     "python-barcode>=0.15",
+    # Metrics exposition. A dependency rather than a hand-rolled text format:
+    # histograms and the Prometheus format have enough edge cases (bucket
+    # accumulation, label escaping) that reimplementing them would be a
+    # liability, and this is the reference implementation.
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]

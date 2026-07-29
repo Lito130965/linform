@@ -21,7 +21,7 @@ a superuser or any token is set, every endpoint demands a matching credential.
 from dataclasses import dataclass
 from typing import Literal
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,12 +64,26 @@ def _static_principal(token: str, settings: Settings) -> Principal | None:
 
 
 async def get_principal(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     settings: Settings = Depends(get_settings),
     session: AsyncSession = Depends(get_session),
 ) -> Principal | None:
     """Resolve the caller, or None when auth is enabled and nothing matches.
     Returns a synthetic superuser in dev mode (auth disabled)."""
+    principal = await _resolve(credentials, settings, session)
+    if principal is not None:
+        # The request log reads this. The NAME, never the credential — a token
+        # in a log file is a token that has leaked.
+        request.scope["principal_name"] = principal.name
+    return principal
+
+
+async def _resolve(
+    credentials: HTTPAuthorizationCredentials | None,
+    settings: Settings,
+    session: AsyncSession,
+) -> Principal | None:
     if not _auth_enabled(settings):
         return Principal(kind="dev", role="superuser", name="dev")
     token = credentials.credentials if credentials else None

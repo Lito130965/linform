@@ -111,6 +111,15 @@ class WeasyPrintRenderer:
         # orchestrator can replace a pod that can no longer render anything.
         self.healthy = True
 
+    @property
+    def inflight(self) -> int:
+        """Renders in flight right now — read at scrape time by the gauge."""
+        return self._limiter.inflight
+
+    @property
+    def concurrency_limit(self) -> int:
+        return self._limiter.limit
+
     async def render_pdf(self, html: str) -> bytes:
         if not self._limiter.try_acquire():
             raise RenderBusy(

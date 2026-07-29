@@ -14,10 +14,17 @@ from app.models.database import Base
 
 
 class StubRenderer:
-    """Pretends to be WeasyPrint; records the HTML it was asked to render."""
+    """Pretends to be WeasyPrint; records the HTML it was asked to render.
+
+    Carries the same surface the real renderer exposes to the rest of the app
+    (`healthy`, `inflight`), so a double never hides a call the production
+    object would have answered."""
 
     def __init__(self, **kwargs):
         self.last_html: str | None = None
+        self.healthy = True
+        self.inflight = 0
+        self.concurrency_limit = 0
 
     async def render_pdf(self, html: str) -> bytes:
         self.last_html = html
