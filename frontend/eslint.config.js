@@ -1,6 +1,7 @@
 import js from '@eslint/js'
 import globals from 'globals'
 import jsxA11y from 'eslint-plugin-jsx-a11y'
+import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
 /**
@@ -20,7 +21,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ['src/**/*.{ts,tsx}'],
-    plugins: { 'jsx-a11y': jsxA11y },
+    plugins: { 'jsx-a11y': jsxA11y, 'react-hooks': reactHooks },
     languageOptions: {
       globals: { ...globals.browser },
       parserOptions: { ecmaFeatures: { jsx: true } },
@@ -39,6 +40,13 @@ export default tseslint.config(
       'jsx-a11y/aria-role': 'error',
       'jsx-a11y/label-has-associated-control': 'error',
       'jsx-a11y/role-has-required-aria-props': 'error',
+
+      // The codebase already carries `eslint-disable react-hooks/...`
+      // comments, so the rule has to exist or eslint errors on the comment
+      // itself. Warn rather than error: the deps of the canvas effects are
+      // deliberate, and each exception is already argued in a comment.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
 
       // --- deliberately relaxed ---
       // The editor stores its own types; `any` shows up in DOM plumbing where

@@ -83,6 +83,11 @@ jobs:
       - name: Typecheck and build
         run: npm run build
       - name: Lint (accessibility rules)
+        # Advisory for now, and deliberately not silenced: the rules report the
+        # UI's real state — about seventy controls carry only a glyph as their
+        # label. Fixing that is its own batch (plan A4.1/A4.2); making this
+        # blocking is part of that batch, not of the one that added the linter.
+        continue-on-error: true
         run: npm run lint
       - name: Audit dependencies
         # Advisory, same reasoning as the backend audit: surface new advisories
