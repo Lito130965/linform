@@ -24,7 +24,11 @@ services:
       LINFORM_RENDER_MAX_WORKERS: "${LINFORM_RENDER_MAX_WORKERS:-2}"
       LINFORM_RENDER_MAX_CONCURRENCY: "${LINFORM_RENDER_MAX_CONCURRENCY:-0}"
     depends_on:
-      - db
+      db:
+        # Wait for the database to actually accept connections, not merely for
+        # its container to exist. prestart.py's retry loop stays as a safety net
+        # rather than being the mechanism that makes startup work.
+        condition: service_healthy
 
   db:
     image: postgres:16-alpine
@@ -35,6 +39,12 @@ services:
       POSTGRES_USER: linform
       POSTGRES_PASSWORD: "${LINFORM_DB_PASSWORD:-linform}"
       POSTGRES_DB: linform
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linform -d linform"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     volumes:
       - linform_pgdata:/var/lib/postgresql/data
 

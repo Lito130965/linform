@@ -1,4 +1,8 @@
-FROM node:20-alpine AS ui
+# Base images are pinned by digest, not just by tag: a tag is mutable, so
+# "node:20-alpine" can mean different bytes next week and a build that passed CI
+# is not the build that ships. Update these deliberately (and read the upstream
+# changelog when you do) rather than drifting silently.
+FROM node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS ui
 WORKDIR /ui
 # npm ci, not npm install: the lock file pins exact versions, the install is
 # reproducible, and a broken node_modules fails loudly instead of exiting 0
@@ -10,7 +14,7 @@ COPY frontend ./
 RUN npm run build
 
 
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
 # WeasyPrint native dependencies + fonts with Cyrillic coverage
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,6 +38,21 @@ COPY alembic ./alembic
 COPY examples ./examples
 COPY --from=ui /ui/dist ./app/static
 
+# Run as an unprivileged user. A template is untrusted input and the renderer
+# executes a large native stack (Pango, cairo, image codecs) on it, so a bug
+# there should not land on a root shell. The application directory is handed to
+# the user because the zero-config SQLite default writes its file next to the
+# code; with PostgreSQL nothing here is written at runtime.
+RUN useradd --system --uid 10001 --create-home linform \
+    && chown -R linform:linform /srv/linform
+USER linform
+
 EXPOSE 8000
+
+# Liveness only — /health deliberately does not touch the database, so a
+# database blip cannot make Docker restart a healthy container. Readiness
+# (/ready) is for the load balancer, not for the restart policy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"
 
 CMD ["sh", "./docker-entrypoint.sh"]
