@@ -73,6 +73,12 @@ async def create_version(
     validate_template(html_content)
 
     template = await get_template(session, code)
+    # Read the id ONCE, as a plain int. A rollback below expires every ORM
+    # object in the session, so touching `template.id` on a later attempt would
+    # trigger a lazy refresh — and a lazy refresh outside an await is exactly
+    # what SQLAlchemy's async layer refuses (MissingGreenlet). The retry that
+    # exists for this race would then die of the race it was written for.
+    template_id = template.id
 
     # Two pods can compute the same next number; the unique constraint decides,
     # the loser recomputes. Three attempts is plenty for realistic contention.
@@ -80,13 +86,13 @@ async def create_version(
         current_max = (
             await session.execute(
                 select(TemplateVersion.version)
-                .where(TemplateVersion.template_id == template.id)
+                .where(TemplateVersion.template_id == template_id)
                 .order_by(TemplateVersion.version.desc())
                 .limit(1)
             )
         ).scalar_one_or_none()
         version = TemplateVersion(
-            template_id=template.id,
+            template_id=template_id,
             version=(current_max or 0) + 1,
             html_content=html_content,
             status=VersionStatus.draft,

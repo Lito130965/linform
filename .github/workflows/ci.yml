@@ -8,6 +8,26 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      # The concurrency invariants live in the database (a unique constraint on
+      # the version number, a partial unique index for "one published version"),
+      # so they have to be exercised against PostgreSQL — partial-index and
+      # locking semantics differ from SQLite, and PostgreSQL is the target.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: linform
+          POSTGRES_PASSWORD: linform
+          POSTGRES_DB: linform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U linform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LINFORM_TEST_PG_URL: "postgresql+asyncpg://linform:linform@localhost:5432/linform_test"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
