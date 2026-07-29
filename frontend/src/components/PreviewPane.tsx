@@ -58,7 +58,12 @@ export default function PreviewPane({
       <div className="preview-header">
         <span>Preview{rendering ? ' — rendering…' : ''}</span>
         <label className="strict-toggle" title="Fail on missing placeholder values instead of rendering blanks">
-          <input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} />
+          <input
+            type="checkbox"
+            aria-label="Strict placeholders"
+            checked={strict}
+            onChange={(e) => setStrict(e.target.checked)}
+          />
           strict placeholders
         </label>
       </div>

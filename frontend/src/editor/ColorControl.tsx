@@ -22,12 +22,14 @@ export default function ColorControl({
       <span className="cc-label">{label}</span>
       <input
         type="color"
+        aria-label={`${label} colour`}
         defaultValue={value.hex}
         onChange={(e) => onChange({ ...value, hex: e.target.value })}
       />
       <input
         className="cc-opacity"
         type="number"
+        aria-label={`${label} opacity, percent`}
         min={0}
         max={100}
         value={value.opacity}

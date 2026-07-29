@@ -774,6 +774,7 @@ export default function CanvasEditor({
           <label className="prop">
             Size
             <input
+              aria-label="Font size"
               defaultValue={styleValue('font-size')}
               placeholder="12pt"
               onChange={(e) => applyStyle('font-size', e.target.value)}
@@ -782,6 +783,7 @@ export default function CanvasEditor({
           <label className="prop">
             {isCell ? 'Col W' : 'W'}
             <input
+              aria-label={isCell ? 'Column width' : 'Width'}
               defaultValue={styleValue('width')}
               placeholder="auto"
               onChange={(e) => applyWidth(e.target.value)}
@@ -790,6 +792,7 @@ export default function CanvasEditor({
           <label className="prop">
             {isCell ? 'Row H' : 'H'}
             <input
+              aria-label={isCell ? 'Row height' : 'Height'}
               defaultValue={styleValue('height')}
               placeholder="auto"
               onChange={(e) => applyHeight(e.target.value)}
@@ -877,6 +880,7 @@ export default function CanvasEditor({
                 <>
                   <input
                     placeholder="item"
+                    aria-label="Loop variable name"
                     value={convert.item}
                     onChange={(e) => setConvert({ ...convert, item: e.target.value })}
                   />
@@ -884,12 +888,15 @@ export default function CanvasEditor({
                   <input
                     list="convert-arrays"
                     placeholder="items"
+                    aria-label="Array to repeat over"
                     value={convert.value}
                     onChange={(e) => setConvert({ ...convert, value: e.target.value })}
                   />
                   <datalist id="convert-arrays">
                     {arrayHints.map((a) => (
-                      <option key={a} value={a} />
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
                     ))}
                   </datalist>
                 </>
@@ -897,6 +904,7 @@ export default function CanvasEditor({
               {convert.type !== 'repeat' && (
                 <input
                   placeholder={convert.type === 'if' ? 'condition' : 'value'}
+                  aria-label={convert.type === 'if' ? 'Condition' : 'Value'}
                   value={convert.value}
                   onChange={(e) => setConvert({ ...convert, value: e.target.value })}
                 />
@@ -942,7 +950,13 @@ export default function CanvasEditor({
           ))}
           {cellRect && (
             <>
+              {/* Pointer-only affordance, hidden from assistive tech on
+                  purpose: the same change is reachable from the labelled
+                  properties bar above (Col W / Row H / W / H). Full keyboard
+                  control of the canvas is tracked separately. */}
+              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
               <div
+                aria-hidden="true"
                 className="col-resize"
                 title="Drag to resize column"
                 style={{
@@ -952,7 +966,13 @@ export default function CanvasEditor({
                 }}
                 onMouseDown={startColResize}
               />
+              {/* Pointer-only affordance, hidden from assistive tech on
+                  purpose: the same change is reachable from the labelled
+                  properties bar above (Col W / Row H / W / H). Full keyboard
+                  control of the canvas is tracked separately. */}
+              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
               <div
+                aria-hidden="true"
                 className="row-resize"
                 title="Drag to resize row"
                 style={{
@@ -966,7 +986,9 @@ export default function CanvasEditor({
           )}
           {imgRect && (
             <>
+              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
               <div
+                aria-hidden="true"
                 className="img-resize"
                 title="Drag to resize"
                 style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
@@ -974,6 +996,7 @@ export default function CanvasEditor({
               />
               {positioned && (
                 <div
+                  aria-hidden="true"
                   className="img-move"
                   title="Drag to move freely"
                   style={{
@@ -1002,7 +1025,10 @@ export default function CanvasEditor({
               )
             })()}
           {drag && (
+            // A transient layer that owns the mouse for the duration of a
+            // drag; it has no meaning to a screen reader.
             <div
+              aria-hidden="true"
               className="drag-overlay"
               style={{ cursor: drag.cursor }}
               onMouseMove={(e) => drag.onMove(e.nativeEvent)}

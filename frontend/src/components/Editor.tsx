@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
-import type { EditorView } from '@codemirror/view'
+import { EditorView } from '@codemirror/view'
 import { api, AssistantStatus, TemplateDetail } from '../api'
 import {
   detect,
@@ -343,6 +343,7 @@ export default function Editor({
         ) : (
           <>
             <select
+              aria-label="Template version"
               value={loadedVersion ?? ''}
               onChange={(e) => switchVersion(Number(e.target.value))}
               disabled={!detail?.versions.length}
@@ -362,6 +363,7 @@ export default function Editor({
             <input
               className="comment-input"
               placeholder="What changed? (like a commit message)"
+              aria-label="Version comment"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
@@ -416,7 +418,12 @@ export default function Editor({
               value={html}
               height="100%"
               theme="dark"
-              extensions={[htmlLang()]}
+              extensions={[
+                htmlLang(),
+                // CodeMirror renders a contenteditable div, which is an ARIA
+                // textbox: without this it reaches a screen reader unnamed.
+                EditorView.contentAttributes.of({ 'aria-label': 'Template HTML source' }),
+              ]}
               onChange={(value) => {
                 setHtml(value)
                 setDirty(true)
@@ -441,7 +448,22 @@ export default function Editor({
           <div className="bottom-panels" style={{ maxHeight: panelHeight, height: panelHeight }}>
             <div
               className="panel-resize"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize the bottom panel"
+              aria-valuenow={panelHeight}
+              aria-valuemin={80}
+              aria-valuemax={700}
+              tabIndex={0}
               onMouseDown={startPanelResize}
+              onKeyDown={(e) => {
+                // Keyboard equivalent of the drag, so the panel is not
+                // mouse-only. 24px a step, the same feel as dragging.
+                if (e.key === 'ArrowUp') setPanelHeight((h) => Math.min(700, h + 24))
+                else if (e.key === 'ArrowDown') setPanelHeight((h) => Math.max(80, h - 24))
+                else return
+                e.preventDefault()
+              }}
               title="Drag to resize"
             />
             <div className="panel-tabs">
@@ -469,8 +491,9 @@ export default function Editor({
               {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
               {panelTab === 'data' && (
                 <div className="test-data">
-                  <label>Test data (JSON) — preview renders with it</label>
+                  <label htmlFor="test-data-json">Test data (JSON) — preview renders with it</label>
                   <textarea
+                    id="test-data-json"
                     spellCheck={false}
                     value={testData}
                     onChange={(e) => setTestData(e.target.value)}

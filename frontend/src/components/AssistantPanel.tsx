@@ -149,6 +149,9 @@ export default function AssistantPanel({
   }
 
   return (
+    // Drag-and-drop is a pointer convenience layered on top of the labelled
+    // attach button, which does the same thing from the keyboard.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       className={
         (overlay ? 'assistant-panel overlay' : 'assistant-panel') + (dragging ? ' dropping' : '')
@@ -227,6 +230,7 @@ export default function AssistantPanel({
       <div className="assistant-input">
         <textarea
           value={input}
+          aria-label="Message to the assistant"
           placeholder="Ask the assistant…  (Enter to send, Shift+Enter for a newline, paste or drop a screenshot)"
           onChange={(e) => setInput(e.target.value)}
           onPaste={(e) => {
@@ -249,6 +253,7 @@ export default function AssistantPanel({
             ref={fileRef}
             type="file"
             accept="image/*"
+            aria-label="Attach a scan or screenshot"
             style={{ display: 'none' }}
             onChange={(e) => {
               const f = e.target.files?.[0]

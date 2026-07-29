@@ -28,18 +28,20 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (me: Me) => void }) 
       <form className="login-card" onSubmit={submit}>
         <h1 className="logo">Linform</h1>
         <p className="muted">Sign in to design and manage print templates.</p>
-        <label className="login-field">
+        <label className="login-field" htmlFor="login-username">
           Username
           <input
+            id="login-username"
             autoFocus
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
           />
         </label>
-        <label className="login-field">
+        <label className="login-field" htmlFor="login-password">
           Password
           <input
+            id="login-password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
