@@ -45,6 +45,27 @@ async def list_assets(session: AsyncSession = Depends(get_session)):
     ]
 
 
+# Types a browser may render inline from this origin. Everything else is sent
+# as an attachment — most importantly SVG, which is an executable document
+# (it can carry <script>) and would otherwise run in the editor's origin when
+# opened directly. Uploaded SVG still works as an <img> source; only direct
+# navigation is defused.
+INLINE_SAFE_MIME = {
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/avif",
+    "image/bmp",
+    "image/x-icon",
+    "font/woff",
+    "font/woff2",
+    "font/ttf",
+    "font/otf",
+    "application/pdf",
+}
+
+
 @router.get("/{sha256}")
 async def get_asset(sha256: str, session: AsyncSession = Depends(get_session)) -> Response:
     """Raw bytes are served without auth on purpose: browsers cannot attach
@@ -53,4 +74,7 @@ async def get_asset(sha256: str, session: AsyncSession = Depends(get_session)) -
     asset = await assets_service.get_asset(session, sha256)
     if asset is None:
         raise HTTPException(status_code=404, detail="Asset not found")
-    return Response(content=asset.data, media_type=asset.mime_type)
+    headers = {}
+    if asset.mime_type.split(";")[0].strip().lower() not in INLINE_SAFE_MIME:
+        headers["Content-Disposition"] = "attachment"
+    return Response(content=asset.data, media_type=asset.mime_type, headers=headers)

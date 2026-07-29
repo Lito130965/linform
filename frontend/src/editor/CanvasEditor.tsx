@@ -15,6 +15,7 @@ import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
 import { getFilterArg, setFilterArg } from './filter-args'
 import { parseMarginBoxes, parsePageBox, runningAffordanceCss } from './furniture'
+import { describeRemoved, sanitizeHtml } from './sanitize'
 import {
   BorderMode,
   addColumn,
@@ -91,6 +92,7 @@ export default function CanvasEditor({
   onChange,
   onReady,
   arrayHints = [],
+  onSanitized,
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -101,14 +103,16 @@ export default function CanvasEditor({
   onReady?: (api: CanvasEditorApi) => void
   /** array names from the editor's test data, to suggest in convert dialogs */
   arrayHints?: string[]
+  /** fires with a warning when executable markup was stripped on load, or null */
+  onSanitized?: (warning: string | null) => void
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLElement | null>(null)
   const historyRef = useRef<SnapshotHistory | null>(null)
   const restoringRef = useRef(false)
-  const callbacksRef = useRef({ onChange, onReady })
-  callbacksRef.current = { onChange, onReady }
+  const callbacksRef = useRef({ onChange, onReady, onSanitized })
+  callbacksRef.current = { onChange, onReady, onSanitized }
 
   const [format, setFormat] = useState(() => formatFromStyles(canvasStyles))
   const [zoom, setZoom] = useState(1)
@@ -212,7 +216,12 @@ export default function CanvasEditor({
     doc.head.appendChild(style)
 
     const body = doc.body
-    body.innerHTML = initialBody
+    // The iframe is same-origin by necessity (the editor reads contentDocument),
+    // so a <script> in the template would execute with the editor's privileges.
+    // Strip executable markup before it ever reaches the live document.
+    const cleaned = sanitizeHtml(initialBody)
+    body.innerHTML = cleaned.html
+    callbacksRef.current.onSanitized?.(describeRemoved(cleaned.removed))
     prepareBody(body)
     // Show content in its real position: inset by the @page margins, so the
     // canvas matches where things actually print. body.style is canvas-only —

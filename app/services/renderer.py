@@ -107,6 +107,9 @@ class WeasyPrintRenderer:
         # the backlog grow without bound.
         limit = max_concurrency if max_concurrency > 0 else max_workers * 2
         self._limiter = ConcurrencyLimiter(limit)
+        # Cleared when the process pool breaks; readiness reports it so an
+        # orchestrator can replace a pod that can no longer render anything.
+        self.healthy = True
 
     async def render_pdf(self, html: str) -> bytes:
         if not self._limiter.try_acquire():
@@ -122,14 +125,23 @@ class WeasyPrintRenderer:
     async def _render(self, html: str) -> bytes:
         loop = asyncio.get_running_loop()
         started = time.monotonic()
-        future = loop.run_in_executor(
-            self._pool, _render_worker, html, self._allow_external, self._allowed_hosts
-        )
         try:
+            # Submission is inside the try on purpose: when the pool is ALREADY
+            # broken, submit() raises BrokenExecutor synchronously — outside the
+            # try that would escape as a 500 and never mark the instance
+            # unready. A pool that breaks mid-render fails on the await instead.
+            future = loop.run_in_executor(
+                self._pool, _render_worker, html, self._allow_external, self._allowed_hosts
+            )
             pdf = await asyncio.wait_for(future, timeout=self._timeout)
         except asyncio.TimeoutError:
             raise RenderTimeout(f"Render exceeded {self._timeout:.0f}s timeout")
         except BrokenExecutor:
+            # A broken pool never recovers on its own — every later render fails
+            # the same way. Mark the instance unready rather than keep taking
+            # traffic and returning errors.
+            self.healthy = False
+            log.error("render pool is broken; instance marked unready")
             raise RenderError("Render worker crashed")
         except ValueError as exc:
             # Blocked URL policy violations surface as ValueError from the fetcher.

@@ -21,6 +21,7 @@ import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
+import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 
 const STARTER_TEMPLATE = `<style>
@@ -95,6 +96,7 @@ export default function Editor({
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [sanitizeWarning, setSanitizeWarning] = useState<string | null>(null)
   const [mode, setMode] = useState<'code' | 'visual'>('code')
   const viewRef = useRef<EditorView | null>(null)
   const canvasApiRef = useRef<CanvasEditorApi | null>(null)
@@ -278,6 +280,11 @@ export default function Editor({
 
   const applyFromAssistant = (newHtml: string) => {
     if (mode === 'visual') exitVisual()
+    // Warn, but do not rewrite: putting a whole document through the DOM would
+    // normalize the author's bytes, and preserving them exactly is a promise
+    // this project keeps. The canvas is where such markup could actually run,
+    // and it strips on entry.
+    setSanitizeWarning(describeRemoved(scanForExecutableMarkup(newHtml), false))
     setHtml(newHtml)
     htmlRef.current = newHtml
     setDirty(true)
@@ -393,6 +400,14 @@ export default function Editor({
       </header>
 
       {error && <div className="error-box">{error}</div>}
+      {sanitizeWarning && (
+        <div className="warn-box">
+          {sanitizeWarning}
+          <button className="btn small" onClick={() => setSanitizeWarning(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="workspace">
         <section className="pane code-pane">
@@ -416,6 +431,7 @@ export default function Editor({
               initialBody={visualInitialRef.current}
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
+              onSanitized={setSanitizeWarning}
               onChange={handleVisualChange}
               onReady={(api) => {
                 canvasApiRef.current = api

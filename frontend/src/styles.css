@@ -1855,3 +1855,24 @@ label {
   font-size: 14px;
   cursor: pointer;
 }
+
+/* ---- non-fatal warning banner (e.g. stripped executable markup) ---- */
+
+.warn-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid rgba(255, 176, 32, 0.5);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.warn-box .btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}

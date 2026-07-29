@@ -62,6 +62,8 @@ shipping label with QR/barcode, a fixed-layout certificate — live in
 | GET | `/api/assets` | List uploaded assets |
 | GET | `/api/assets/{sha256}` | Raw asset bytes |
 | GET | `/api/examples` | Built-in showcase examples (drives the editor gallery) |
+| GET | `/health` | Liveness — process is up; touches nothing external |
+| GET | `/ready` | Readiness — database and render pool reachable, `503` when not |
 | POST | `/api/auth/login` | Password login → opaque session token |
 | GET | `/api/auth/me` | Who the current credential is (drives the UI) |
 | POST | `/api/admin/users` | **Superuser**: create an editor/superuser account |
@@ -183,6 +185,9 @@ Better to know before you build on it:
 | `LINFORM_SUPERUSER` | *(empty)* | Bootstrap admin username. Set with the password below to enable user accounts |
 | `LINFORM_SUPERUSER_PASSWORD` | *(empty)* | Bootstrap admin password, re-synced from env on every start (env is the source of truth) |
 | `LINFORM_SESSION_TTL_HOURS` | `168` | How long a browser login stays valid |
+| `LINFORM_MAX_LOGIN_FAILURES` | `5` | Consecutive failures before an account is locked |
+| `LINFORM_LOGIN_LOCKOUT_MINUTES` | `15` | How long that lock lasts |
+| `LINFORM_LOGIN_RATE_PER_MINUTE` | `20` | Login attempts per client address per minute (0 disables) |
 | `LINFORM_RENDER_TIMEOUT_SECONDS` | `30` | Hard render timeout |
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
 | `LINFORM_RENDER_MAX_CONCURRENCY` | `0` (→ workers × 2) | In-flight ceiling; over it, renders get `429 Retry-After` |
