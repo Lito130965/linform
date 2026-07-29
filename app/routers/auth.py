@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.auth import Principal, _auth_enabled, get_principal
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
@@ -49,6 +50,7 @@ async def login(
     client = request.client.host if request.client else "unknown"
     wait = _limiter(settings).check(client)
     if wait is not None:
+        metrics.login_failed_total.labels(reason="rate_limited").inc()
         raise HTTPException(
             status_code=429,
             detail="Too many login attempts. Try again shortly.",
@@ -57,6 +59,11 @@ async def login(
 
     result = await accounts.authenticate(session, body.username, body.password, settings)
     if result.user is None:
+        # The reason is a metric label, never part of the response: the caller
+        # still gets one indistinguishable 401.
+        metrics.login_failed_total.labels(
+            reason="locked" if result.retry_after else "bad_credentials"
+        ).inc()
         headers = {"Retry-After": str(result.retry_after)} if result.retry_after else None
         raise HTTPException(status_code=401, detail=_DENIED, headers=headers)
     token = await accounts.open_session(session, result.user, settings.session_ttl_hours)

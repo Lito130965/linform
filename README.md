@@ -186,6 +186,36 @@ Better to know before you build on it:
   renderer only. Use the canvas to author and the PDF preview beside it to
   confirm; where they disagree, the PDF is right.
 
+## Observability
+
+Every response carries an `X-Request-ID` — the one the caller sent, or a fresh
+one — and every log line written while serving that request carries the same id,
+so a report of "it was slow at 14:00" can be traced to the request that was
+slow. With `LINFORM_JSON_LOGS=true` each line is one JSON object: `ts`, `level`,
+`request_id`, `method`, `path`, `status`, `duration_ms`, and `principal` — who
+made the call, **by name, never the credential they presented**.
+
+The request body is never logged, by any path. Payloads are the consuming
+application's business data; this service renders them and forgets them, and a
+log file is the easiest place to break that promise by accident.
+
+`LINFORM_METRICS_ENABLED=true` serves Prometheus metrics at `/metrics`, behind
+the render role (a 404 when disabled — an endpoint that is off should not
+advertise itself). It is off by default because the series are labelled by
+template code, so scraping reveals which forms a deployment runs.
+
+| Metric | Type | Notes |
+|---|---|---|
+| `linform_render_duration_seconds` | histogram | labels `template_code`, `outcome` (`ok`/`rejected`/`timeout`/`error`) |
+| `linform_render_inflight` | gauge | renders in flight on this instance |
+| `linform_render_concurrency_limit` | gauge | the ceiling, so the gauge above reads as utilisation |
+| `linform_render_rejected_total` | counter | shed at the ceiling — the 429s |
+| `linform_render_timeout_total` | counter | abandoned at the hard timeout — the 504s |
+| `linform_login_failed_total` | counter | label `reason`; the reason is a metric, never part of the 401 |
+
+Ad-hoc renders share a single `<ad-hoc>` label instead of minting a series per
+request.
+
 ## Golden PDF tests
 
 `tests/test_golden_pdfs.py` renders every example in `examples/` and checks the
@@ -265,6 +295,9 @@ letterhead would be both wrong and unfixable from here. `npm run lint` in
 | `LINFORM_AI_MODEL` | `gpt-4o-mini` | Model id |
 | `LINFORM_AI_SEND_TEST_DATA` | `false` | Allow the assistant to see test data (may contain personal data) |
 | `LINFORM_AI_TIMEOUT_SECONDS` | `60` | Give up on the AI provider after this long |
+| `LINFORM_JSON_LOGS` | `false` | One JSON object per log line (for a collector); plain text otherwise |
+| `LINFORM_LOG_LEVEL` | `INFO` | Root log level |
+| `LINFORM_METRICS_ENABLED` | `false` | Serve Prometheus metrics at `/metrics` (behind the render role) |
 | `LINFORM_DATABASE_URL` | local SQLite file | Database; compose sets PostgreSQL |
 | `LINFORM_PORT` | `8100` | Host port (compose only) |
 | `LINFORM_DB_PASSWORD` | `linform` | PostgreSQL password (compose only) |

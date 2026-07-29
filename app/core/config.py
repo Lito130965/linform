@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     # shipped alongside the app; override only for an unusual layout.
     examples_dir: str = ""
 
+    # Observability.
+    # JSON logs for a deployment with a log collector; plain text stays the
+    # default for local work, where a human reads the terminal.
+    json_logs: bool = False
+    log_level: str = "INFO"
+    # /metrics is off unless asked for: the series are labelled by template
+    # code, so scraping reveals which forms a deployment runs. When on, it sits
+    # behind the render role like every other endpoint.
+    metrics_enabled: bool = False
+
     # Rendering
     render_timeout_seconds: float = 30.0
     render_max_workers: int = 2

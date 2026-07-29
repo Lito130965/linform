@@ -23,6 +23,11 @@ services:
       LINFORM_RENDER_TIMEOUT_SECONDS: "${LINFORM_RENDER_TIMEOUT_SECONDS:-30}"
       LINFORM_RENDER_MAX_WORKERS: "${LINFORM_RENDER_MAX_WORKERS:-2}"
       LINFORM_RENDER_MAX_CONCURRENCY: "${LINFORM_RENDER_MAX_CONCURRENCY:-0}"
+      # Observability. JSON logs suit a collector; /metrics stays off unless
+      # asked for, since its series name the templates this deployment runs.
+      LINFORM_JSON_LOGS: "${LINFORM_JSON_LOGS:-false}"
+      LINFORM_LOG_LEVEL: "${LINFORM_LOG_LEVEL:-INFO}"
+      LINFORM_METRICS_ENABLED: "${LINFORM_METRICS_ENABLED:-false}"
     depends_on:
       db:
         # Wait for the database to actually accept connections, not merely for

@@ -1,6 +1,9 @@
+import time
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.auth import require_render
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
@@ -24,6 +27,38 @@ def get_renderer(request: Request) -> PdfRenderer:
     return request.app.state.renderer
 
 
+async def render_measured(
+    renderer: PdfRenderer, html: str, template_code: str | None
+) -> bytes:
+    """Render, and record how it went.
+
+    Measured here rather than inside the renderer because this is where the
+    template code is known, and the outcome labels line up with the status
+    codes the caller actually sees: ok / rejected (429) / timeout (504) /
+    error (422).
+    """
+    started = time.perf_counter()
+
+    def done(outcome: str) -> None:
+        metrics.observe_render(template_code, outcome, time.perf_counter() - started)
+
+    try:
+        pdf = await renderer.render_pdf(html)
+    except RenderBusy:
+        metrics.render_rejected_total.inc()
+        done("rejected")
+        raise
+    except RenderTimeout:
+        metrics.render_timeout_total.inc()
+        done("timeout")
+        raise
+    except RenderError:
+        done("error")
+        raise
+    done("ok")
+    return pdf
+
+
 @router.post("/render", dependencies=[Depends(require_render)])
 async def render_ad_hoc(
     body: AdHocRenderRequest,
@@ -38,7 +73,7 @@ async def render_ad_hoc(
     except (TemplateRenderError, AssetError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     try:
-        pdf = await renderer.render_pdf(html)
+        pdf = await render_measured(renderer, html, None)
     except RenderBusy as exc:
         # Backpressure, not a client error: tell them to come back.
         raise HTTPException(
@@ -57,6 +92,7 @@ async def _render_version(
     session: AsyncSession,
     renderer: PdfRenderer,
     settings: Settings,
+    template_code: str | None = None,
 ) -> Response:
     try:
         html = render_version_html(
@@ -66,7 +102,7 @@ async def _render_version(
     except (TemplateRenderError, AssetError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     try:
-        pdf = await renderer.render_pdf(html)
+        pdf = await render_measured(renderer, html, template_code)
     except RenderBusy as exc:
         # Backpressure, not a client error: tell them to come back.
         raise HTTPException(
@@ -98,7 +134,7 @@ async def render_published(
         row = await versioning.get_published_version(session, code)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return await _render_version(row, data, session, renderer, settings)
+    return await _render_version(row, data, session, renderer, settings, code)
 
 
 @router.post("/render/{code}/versions/{version}", dependencies=[Depends(require_render)])
@@ -117,7 +153,7 @@ async def render_pinned(
         row = await versioning.get_version(session, code, version)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return await _render_version(row, data, session, renderer, settings)
+    return await _render_version(row, data, session, renderer, settings, code)
 
 
 @router.post("/placeholders", dependencies=[Depends(require_render)])
