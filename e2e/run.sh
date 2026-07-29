@@ -82,5 +82,5 @@ else
     -e E2E_SUPERUSER="$E2E_SUPERUSER" \
     -e E2E_PASSWORD="$E2E_PASSWORD" \
     "$PLAYWRIGHT_IMAGE" \
-    sh -c "npm install --no-audit --no-fund >/dev/null 2>&1 && npx playwright test $*"
+    sh -c "npm ci --no-audit --no-fund >/dev/null 2>&1 && npx playwright test $*"
 fi

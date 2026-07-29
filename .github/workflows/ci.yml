@@ -109,7 +109,9 @@ jobs:
       - name: Install browser test dependencies
         working-directory: e2e
         run: |
-          npm install --no-audit --no-fund
+          # npm ci, not install: the Playwright package version has to stay
+          # exactly what the installed browsers below expect.
+          npm ci --no-audit --no-fund
           # Chromium only: the editor targets one engine, as stated in README.
           npx playwright install --with-deps chromium
       - name: Run browser tests
