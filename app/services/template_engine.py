@@ -57,14 +57,21 @@ def validate_template(template_source: str) -> None:
         raise TemplateRenderError(f"Template syntax error at line {exc.lineno}: {exc.message}") from exc
 
 
-# Versions are immutable, so a compiled template cached by version id can
-# never go stale. Bounded so ad-hoc churn can't grow it unboundedly.
+# Versions are immutable, so a compiled template can be cached by version id —
+# but ONLY as long as that id refers to the same row. A version id is a primary
+# key of one particular database, and a process can outlive the database it was
+# talking to: restore a backup, repoint at another instance, or run a test
+# against a fresh schema, and id 1 is a different template with the same key.
+# So the source itself is part of the key; a colliding id simply misses the
+# cache instead of rendering somebody else's document. (Found by the suite: a
+# runaway-template test poisoned the cache for every later test that rendered
+# version 1.) Bounded so ad-hoc churn can't grow it unboundedly.
 _MAX_CACHED = 256
-_compiled_cache: dict[tuple[int, bool], object] = {}
+_compiled_cache: dict[tuple[int, bool, int], object] = {}
 
 
 def render_version_html(version_id: int, template_source: str, data: dict, *, strict: bool = True) -> str:
-    key = (version_id, strict)
+    key = (version_id, strict, hash(template_source))
     template = _compiled_cache.get(key)
     if template is None:
         env = _make_environment(strict)

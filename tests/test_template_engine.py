@@ -55,3 +55,23 @@ def test_sandbox_blocks_ssti(payload):
 def test_extract_placeholders():
     src = "{{ customer }} {% for i in items %}{{ i.price }}{% endfor %} {{ total }}"
     assert extract_placeholders(src) == ["customer", "items", "total"]
+
+
+def test_version_cache_does_not_serve_another_template_with_the_same_id():
+    """Compiled versions are cached by version id, which is a primary key of one
+    particular database. A process can outlive that database — a restored
+    backup, a repointed instance, a fresh test schema — and then id 1 is a
+    different template. The cache must miss, not hand back the old document.
+
+    This is not hypothetical: it surfaced as three unrelated tests failing
+    because an earlier test had cached its own template under version id 1.
+    """
+    from app.services.template_engine import render_version_html
+
+    first = render_version_html(1, "<p>first template</p>", {}, strict=False)
+    second = render_version_html(1, "<p>second template</p>", {}, strict=False)
+    assert "first" in first
+    assert "second" in second, "the cache served the previous template for this id"
+
+    # Re-rendering the original source still works (both remain cacheable).
+    assert "first" in render_version_html(1, "<p>first template</p>", {}, strict=False)
