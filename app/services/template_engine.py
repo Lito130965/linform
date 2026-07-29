@@ -39,6 +39,13 @@ def render_html(template_source: str, data: dict, *, strict: bool = True) -> str
         # A symbol the data cannot encode is the template author's problem, not
         # a server fault: surface it like any other template error.
         raise TemplateRenderError(f"Barcode error: {exc}") from exc
+    except OverflowError as exc:
+        # The sandbox refuses range() above MAX_RANGE (100_000) — a real guard
+        # against a template that would build an enormous document. It arrives
+        # as a bare OverflowError, which without this became a 500: the caller
+        # would be told the server broke, when what they need to hear is which
+        # part of their template to fix.
+        raise TemplateRenderError(f"Template asks for too much at once: {exc}") from exc
 
 
 def validate_template(template_source: str) -> None:
@@ -50,14 +57,21 @@ def validate_template(template_source: str) -> None:
         raise TemplateRenderError(f"Template syntax error at line {exc.lineno}: {exc.message}") from exc
 
 
-# Versions are immutable, so a compiled template cached by version id can
-# never go stale. Bounded so ad-hoc churn can't grow it unboundedly.
+# Versions are immutable, so a compiled template can be cached by version id —
+# but ONLY as long as that id refers to the same row. A version id is a primary
+# key of one particular database, and a process can outlive the database it was
+# talking to: restore a backup, repoint at another instance, or run a test
+# against a fresh schema, and id 1 is a different template with the same key.
+# So the source itself is part of the key; a colliding id simply misses the
+# cache instead of rendering somebody else's document. (Found by the suite: a
+# runaway-template test poisoned the cache for every later test that rendered
+# version 1.) Bounded so ad-hoc churn can't grow it unboundedly.
 _MAX_CACHED = 256
-_compiled_cache: dict[tuple[int, bool], object] = {}
+_compiled_cache: dict[tuple[int, bool, int], object] = {}
 
 
 def render_version_html(version_id: int, template_source: str, data: dict, *, strict: bool = True) -> str:
-    key = (version_id, strict)
+    key = (version_id, strict, hash(template_source))
     template = _compiled_cache.get(key)
     if template is None:
         env = _make_environment(strict)
@@ -78,6 +92,13 @@ def render_version_html(version_id: int, template_source: str, data: dict, *, st
         # A symbol the data cannot encode is the template author's problem, not
         # a server fault: surface it like any other template error.
         raise TemplateRenderError(f"Barcode error: {exc}") from exc
+    except OverflowError as exc:
+        # The sandbox refuses range() above MAX_RANGE (100_000) — a real guard
+        # against a template that would build an enormous document. It arrives
+        # as a bare OverflowError, which without this became a 500: the caller
+        # would be told the server broke, when what they need to hear is which
+        # part of their template to fix.
+        raise TemplateRenderError(f"Template asks for too much at once: {exc}") from exc
 
 
 def extract_placeholders(template_source: str) -> list[str]:

@@ -1,0 +1,7 @@
+Service status — 2026Uptime review across regions
+Service Jan Feb Mar Apr May Jun
+API gateway OK OK Degr. OK OK OK
+Render workers OK Down OK OK Degr. OK
+Database OK OK OK OK OK OK
+Object storage Degr. OK OK Down OK OK
+Operational Degraded Outage

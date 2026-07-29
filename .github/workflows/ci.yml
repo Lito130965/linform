@@ -8,6 +8,26 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      # The concurrency invariants live in the database (a unique constraint on
+      # the version number, a partial unique index for "one published version"),
+      # so they have to be exercised against PostgreSQL — partial-index and
+      # locking semantics differ from SQLite, and PostgreSQL is the target.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: linform
+          POSTGRES_PASSWORD: linform
+          POSTGRES_DB: linform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U linform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LINFORM_TEST_PG_URL: "postgresql+asyncpg://linform:linform@localhost:5432/linform_test"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +41,16 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Run tests
         run: pytest -q
+      - name: Migrations are reversible
+        # Every revision ships a downgrade(); running one proves it. Without
+        # this the rollback path is only ever exercised during an incident.
+        env:
+          LINFORM_DATABASE_URL: "sqlite+aiosqlite:///./ci_migrations.db"
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          rm -f ci_migrations.db
       - name: Audit dependencies
         # Advisory: a new CVE against a pinned dependency should be visible on
         # the next run, but it must not block an unrelated pull request.

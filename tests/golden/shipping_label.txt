@@ -1,0 +1,7 @@
+SHIP TO
+Jane ExampleApartment 5, 10 Sample avenue
+Springfield, 010101
++1 555 0100
+FROM
+Acme Warehouse, Shelbyville
+RA123456789KZ
