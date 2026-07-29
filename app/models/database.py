@@ -49,6 +49,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=20))
     is_active: Mapped[bool] = mapped_column(default=True)
+    # Login throttling. Kept in the database, not in memory: an in-process
+    # counter would reset on restart and would not be shared across replicas,
+    # which the deployment model explicitly allows.
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (CheckConstraint("username <> ''", name="ck_user_username_not_empty"),)

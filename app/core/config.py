@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     # How long a browser login stays valid before re-authentication.
     session_ttl_hours: int = 24 * 7
 
+    # Login throttling. Verifying a password is deliberately expensive
+    # (PBKDF2, ~0.3s of CPU), so an unthrottled login endpoint is both a
+    # brute-force target and a CPU exhaustion vector that starves PDF rendering.
+    # Per account: lock after this many consecutive failures.
+    max_login_failures: int = 5
+    login_lockout_minutes: int = 15
+    # Per client address, per minute — the layer that protects the paths where
+    # no account exists to lock (username guessing). 0 disables it.
+    login_rate_per_minute: int = 20
+
     # SQLite file by default so the service runs with zero configuration;
     # docker-compose overrides this with PostgreSQL.
     database_url: str = "sqlite+aiosqlite:///./linform.db"

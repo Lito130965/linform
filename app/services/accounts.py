@@ -7,6 +7,7 @@ key creation), where the clear value is returned to the caller exactly once.
 """
 
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
@@ -121,20 +122,62 @@ async def delete_user(session: AsyncSession, user: User) -> None:
 
 # --- login sessions --------------------------------------------------------
 
+class AuthResult(NamedTuple):
+    """Outcome of a login attempt. `retry_after` is set only when the account is
+    locked; the caller still answers a uniform 401 so the response never reveals
+    which of "no such user" / "wrong password" / "locked" happened."""
+
+    user: User | None
+    retry_after: int | None = None
+
+
 async def authenticate(
-    session: AsyncSession, username: str, password: str
-) -> User | None:
+    session: AsyncSession, username: str, password: str, settings: Settings | None = None
+) -> AuthResult:
+    settings = settings or Settings()
     user = (
         await session.execute(select(User).where(User.username == username))
     ).scalar_one_or_none()
     if user is None or not user.is_active:
         # Still spend the hash work so a missing user and a wrong password take
-        # the same time — no username oracle from response latency.
+        # the same time — no username oracle from response latency. This is also
+        # why a per-address rate limit guards the endpoint: this branch has no
+        # account to lock, so it is the cheap way to burn server CPU.
         verify_password(password, hash_password("dummy"))
-        return None
+        return AuthResult(None)
+
+    locked_for = _lock_remaining(user)
+    if locked_for is not None:
+        # Refuse BEFORE verifying: computing PBKDF2 for an account already known
+        # to be locked is exactly the CPU exhaustion this throttle exists to
+        # prevent — the render workers compete for the same cores.
+        return AuthResult(None, retry_after=locked_for)
+
     if not verify_password(password, user.password_hash):
+        user.failed_logins += 1
+        if user.failed_logins >= settings.max_login_failures:
+            user.locked_until = _now() + timedelta(minutes=settings.login_lockout_minutes)
+        await session.commit()
+        return AuthResult(None)
+
+    if user.failed_logins or user.locked_until:
+        user.failed_logins = 0
+        user.locked_until = None
+        await session.commit()
+    return AuthResult(user)
+
+
+def _lock_remaining(user: User) -> int | None:
+    """Seconds left on an active lock, or None when the account is not locked.
+    An expired lock is treated as unlocked (the counter is reset on next
+    success), so no sweeper job is needed."""
+    if user.locked_until is None:
         return None
-    return user
+    until = user.locked_until
+    if until.tzinfo is None:  # SQLite hands back naive datetimes.
+        until = until.replace(tzinfo=timezone.utc)
+    remaining = (until - _now()).total_seconds()
+    return int(remaining) + 1 if remaining > 0 else None
 
 
 async def open_session(
