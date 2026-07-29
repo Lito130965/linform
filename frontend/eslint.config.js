@@ -28,8 +28,15 @@ export default tseslint.config(
     },
     rules: {
       // --- the accessibility rules this config exists for ---
+      // Warn, not error, and the reason matters: this rule cannot resolve a
+      // `<label htmlFor>` to the `id` of a control elsewhere in the tree, which
+      // is the standard association and the one axe-core and screen readers
+      // accept. Satisfying it in those cases would mean adding an `aria-label`
+      // that OVERRIDES the visible label text — a real accessibility problem
+      // traded for a green lint line. axe-core, run against the actual DOM in
+      // e2e/tests/a11y.spec.ts, is the authority; this stays on as a prompt.
       'jsx-a11y/control-has-associated-label': [
-        'error',
+        'warn',
         { controlComponents: [], ignoreElements: ['audio', 'video'], depth: 3 },
       ],
       'jsx-a11y/no-static-element-interactions': 'error',

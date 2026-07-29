@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError, type ApiKeyCreated, type ApiKeyOut, type Me, type Role, type UserOut } from '../api'
 import { getBoolPref, PREF_SHOW_CODES, setBoolPref } from '../prefs'
+import { getTheme, setTheme, type Theme } from '../theme'
 
 /** The Settings page (a nav tab, not a modal). Content adapts to the signed-in
  * principal: a superuser manages users and render keys; everyone gets the UI
@@ -95,10 +96,16 @@ function UsersSection({ me }: { me: string }) {
     <section className="settings-section">
       <h2>Users</h2>
       <form className="accounts-new" onSubmit={create}>
-        <input placeholder="username" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <input
+          placeholder="username"
+          aria-label="New user name"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
         <input
           type="password"
           placeholder="password (min 8)"
+          aria-label="New user password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
@@ -117,7 +124,7 @@ function UsersSection({ me }: { me: string }) {
             <th>User</th>
             <th>Role</th>
             <th>Status</th>
-            <th></th>
+            <th><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -196,7 +203,12 @@ function KeysSection() {
     <section className="settings-section">
       <h2>Render API keys</h2>
       <form className="accounts-new" onSubmit={create}>
-        <input placeholder="key name, e.g. billing-app" value={name} onChange={(e) => setName(e.target.value)} />
+        <input
+          placeholder="key name, e.g. billing-app"
+          aria-label="Render key name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
         <button className="btn primary" type="submit" disabled={!name.trim()}>
           Mint render key
         </button>
@@ -217,7 +229,7 @@ function KeysSection() {
             <th>Name</th>
             <th>Prefix</th>
             <th>Last used</th>
-            <th></th>
+            <th><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -243,11 +255,29 @@ function KeysSection() {
 
 function PreferencesSection() {
   const [showCodes, setShowCodes] = useState(() => getBoolPref(PREF_SHOW_CODES, true))
+  const [theme, setThemeState] = useState<Theme>(() => getTheme())
   return (
     <section className="settings-section">
       <h2>Preferences</h2>
-      <label className="pref-row">
+      <label className="pref-row" htmlFor="pref-theme">
+        Theme
+        <select
+          id="pref-theme"
+          value={theme}
+          onChange={(e) => {
+            const next = e.target.value as Theme
+            setThemeState(next)
+            setTheme(next)
+          }}
+        >
+          <option value="system">Match the system</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+      <label className="pref-row" htmlFor="pref-show-codes">
         <input
+          id="pref-show-codes"
           type="checkbox"
           checked={showCodes}
           onChange={(e) => {

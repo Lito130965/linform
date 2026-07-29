@@ -17,7 +17,7 @@ export default function PresetPanel({ onInsert }: { onInsert: (preset: Preset) =
   return (
     <div className="preset-panel">
       <div className="preset-head">
-        <label>Presets</label>
+        <h2 className="panel-heading">Presets</h2>
         <button className="btn small" onClick={() => setAdding((v) => !v)}>
           {adding ? 'Close' : '+ Add'}
         </button>
@@ -98,16 +98,19 @@ function AddPresetForm({ onSaved }: { onSaved: () => void }) {
     <div className="add-preset">
       <input
         placeholder="Name"
+        aria-label="Preset name"
         value={label}
         onChange={(e) => setLabel(e.target.value)}
       />
       <input
         placeholder="Description (optional)"
+        aria-label="Preset description"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
       />
       <textarea
         placeholder="Jinja snippet, e.g.  {% if paid %}<div>PAID</div>{% endif %}"
+        aria-label="Preset Jinja source"
         spellCheck={false}
         value={source}
         onChange={(e) => setSource(e.target.value)}

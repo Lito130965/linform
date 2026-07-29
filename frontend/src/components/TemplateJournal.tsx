@@ -207,6 +207,7 @@ export default function TemplateJournal({ onOpen }: { onOpen: (code: string) => 
               ref={fileRef}
               type="file"
               accept=".docx"
+              aria-label="Choose a Word document to import"
               style={{ display: 'none' }}
               onChange={(e) => {
                 const f = e.target.files?.[0]
@@ -221,8 +222,19 @@ export default function TemplateJournal({ onOpen }: { onOpen: (code: string) => 
         {creating && (
           <div className="create-form inline">
             {pendingImport && <div className="import-badge">from {pendingImport.filename}</div>}
-            <input placeholder="code (e.g. invoice)" value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
-            <input placeholder="Display name" value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              placeholder="code (e.g. invoice)"
+              aria-label="Template code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              autoFocus
+            />
+            <input
+              placeholder="Display name"
+              aria-label="Template display name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
             <span className="muted">→ {targetDir === null ? 'General' : bucketTitle}</span>
             {pendingImport && pendingImport.warnings.length > 0 && (
               <div className="error-box small">

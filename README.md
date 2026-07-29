@@ -265,11 +265,24 @@ is not the document. It opens a stored template in the visual canvas, leaves,
 saves, and asserts the stored bytes are unchanged — the promise the whole
 editor rests on.
 
-Accessibility is checked with axe-core on the journal, the settings page and
-the editor shell. The canvas iframe is excluded deliberately: it contains the
-user's own template, and failing the build over the contrast of somebody's
-letterhead would be both wrong and unfixable from here. `npm run lint` in
-`frontend/` covers the same ground statically (`eslint-plugin-jsx-a11y`).
+Accessibility is checked with axe-core (WCAG 2.0/2.1 A and AA) on the journal,
+the settings page and the editor shell, and `npm run lint` covers the same
+ground statically. Both are blocking.
+
+Two exclusions, both deliberate: the canvas iframe, because it contains the
+user's own template and failing a build over the contrast of somebody's
+letterhead would be wrong and unfixable from here; and CodeMirror's scroll
+container, which is reported as a scrollable region with no keyboard access
+when the region it scrolls is the contenteditable the caret lives in.
+
+The visual canvas itself is still driven by the mouse: resize handles and
+free-positioning of images have no keyboard equivalent, though the same
+changes are reachable from the labelled properties bar. That gap is known and
+tracked, not overlooked.
+
+**Theme.** Light and dark, following the system preference, with an override in
+Settings — a dark editor around a white sheet is uncomfortable for exactly the
+work this tool is for.
 
 ## Configuration
 

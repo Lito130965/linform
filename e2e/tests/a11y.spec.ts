@@ -15,29 +15,25 @@ import { createTemplate, exampleHtml, openTemplate, uniqueCode, goToTab } from '
  * their markup, their colours — and failing our build over the contrast of
  * somebody's letterhead would be both wrong and unfixable from here.
  *
- * STATUS: these currently FAIL, and that is the honest state of the UI — about
- * seventy controls are labelled with a bare glyph (☰, ▤, ★, ⚙), focus outlines
- * exist only on form fields, and the border colour sits at 1.37:1 where the
- * guideline asks for 3:1. Fixing that is its own batch (plan items A4.1–A4.2),
- * not something to smuggle into the batch that builds the harness. So the
- * checks are written, wired and skipped, with the skip pointing at the work
- * that removes it — a failing suite nobody can act on gets muted within a week,
- * and a check that quietly does not exist is worse than one that is marked.
- *
- * Flipping PENDING_A11Y_FIXES to false IS the acceptance criterion for that
- * batch: the checks then have to pass, on this exact wiring.
+ * These run for real. They were written before the fixes landed and skipped
+ * behind a flag, and removing that flag was the acceptance criterion for the
+ * batch that added the labels, the focus outlines and the border contrast.
  */
-const PENDING_A11Y_FIXES = true
-test.skip(
-  PENDING_A11Y_FIXES,
-  'Accessibility fixes are a separate batch (plan A4.1 aria-labels, A4.2 focus and contrast). ' +
-    'The checks are wired and ready — set PENDING_A11Y_FIXES to false when that batch lands.',
-)
 
 const RULESET = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
 
 function scan(page: import('@playwright/test').Page) {
-  return new AxeBuilder({ page }).withTags(RULESET).exclude('iframe[title="template canvas"]')
+  return (
+    new AxeBuilder({ page })
+      .withTags(RULESET)
+      .exclude('iframe[title="template canvas"]')
+      // CodeMirror's scroll container is reported as a scrollable region with
+      // no keyboard access. The region it scrolls IS the contenteditable the
+      // caret lives in, so arrow keys scroll it — the rule cannot see that the
+      // focusable element is inside. Excluded knowingly, not to silence a real
+      // finding: the editor's own textbox is named and checked above.
+      .exclude('.cm-scroller')
+  )
 }
 
 /** Readable failure: rule, impact, and the first offending node. */

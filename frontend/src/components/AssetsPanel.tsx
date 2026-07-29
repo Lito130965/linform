@@ -52,6 +52,7 @@ export default function AssetsPanel({ onInsert }: { onInsert: (text: string) => 
       <input
         ref={fileRef}
         type="file"
+        aria-label="Choose a file to upload"
         style={{ display: 'none' }}
         onChange={(e) => {
           const f = e.target.files?.[0]

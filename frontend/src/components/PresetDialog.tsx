@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { detect } from '../jinja-bridge'
 import { parseHints } from '../presets/hints'
 import type { Preset } from '../presets/registry'
+import Modal from './Modal'
 
 /**
  * One dialog for every preset, driven by its param schema. It seeds each field
@@ -39,32 +40,31 @@ export default function PresetDialog({
   // Field candidates offered to placeholder inputs: test-data scalars first,
   // then names already used in the template.
   const fieldOptions = [...new Set([...hints.fields, ...placeholders])]
+  // One id prefix per dialog instance, so each label points at its own input
+  // even when two dialogs' params share a name.
+  const idPrefix = useId()
 
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <div className="dialog-head">
-          <strong>{preset.label}</strong>
-          <button className="btn small" onClick={onClose}>
-            ✕
-          </button>
-        </div>
+    <Modal title={preset.label} onClose={onClose}>
         <p className="dialog-desc">{preset.description}</p>
 
         <div className="dialog-fields">
           {preset.params.map((p) => {
             if (p.kind === 'array') {
               return (
-                <label key={p.name} className="dialog-field">
+                <label key={p.name} className="dialog-field" htmlFor={`${idPrefix}-${p.name}`}>
                   {p.label}
                   <input
+                    id={`${idPrefix}-${p.name}`}
                     list={`arr-${p.name}`}
                     value={values[p.name]}
                     onChange={(e) => set(p.name, e.target.value)}
                   />
                   <datalist id={`arr-${p.name}`}>
                     {hints.arrays.map((a) => (
-                      <option key={a.name} value={a.name} />
+                      <option key={a.name} value={a.name}>
+                        {a.name}
+                      </option>
                     ))}
                   </datalist>
                 </label>
@@ -78,11 +78,12 @@ export default function PresetDialog({
               )
               const toggle = (f: string) => {
                 const next = new Set(selected)
-                next.has(f) ? next.delete(f) : next.add(f)
+                if (next.has(f)) next.delete(f)
+                            else next.add(f)
                 set(p.name, [...next].join(', '))
               }
               return (
-                <label key={p.name} className="dialog-field">
+                <label key={p.name} className="dialog-field" htmlFor={`${idPrefix}-${p.name}`}>
                   {p.label}
                   {itemFields.length > 0 && (
                     <span className="dialog-checks">
@@ -98,15 +99,20 @@ export default function PresetDialog({
                       ))}
                     </span>
                   )}
-                  <input value={values[p.name]} onChange={(e) => set(p.name, e.target.value)} />
+                  <input
+                    id={`${idPrefix}-${p.name}`}
+                    value={values[p.name]}
+                    onChange={(e) => set(p.name, e.target.value)}
+                  />
                 </label>
               )
             }
             const list = p.kind === 'placeholder' ? `ph-${p.name}` : undefined
             return (
-              <label key={p.name} className="dialog-field">
+              <label key={p.name} className="dialog-field" htmlFor={`${idPrefix}-${p.name}`}>
                 {p.label}
                 <input
+                  id={`${idPrefix}-${p.name}`}
                   list={list}
                   type={p.kind === 'number' ? 'number' : 'text'}
                   value={values[p.name]}
@@ -115,7 +121,9 @@ export default function PresetDialog({
                 {list && (
                   <datalist id={list}>
                     {fieldOptions.map((f) => (
-                      <option key={f} value={f} />
+                      <option key={f} value={f}>
+                      {f}
+                    </option>
                     ))}
                   </datalist>
                 )}
@@ -144,7 +152,6 @@ export default function PresetDialog({
             Insert
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

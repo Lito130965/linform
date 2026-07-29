@@ -28,7 +28,7 @@ export default function PlaceholderPanel({
 
   return (
     <div className="placeholder-panel">
-      <label>Placeholders</label>
+      <h2 className="panel-heading">Placeholders</h2>
       <div className="chips">
         {placeholders.length === 0 && <span className="muted">none detected</span>}
         {placeholders.map((p) => (

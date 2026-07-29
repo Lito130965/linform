@@ -91,9 +91,13 @@ export default function App() {
   return (
     <div className={overlaidSidebar ? 'app rail-held' : 'app'}>
       <aside className={sidebarClass}>
+        {/* aria-label, not just title: a tooltip is not an accessible name —
+            several screen readers ignore it, and it is invisible from the
+            keyboard. The glyph alone reads as nothing. */}
         <button
           className="sidebar-toggle"
           onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label={sidebarOpen ? 'Hide the navigation' : 'Show the navigation'}
           title={sidebarOpen ? 'Hide the navigation' : 'Show the navigation'}
           aria-expanded={sidebarOpen}
         >
