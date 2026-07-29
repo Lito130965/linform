@@ -8,7 +8,11 @@ try:
     import weasyprint  # noqa: F401
 
     HAS_WEASYPRINT = True
-except OSError:
+except (ImportError, OSError):
+    # OSError: the package is installed but its native libraries are not.
+    # ImportError: the package is absent entirely (a bare Windows checkout) —
+    # without this the module fails to COLLECT rather than skipping, which
+    # breaks the whole run instead of one file.
     HAS_WEASYPRINT = False
 
 pytestmark = pytest.mark.skipif(not HAS_WEASYPRINT, reason="WeasyPrint native libs unavailable")
