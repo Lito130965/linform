@@ -210,6 +210,37 @@ Folding a golden update into a feature commit is how a layout regression gets
 blessed without anyone looking at it. The script needs WeasyPrint's native
 libraries, so run it in the Docker image or on Linux.
 
+## Browser tests
+
+`e2e/` drives a real Chromium against the **built image**, so what is exercised
+is the bundle, the Python service and the CSP headers that actually ship — not
+a dev server. Two instances are started: one in dev mode (auth off) for the
+editor tests, one with accounts enabled for the login tests, since the two
+states cannot coexist in one process.
+
+```bash
+cd e2e && ./run.sh              # build the image, start, test, stop
+cd e2e && ./run.sh --no-build   # reuse the image already tagged linform:latest
+```
+
+No Node on the host is required: without `E2E_IN_CONTAINER=1` the script drives
+the browsers from the official Playwright image. That image tag and
+`@playwright/test` in `e2e/package.json` are pinned to the same version and must
+move together — the browsers live in the image, so a mismatch fails with
+"Executable doesn't exist".
+
+The round-trip test compares through the API rather than by reading
+CodeMirror's DOM: CodeMirror virtualizes long documents, so what is on screen
+is not the document. It opens a stored template in the visual canvas, leaves,
+saves, and asserts the stored bytes are unchanged — the promise the whole
+editor rests on.
+
+Accessibility is checked with axe-core on the journal, the settings page and
+the editor shell. The canvas iframe is excluded deliberately: it contains the
+user's own template, and failing the build over the contrast of somebody's
+letterhead would be both wrong and unfixable from here. `npm run lint` in
+`frontend/` covers the same ground statically (`eslint-plugin-jsx-a11y`).
+
 ## Configuration
 
 | Env variable | Default | Meaning |

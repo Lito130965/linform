@@ -57,7 +57,14 @@ jobs:
         continue-on-error: true
         run: |
           pip install pip-audit
-          pip-audit --strict --desc
+          # --skip-editable: the project itself is installed with `pip install -e`
+          # and is not on PyPI, so auditing it fails with "Dependency not found
+          # on PyPI" on every single run.
+          # No --strict: it fails the step for anything that could not be
+          # audited — including the editable install we just chose to skip — so
+          # the audit would be permanently red and therefore report nothing.
+          # Measured: clean tree exits 0, a real advisory still exits non-zero.
+          pip-audit --desc --skip-editable
 
   frontend:
     runs-on: ubuntu-latest
@@ -75,8 +82,47 @@ jobs:
         run: npm test
       - name: Typecheck and build
         run: npm run build
+      - name: Lint (accessibility rules)
+        # Advisory for now, and deliberately not silenced: the rules report the
+        # UI's real state — about seventy controls carry only a glyph as their
+        # label. Fixing that is its own batch (plan A4.1/A4.2); making this
+        # blocking is part of that batch, not of the one that added the linter.
+        continue-on-error: true
+        run: npm run lint
       - name: Audit dependencies
         # Advisory, same reasoning as the backend audit: surface new advisories
         # without failing a pull request that did not introduce them.
         continue-on-error: true
         run: npm audit --audit-level=high
+
+  e2e:
+    # Browser tests against the BUILT IMAGE, so what is exercised is the bundle,
+    # the service and the CSP headers that actually ship — not a dev server.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the image
+        run: docker build -t linform:latest .
+      - name: Install browser test dependencies
+        working-directory: e2e
+        run: |
+          # npm ci, not install: the Playwright package version has to stay
+          # exactly what the installed browsers below expect.
+          npm ci --no-audit --no-fund
+          # Chromium only: the editor targets one engine, as stated in README.
+          npx playwright install --with-deps chromium
+      - name: Run browser tests
+        working-directory: e2e
+        env:
+          E2E_IN_CONTAINER: "1" # browsers are on the runner already
+        run: ./run.sh --no-build
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: e2e/test-results/
+          retention-days: 7

@@ -1,0 +1,14 @@
+{
+  "name": "linform-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Browser tests for the Linform editor, run against a built image",
+  "//": "@playwright/test is pinned EXACTLY and must match PLAYWRIGHT_IMAGE in run.sh and the browsers installed in CI: the browsers ship inside that image, so a caret range that resolves to a newer Playwright fails with \"Executable doesn't exist at /ms-playwright/...\". Move both together.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.9.1",
+    "@playwright/test": "1.62.0"
+  }
+}

@@ -35,6 +35,10 @@ function isDangerousUrl(value: string): boolean {
   // Strip whitespace and control characters first: `java\tscript:` and
   // `java\0script:` are parsed as the scheme by browsers but sail past a naive
   // startsWith check.
+  // Matching control characters is the entire point: browsers ignore them
+  // inside a URL scheme, so a NUL or tab spliced into `javascript:` still
+  // navigates. The directive must sit directly above the code line.
+  // eslint-disable-next-line no-control-regex
   const normalized = value.replace(/[\u0000-\u0020]/g, '').toLowerCase()
   return normalized.startsWith('javascript:') || normalized.startsWith('vbscript:')
 }
