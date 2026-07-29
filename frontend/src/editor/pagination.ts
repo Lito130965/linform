@@ -15,6 +15,17 @@
  * body box, and the body carries `padding-top = marginTop`, so the first page's
  * content band starts at exactly `marginTop`.
  *
+ * What this does NOT do, deliberately (see README "Limits"): it says where a
+ * page ENDS, not what moves. The canvas keeps the document as one continuous
+ * strip, so a block straddling a boundary is drawn whole with the line through
+ * it, while the renderer pushes it entirely to the next page — and content
+ * inside a table cannot be pushed by the canvas at all, since a spacer div
+ * cannot live between table rows. Beyond that, the browser and WeasyPrint are
+ * different layout engines with different font metrics, and `page-break-inside`,
+ * widows and orphans are the renderer's business. The PDF preview stays the
+ * source of truth; this model exists to stop the canvas being systematically,
+ * cumulatively wrong.
+ *
  * Pure functions with no DOM, so the geometry is testable without a layout
  * engine — jsdom has none.
  */

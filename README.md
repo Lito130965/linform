@@ -174,6 +174,17 @@ Better to know before you build on it:
 - **No business data is stored.** Payloads are rendered and forgotten. That is
   deliberate, and it means Linform cannot re-render a document you did not keep
   the data for — store the version number alongside your document and pin it.
+- **The visual canvas approximates pagination; the preview is the truth.** The
+  canvas draws each page boundary where the page really ends — the sheet minus
+  the `@page` margins every page spends — so the line lands on the right row.
+  But it lays the document out as one continuous strip and does **not** reflow
+  content across a break: a block that straddles a boundary is drawn whole, with
+  the line through it, while the renderer moves it entirely to the next page.
+  Two further differences are inherent rather than unfinished: the browser and
+  WeasyPrint are different layout engines with different font metrics, and rules
+  like `page-break-inside: avoid`, widows and orphans are applied by the
+  renderer only. Use the canvas to author and the PDF preview beside it to
+  confirm; where they disagree, the PDF is right.
 
 ## Configuration
 
