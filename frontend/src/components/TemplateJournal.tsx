@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, type DirectoryInfo, type TemplateInfo } from '../api'
 import { importDocxFile, suggestCodeFromFilename } from '../docx/import'
 import { getBoolPref, PREF_SHOW_CODES } from '../prefs'
+import Icon from './Icon'
 
 /** The template journal: a left rail of directory buckets and, on the right,
  * the templates in the chosen bucket. A template with no directory lives in the
@@ -176,11 +177,21 @@ export default function TemplateJournal({ onOpen }: { onOpen: (code: string) => 
                 <span className="bucket-count">{d.template_count}</span>
               </button>
               <span className="bucket-actions">
-                <button className="icon-btn" title="Rename" onClick={() => renameDir(d)}>
-                  ✎
+                <button
+                  className="icon-btn"
+                  aria-label={`Rename the directory ${d.name}`}
+                  title="Rename"
+                  onClick={() => renameDir(d)}
+                >
+                  <Icon name="edit" size={14} />
                 </button>
-                <button className="icon-btn" title="Delete" onClick={() => deleteDir(d)}>
-                  🗑
+                <button
+                  className="icon-btn"
+                  aria-label={`Delete the directory ${d.name}`}
+                  title="Delete"
+                  onClick={() => deleteDir(d)}
+                >
+                  <Icon name="trash" size={14} />
                 </button>
               </span>
             </li>

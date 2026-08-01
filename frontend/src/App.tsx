@@ -3,6 +3,7 @@ import TemplateJournal from './components/TemplateJournal'
 import Editor, { type ScratchDoc } from './components/Editor'
 import ExamplesGallery from './components/ExamplesGallery'
 import SettingsPanel from './components/SettingsPanel'
+import Icon, { type IconName } from './components/Icon'
 import Login from './components/Login'
 import { api, setAuthLostHandler, type Me } from './api'
 import { layoutFor, useViewportWidth } from './layout'
@@ -82,8 +83,9 @@ export default function App() {
     setMe((m) => (m ? { ...m, authenticated: false } : m))
   }
 
-  const navItem = (t: Tab, label: string) => (
+  const navItem = (t: Tab, icon: IconName, label: string) => (
     <button className={tab === t ? 'nav-item active' : 'nav-item'} onClick={() => go(t)}>
+      <Icon name={icon} />
       {label}
     </button>
   )
@@ -101,15 +103,15 @@ export default function App() {
           title={sidebarOpen ? 'Hide the navigation' : 'Show the navigation'}
           aria-expanded={sidebarOpen}
         >
-          ☰
+          <Icon name="menu" size={18} />
         </button>
         {sidebarOpen && (
           <>
             <h1 className="logo">Linform</h1>
             <nav className="nav">
-              {navItem('templates', '▤ Templates')}
-              {navItem('examples', '★ Examples')}
-              {navItem('settings', '⚙ Settings')}
+              {navItem('templates', 'templates', 'Templates')}
+              {navItem('examples', 'examples', 'Examples')}
+              {navItem('settings', 'settings', 'Settings')}
             </nav>
             {showAccount && (
               <div className="account-bar">

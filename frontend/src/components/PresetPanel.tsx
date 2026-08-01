@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Icon from './Icon'
 import { detect } from '../jinja-bridge'
 import { PRESETS, PRESET_GROUPS, type Preset } from '../presets/registry'
 import { addCustom, loadCustom, removeCustom, toPreset } from '../presets/custom'
@@ -75,8 +76,13 @@ function Group({
               <span className="preset-card-desc">{p.description}</span>
             </button>
             {onDelete && (
-              <button className="preset-del" title="Delete preset" onClick={() => onDelete(p.id)}>
-                ✕
+              <button
+                className="preset-del"
+                aria-label={`Delete the preset ${p.label}`}
+                title="Delete preset"
+                onClick={() => onDelete(p.id)}
+              >
+                <Icon name="close" size={12} />
               </button>
             )}
           </div>

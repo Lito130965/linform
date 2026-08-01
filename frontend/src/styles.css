@@ -1992,3 +1992,23 @@ label {
     color: #5c6070;
   }
 }
+
+/* ---- icons ---- */
+
+.icon {
+  flex-shrink: 0;
+  vertical-align: -0.15em;
+}
+
+/* Nav items place the icon beside the label. */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn .icon,
+.preset-del .icon,
+.sidebar-toggle .icon {
+  display: block;
+}

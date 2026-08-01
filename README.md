@@ -1,16 +1,34 @@
 # Linform
 
+[![CI](https://github.com/Lito130965/linform/actions/workflows/ci.yml/badge.svg)](https://github.com/Lito130965/linform/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+
 **Versioned print forms — HTML in, PDF out.**
 
 Self-hosted service for generating print documents (invoices, certificates,
 reports) from HTML templates. Analysts create and version templates in a web
 editor; your application gets a PDF with a single API call, passing JSON data.
 
+> Docs: [DECISIONS.md](docs/DECISIONS.md) — why it is built this way ·
+> [SECURITY.md](SECURITY.md) — threat model ·
+> [CONTRIBUTING.md](CONTRIBUTING.md) — running and testing it ·
+> [MANUAL-CHECKS.md](docs/MANUAL-CHECKS.md) — what is checked by hand, and why
+>
 > Status: early development, usable. Render core, immutable versions with
 > publish/rollback and pinning, web editor (code + visual), assets, `.docx`
 > import, barcodes, and an optional AI assistant.
 
 ## Quick start
+
+```bash
+docker run -p 8100:8000 ghcr.io/lito130965/linform:latest   # published on each tag
+```
+
+That gives a working service on SQLite with authentication off — enough to open
+the editor and render something. For anything else, copy `.env.example` to
+`.env` and use compose; **set an authentication section before exposing it to
+anyone**.
 
 ```bash
 docker compose up -d   # app on :8100 + PostgreSQL (not exposed)
@@ -216,6 +234,53 @@ template code, so scraping reveals which forms a deployment runs.
 Ad-hoc renders share a single `<ad-hoc>` label instead of minting a series per
 request.
 
+## Performance
+
+Absolute numbers from someone else's hardware are not a specification, so read
+this as a **method and a shape**, and measure your own box with the script that
+produced it:
+
+```bash
+python scripts/loadtest.py http://localhost:8100 <template-code> --data @payload.json
+```
+
+What holds regardless of hardware, because it follows from the design:
+
+- **Rendering is CPU-bound and single-threaded per document.** Throughput is
+  roughly `render workers / cost of one render`; latency tracks single-core
+  speed, throughput tracks core count.
+- **Throughput saturates at the worker count.** More concurrent clients past
+  that point add no PDFs per second, only queueing — visible as latency.
+- **Past the in-flight ceiling the service refuses immediately** with `429` and
+  `Retry-After` rather than building a queue.
+
+The run below is one container with the default 2 workers on an AMD Ryzen 5
+4600H, rendering the `invoice` example (two A4 pages, a 25-row table). Treat it
+as the shape, and the per-render cost — here about a quarter of a second — as
+the number to re-measure on your own hardware and your own templates, both of
+which move it:
+
+| Concurrent clients | Rendered | Refused (429) | PDF/s | p50 | p95 |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 40 | 0 | 3.9 | 236 ms | 314 ms |
+| 2 | 40 | 0 | 7.7 | 239 ms | 323 ms |
+| 4 | 40 | 0 | 7.9 | 526 ms | 545 ms |
+| 8 | 4 | 36 | 7.7 | 510 ms | 513 ms |
+| 16 | 6 | 34 | 7.1 | 500 ms | 621 ms |
+
+Two workers saturate at ~8 PDF/s here; at 4 concurrent clients throughput is
+unchanged and the extra wait shows up as doubled latency; at 8, thirty-six of
+forty requests are turned away in milliseconds instead of all forty being
+served slowly. That last row is the backpressure design working end to end —
+the one thing in this table that will look the same on any machine.
+
+Scaling levers, in the order worth reaching for: raise
+`LINFORM_RENDER_MAX_WORKERS` towards the core count, raise
+`LINFORM_RENDER_MAX_CONCURRENCY` only if your callers genuinely tolerate
+queueing, and run more replicas — the database invariants are built for that
+(see the concurrency tests). A client rendering in bulk should honour
+`Retry-After`; retry and batching are its job, by design.
+
 ## Golden PDF tests
 
 `tests/test_golden_pdfs.py` renders every example in `examples/` and checks the
@@ -284,6 +349,55 @@ tracked, not overlooked.
 Settings — a dark editor around a white sheet is uncomfortable for exactly the
 work this tool is for.
 
+## Backup and restore
+
+**One database holds everything** — templates, every version, uploaded assets,
+users and API keys. There is no second store and no file volume to coordinate,
+which is the whole backup story:
+
+```bash
+# Back up (compose deployment)
+docker compose exec -T db pg_dump -U linform linform | gzip > linform-$(date +%F).sql.gz
+
+# Restore into an empty database
+gunzip -c linform-2026-07-29.sql.gz | docker compose exec -T db psql -U linform linform
+```
+
+Assets live in the database as rows, so a dump captures them; on the other hand
+a deployment with large page backgrounds will produce large dumps, and that is
+the trade behind that decision.
+
+**Verify the restore, not just the backup.** A dump nobody has restored is a
+belief, not a backup. The check that matters here is end to end, because it
+exercises the promise the product makes:
+
+1. Restore the dump into a scratch database.
+2. Point an instance at it (`LINFORM_DATABASE_URL`).
+3. Render a template **by a pinned version** and compare the PDF's page count
+   and text against the original — `tests/golden_support.py` has the helpers.
+
+If a pinned version renders identically, versions, assets and the engine all
+came back. If it does not, you have found the problem while it is still cheap.
+
+Nothing else needs backing up: the container is rebuilt from the image, and the
+configuration is your `.env`. What is *not* recoverable is business data —
+payloads are rendered and forgotten by design, so store the payload or the
+resulting PDF on your side, with the version number beside it.
+
+## Security
+
+The short version: **a template is untrusted code, and an editor user is
+trusted.** Jinja runs sandboxed, external URL fetching is off by default so a
+template cannot make the server fetch internal addresses, markup is stripped of
+executable content before it reaches the editor canvas with a CSP behind it,
+passwords are slow-hashed and tokens stored as digests, and payloads are never
+logged or stored. Anyone who can sign in as an editor, however, can read and
+change every template in the deployment — there is no per-template permission
+model.
+
+Full threat model, what is deliberately *not* covered, a hardening checklist,
+and how to report a vulnerability: [SECURITY.md](SECURITY.md).
+
 ## Configuration
 
 | Env variable | Default | Meaning |
@@ -314,6 +428,45 @@ work this tool is for.
 | `LINFORM_DATABASE_URL` | local SQLite file | Database; compose sets PostgreSQL |
 | `LINFORM_PORT` | `8100` | Host port (compose only) |
 | `LINFORM_DB_PASSWORD` | `linform` | PostgreSQL password (compose only) |
+
+## How it compares
+
+The fastest way to decide whether this is the wrong tool for you.
+
+| | Linform | Carbone | PDFMonkey | Gotenberg | wkhtmltopdf |
+|---|---|---|---|---|---|
+| Hosting | self-hosted | self-hosted or cloud | cloud only | self-hosted | library |
+| Template format | HTML + Jinja2 | DOCX/XLSX/ODT | HTML | anything you send it | HTML |
+| Template editing | built-in web editor, code **and** visual | your word processor | web editor | none — you bring the file | none |
+| Versioning | immutable versions, publish, rollback, pinning | via your VCS | built-in | none | none |
+| Engine | WeasyPrint (CSS Paged Media) | LibreOffice | Chromium | Chromium / LibreOffice | old WebKit |
+| JavaScript in templates | no | no | yes | yes | limited |
+| Async / batch API | no, by design | yes | yes | no | n/a |
+| Your data leaves your network | never | only in cloud mode | yes | never | never |
+
+**Where Linform is the better answer.** You need the printed page to be exact
+and to stay exact for years — page furniture, running headers, counters, comb
+fields — and you need whoever owns the form to be able to change it without a
+deploy, while the application keeps calling one stable code. Nothing leaves
+your network.
+
+**Where it is the worse answer, plainly:**
+
+- **Your templates are Word documents and their authors will not give that
+  up.** Carbone's model is built for that; Linform imports `.docx` once, as a
+  starting point, not as a living format.
+- **You need JavaScript in templates**, or a layout that leans on CSS grid.
+  Gotenberg or PDFMonkey render with a real browser; WeasyPrint does not.
+- **You want a queue, retries and stored results out of the box.** Linform is
+  deliberately synchronous — that machinery stays in your application (see
+  [DECISIONS.md](docs/DECISIONS.md#5-rendering-is-synchronous-with-a-ceiling-and-a-429)).
+- **You want zero operations.** PDFMonkey is a hosted product; this is a
+  container, a database and your own backups.
+- **You need per-team isolation inside one instance.** There is no
+  per-template permission model — run separate instances instead.
+- **Raw throughput on huge volumes.** A browser-based renderer parallelises
+  across more cores more readily; Linform's answer is more workers and more
+  replicas.
 
 ## Roadmap
 
