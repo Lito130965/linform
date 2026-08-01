@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import Icon from './Icon'
 
 /**
  * An accessible modal shell.
@@ -98,7 +99,7 @@ export default function Modal({
         <div className="dialog-head">
           <strong id={titleId}>{title}</strong>
           <button className="btn small" aria-label="Close dialog" onClick={onClose}>
-            ✕
+            <Icon name="close" />
           </button>
         </div>
         {children}

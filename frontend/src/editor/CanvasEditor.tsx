@@ -37,6 +37,7 @@ import {
 import { type Layer, layerOf, setLayer } from './layer'
 import { existingValue, isConditional, isRepeating, makeRepeating, wrapConditional } from './convert'
 import { protect } from '../jinja-bridge'
+import Icon from '../components/Icon'
 import { PRESETS } from '../presets/registry'
 import { setAlign, toggleInline } from './text-commands'
 
@@ -912,8 +913,8 @@ export default function CanvasEditor({
               <button className="tb" onClick={applyConvert}>
                 Apply
               </button>
-              <button className="tb" onClick={() => setConvert(null)}>
-                ✕
+              <button className="tb" aria-label="Cancel the conversion" onClick={() => setConvert(null)}>
+                <Icon name="close" size={13} />
               </button>
             </span>
           )}
@@ -1090,8 +1091,8 @@ export default function CanvasEditor({
               <button title="Duplicate" onClick={duplicateSelected}>
                 ⧉
               </button>
-              <button title="Delete" onClick={removeSelected}>
-                ✕
+              <button aria-label="Delete the selected element" title="Delete" onClick={removeSelected}>
+                <Icon name="trash" size={13} />
               </button>
             </div>
           )}

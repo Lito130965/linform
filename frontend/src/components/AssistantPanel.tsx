@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Icon from './Icon'
 import { diffLines, type Change } from 'diff'
 import { assistantChat, AssistantStatus } from '../api'
 import { extractHtmlBlock, replyProse } from '../assistant/extract'
@@ -246,8 +247,13 @@ export default function AssistantPanel({
           }}
         />
         <div className="assistant-actions">
-          <button className="btn small" onClick={() => fileRef.current?.click()} title="Attach a scan or screenshot">
-            📎
+          <button
+            className="btn small"
+            aria-label="Attach a scan or screenshot"
+            title="Attach a scan or screenshot"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Icon name="attach" />
           </button>
           <input
             ref={fileRef}
