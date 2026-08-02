@@ -117,7 +117,25 @@ async def prometheus_metrics(
     return Response(content=payload, media_type=content_type)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+@ops.api_route(
+    "/api/{rest:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def api_not_found(rest: str) -> Response:
+    """Anything under /api that no router claimed is a 404 from the API.
+
+    Without this the editor bundle answers instead: the SPA is mounted at "/",
+    so an unmatched request falls through to a static file server that knows
+    only GET and HEAD, and a consuming application pointed at an editor node
+    gets `405 Method Not Allowed` for a render — a reply that describes the file
+    server rather than the service. Registered after every router and before the
+    mount, so it can only ever catch what nothing else wanted.
+    """
+    raise HTTPException(status_code=404, detail="Not Found")
+
+
+def create_app(settings: Settings | None = None, static_dir: Path | None = None) -> FastAPI:
     """Build the application for one deployment role.
 
     Which routes exist is decided here rather than by a permission check layered
@@ -153,7 +171,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Editor SPA (built by the Dockerfile's node stage). Mounted last so API
     # routes take precedence; absent in dev where Vite serves the frontend, and
     # on a render node, which has no management API for it to call.
-    static_dir = Path(__file__).parent / "static"
+    #
+    # The path is a parameter so a test can mount one: locally app/static does
+    # not exist, so without it every test runs against a shape the container
+    # never has — which is exactly how the 405 above reached CI.
+    static_dir = static_dir or Path(__file__).parent / "static"
     if settings.role in ("all", "editor") and static_dir.is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")
     return app

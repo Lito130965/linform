@@ -112,6 +112,28 @@ def test_a_render_node_serves_no_editor_bundle(client_for):
     assert render_node.get("/").status_code == 404
 
 
+def test_an_editor_serving_the_bundle_still_answers_404_under_api(tmp_path, monkeypatch):
+    """With the SPA mounted, an unmatched /api request used to fall through to
+    the static file server, which knows only GET and HEAD — so a consuming
+    application pointed at an editor node got 405, a reply about the file server
+    rather than about the service. Locally app/static does not exist, so this
+    only appeared in the container."""
+    from fastapi.testclient import TestClient
+
+    from app.core.config import Settings
+    from app.main import create_app
+    from tests.conftest import StubRenderer
+
+    monkeypatch.setattr("app.main.WeasyPrintRenderer", StubRenderer)
+    (tmp_path / "index.html").write_text("<html>editor</html>", encoding="utf-8")
+    service = create_app(Settings(role="editor"), static_dir=tmp_path)
+
+    with TestClient(service) as client:
+        assert client.get("/").status_code == 200, "the bundle should still be served"
+        assert client.post("/api/render/anything", json={}).status_code == 404
+        assert client.post("/api/no/such/endpoint", json={}).status_code == 404
+
+
 def test_an_unknown_role_stops_the_process_instead_of_serving_everything(monkeypatch):
     from pydantic import ValidationError
 
