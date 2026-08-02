@@ -64,6 +64,18 @@ class Settings(BaseSettings):
     # instead of silently rendering an empty value.
     strict_placeholders: bool = True
 
+    # Caching (app/services/cache.py explains what may be cached and why).
+    # How long a process may keep serving the version a template code resolved
+    # to before re-reading it. The process that publishes or rolls back drops
+    # its own entry at once, so this is only the lag seen by OTHER processes —
+    # and the container runs one. 0 turns the cache off and every render
+    # resolves against the database.
+    template_cache_ttl_seconds: float = 2.0
+    template_cache_mb: int = 32
+    # Assets are content-addressed and never expire; this is purely a memory
+    # budget. 0 turns the cache off.
+    asset_cache_mb: int = 64
+
     # AI assistant (BYOK). Empty key = feature off and hidden in the UI.
     # OpenAI-compatible chat completions API — one client covers Gemini's
     # compat endpoint, OpenAI, Anthropic, Mistral, OpenRouter, Ollama, vLLM.

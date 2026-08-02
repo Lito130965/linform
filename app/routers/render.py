@@ -7,7 +7,6 @@ from app.core import metrics
 from app.core.auth import require_render
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
-from app.models.database import TemplateVersion
 from app.models.schemas import AdHocRenderRequest, PlaceholdersResponse
 from app.services import versioning
 from app.services.assets import AssetError, inline_assets
@@ -87,7 +86,7 @@ async def render_ad_hoc(
 
 
 async def _render_version(
-    row: TemplateVersion,
+    target: versioning.RenderTarget,
     data: dict,
     session: AsyncSession,
     renderer: PdfRenderer,
@@ -96,7 +95,7 @@ async def _render_version(
 ) -> Response:
     try:
         html = render_version_html(
-            row.id, row.html_content, data, strict=settings.strict_placeholders
+            target.version_id, target.html, data, strict=settings.strict_placeholders
         )
         html = await inline_assets(session, html)
     except (TemplateRenderError, AssetError) as exc:
@@ -115,7 +114,7 @@ async def _render_version(
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"X-Linform-Version": str(row.version)},
+        headers={"X-Linform-Version": str(target.version)},
     )
 
 
@@ -134,12 +133,12 @@ async def render_published(
     A template with only drafts has no current version and answers 404: work in
     progress is not something a consuming application can reach."""
     try:
-        row = await versioning.get_current_version(session, code)
+        target = await versioning.resolve_current(session, code)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ArchivedError as exc:
         raise HTTPException(status_code=410, detail=str(exc))
-    return await _render_version(row, data, session, renderer, settings, code)
+    return await _render_version(target, data, session, renderer, settings, code)
 
 
 @router.post("/render/{code}/versions/{version}", dependencies=[Depends(require_render)])
@@ -156,10 +155,10 @@ async def render_pinned(
     including after the template is archived. Drafts have no number and cannot
     be reached here at all."""
     try:
-        row = await versioning.get_version(session, code, version)
+        target = await versioning.resolve_pinned(session, code, version)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return await _render_version(row, data, session, renderer, settings, code)
+    return await _render_version(target, data, session, renderer, settings, code)
 
 
 @router.post("/placeholders", dependencies=[Depends(require_render)])

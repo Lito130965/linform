@@ -230,3 +230,42 @@ sanitization is applied at the canvas, not to stored bytes: rewriting a whole
 document through a parser would normalize the author's markup, which decision 2
 forbids — so what the user gets for a stored template is a warning, not an
 edit.
+
+---
+
+## 8. What may be cached forever, and what may not
+
+**Context.** Rendering by code resolves the code to a template, the template to
+its current version, and any `asset://` reference to bytes. That is two to four
+queries per render, repeated identically until somebody publishes. At one
+replica it disappears next to the render; at twenty against one database it is
+the load that arrives without anyone deciding to add it.
+
+**Decision.** Cache by how the key is formed, not by how hot the data is.
+Content-addressed entities — assets keyed by the sha256 of their bytes,
+compiled templates keyed by a hash of their source — are cached with no
+expiry. Identity-addressed ones — "whichever version `invoice` serves now" —
+carry a short TTL (default 2s) and are dropped immediately by the replica that
+publishes, rolls back or archives.
+
+**Why.** The two cases fail differently. A content-addressed hit cannot be
+wrong: the key *is* the value, so a stale entry is a contradiction in terms. A
+pointer's hit can be very wrong, and the worst case is precise — rolling back is
+what you do when production is already broken, and a cache that delays it makes
+the incident longer. Local invalidation is what keeps that from being a
+trade-off at all for the common deployment: the container runs one process, and
+that process publishes and serves, so the answer it gives is never stale.
+Anything with more processes — replicas, or `uvicorn --workers` — pays for
+coordination in seconds of lag rather than in a cache-invalidation protocol,
+which is a dependency this project does not want and a class of bug it does not
+want either.
+
+Bounding by bytes rather than by entry count is part of the decision. The count
+bound that preceded it held 64 assets, which sounds safe and is 850 MB of
+base64 when the assets are large — per replica.
+
+**Cost.** A rollback can take up to the TTL to reach replicas that did not
+perform it, and a template's first render on each replica still pays full
+price. Negative answers are remembered too, so a code created outside this
+service's API — straight into the database — stays a 404 until the entry ages
+out. Setting the TTL to 0 turns all of it off.

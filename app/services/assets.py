@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import Asset
+from app.services.cache import ASSETS as _data_uri_cache
 
 ASSET_RE = re.compile(r"asset://([0-9a-f]{64})")
 
@@ -28,12 +29,6 @@ MAX_ASSET_SIZE = 10 * 1024 * 1024
 
 class AssetError(Exception):
     """Message is safe to show the client."""
-
-
-# Assets are immutable, so resolved data: URIs cache perfectly. Bounded to
-# keep memory sane; sized for logos/fonts, not for hundreds of backgrounds.
-_MAX_CACHED = 64
-_data_uri_cache: dict[str, str] = {}
 
 
 async def store_asset(session: AsyncSession, filename: str, mime_type: str, data: bytes) -> Asset:
@@ -94,8 +89,6 @@ async def inline_assets(session: AsyncSession, html: str) -> str:
             if asset is None:
                 raise AssetError(f"Unknown asset referenced by template: asset://{sha}")
             cached = f"data:{asset.mime_type};base64,{base64.b64encode(asset.data).decode()}"
-            if len(_data_uri_cache) >= _MAX_CACHED:
-                _data_uri_cache.pop(next(iter(_data_uri_cache)))
-            _data_uri_cache[sha] = cached
+            _data_uri_cache.put(sha, cached)
         mapping[sha] = cached
     return ASSET_RE.sub(lambda m: mapping[m.group(1)], html)

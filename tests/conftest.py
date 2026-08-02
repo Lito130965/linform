@@ -11,6 +11,22 @@ from sqlalchemy.pool import NullPool
 from app.core.db import get_session
 from app.main import app
 from app.models.database import Base
+from app.services import cache
+
+
+@pytest.fixture(autouse=True)
+def _empty_caches():
+    """Start every test with cold caches.
+
+    Production never needs this: one process talks to one database for its whole
+    life, which is the assumption the render caches are built on. The suite
+    breaks that assumption on purpose — a fresh database per test, and template
+    code `invoice` meaning something different in each — so without this a test
+    would be served the previous test's template.
+    """
+    cache.clear_all()
+    yield
+    cache.clear_all()
 
 
 class StubRenderer:
@@ -62,6 +78,9 @@ def db_client(monkeypatch, tmp_path):
         # the app reads (the superuser bootstrap normally runs in lifespan from
         # env vars, which tests do not set).
         client.db_factory = factory
+        # The engine, so a test can count the statements a request issues —
+        # which is the only way to assert that a cache hit reached no database.
+        client.db_engine = engine
         yield client
 
     app.dependency_overrides.clear()
