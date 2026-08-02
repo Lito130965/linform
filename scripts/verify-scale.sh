@@ -26,6 +26,11 @@ DEADLINE=15
 
 cd "$(dirname "$0")/.."
 
+# Every curl carries a timeout. Without one a connection that hangs rather than
+# refuses turns a bounded 60-second wait into an unbounded one, and the failure
+# shows up as a build that never finishes instead of an error anyone can read.
+CURL="curl -s --connect-timeout 3 --max-time 30"
+
 cleanup() {
   echo "==> tearing down"
   $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true
@@ -34,6 +39,9 @@ trap cleanup EXIT
 
 fail() {
   echo "!!! $1" >&2
+  echo "--- containers" >&2
+  $COMPOSE ps -a >&2 || true
+  echo "--- logs" >&2
   $COMPOSE logs --tail 40 >&2 || true
   exit 1
 }
@@ -41,12 +49,12 @@ fail() {
 post() { # url, path, [body] -> http status
   body=${3-}
   [ -n "$body" ] || body='{}'
-  curl -s -o /dev/null -w '%{http_code}' -X POST "$1$2" \
+  $CURL -o /dev/null -w '%{http_code}' -X POST "$1$2" \
     -H 'content-type: application/json' -d "$body"
 }
 
 version_served() { # url -> the version a render node answered with
-  curl -s -o /dev/null -D - -X POST "$1/api/render/$CODE" \
+  $CURL -o /dev/null -D - -X POST "$1/api/render/$CODE" \
     -H 'content-type: application/json' -d '{"who":"x"}' \
     | tr -d '\r' | sed -n 's/^[Xx]-[Ll]inform-[Vv]ersion: //p'
 }
@@ -54,7 +62,10 @@ version_served() { # url -> the version a render node answered with
 wait_for_health() { # url, label
   i=0
   while [ "$i" -lt 60 ]; do
-    if curl -sf "$1/health" >/dev/null 2>&1; then return 0; fi
+    if $CURL --max-time 3 -f "$1/health" >/dev/null 2>&1; then
+      echo "    $2 up after ${i}s"
+      return 0
+    fi
     i=$((i + 1))
     sleep 1
   done
@@ -64,8 +75,9 @@ wait_for_health() { # url, label
 echo "==> starting one editor and $REPLICAS render replicas against one database"
 # All of them run `alembic upgrade head` at once. That is the first thing being
 # checked here, and it fails loudly: a container that loses the race exits.
-$COMPOSE up -d --scale "render=$REPLICAS" >/dev/null 2>&1 \
+$COMPOSE up -d --scale "render=$REPLICAS" >/dev/null \
   || fail "compose could not bring the deployment up"
+$COMPOSE ps -a || true
 
 EDITOR="http://localhost:${LINFORM_PORT:-8100}"
 wait_for_health "$EDITOR" "editor"

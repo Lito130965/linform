@@ -161,6 +161,9 @@ jobs:
         # Reuses the image built above. Checks what only exists once there is
         # more than one process: concurrent migrations, a render node with no
         # management API, and how long a rollback takes to reach every replica.
+        # Every wait inside the script is bounded; this is the backstop that
+        # turns a hang into a readable log rather than a job nobody can inspect.
+        timeout-minutes: 8
         run: ./scripts/verify-scale.sh 3
 
       - name: Upload traces on failure
