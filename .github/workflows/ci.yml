@@ -127,9 +127,17 @@ jobs:
         # an accessibility regression is cheap to catch here and expensive to
         # notice by hand.
         run: npm run lint
-      - name: Audit dependencies
-        # Advisory, same reasoning as the backend audit: surface new advisories
-        # without failing a pull request that did not introduce them.
+      - name: Audit shipped dependencies
+        # Blocking, and the only audit here that is. These packages end up in
+        # the bundle a browser executes on a user's machine — mammoth parses an
+        # uploaded .docx, and its `underscore` was carrying a DoS advisory.
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit build tooling
+        # Advisory. Vite, Vitest and esbuild are devDependencies: their
+        # advisories describe a running dev server or the Vitest UI server, and
+        # nothing in a deployment or in this workflow starts either. Worth
+        # upgrading, not worth blocking an unrelated pull request. See
+        # "Reading a dependency advisory" in SECURITY.md.
         continue-on-error: true
         run: npm audit --audit-level=high
 

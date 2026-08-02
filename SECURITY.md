@@ -78,3 +78,26 @@ Stated plainly, because an unlisted gap reads as an overlooked one:
 5. Leave `LINFORM_ALLOW_EXTERNAL_URLS` off unless you need it, and pin
    `LINFORM_ALLOWED_URL_HOSTS` when you do.
 6. Back up the database — it holds the templates *and* the assets.
+
+## Reading a dependency advisory
+
+`pip-audit` and `npm audit` run on every build. The frontend report needs one
+distinction before it can be acted on, because without it the numbers are
+alarming and mostly irrelevant.
+
+**What ships is `dist/`** — static files produced by `vite build`, plus the
+Python service. Vite, Vitest and esbuild are devDependencies: they are not in
+the image, and the advisories against them describe a *running dev server* or
+the Vitest UI server. Neither exists in a deployment, and neither is started by
+CI, which runs `vitest run` and `vite build`. They still deserve upgrading —
+a contributor running `npm run dev` is a real machine — but they are not a
+property of your installation.
+
+**What does reach a browser** is the runtime side of `frontend/package.json`:
+React, CodeMirror, markdown-it, and mammoth (with its `underscore`) which parses
+`.docx` files an editor uploads. An advisory there is executed by a real user on
+real input, and is the kind worth acting on the day it appears.
+
+CI encodes exactly that split: `npm audit --omit=dev` is **blocking**, and the
+full audit is advisory. So a vulnerability in what you deploy fails a pull
+request, and one in a build tool is visible without holding up unrelated work.

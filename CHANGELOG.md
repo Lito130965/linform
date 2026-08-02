@@ -79,6 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A DoS advisory in shipped frontend code.** `underscore`, pulled in by the
+  `.docx` importer, was locked at 1.13.1 — unbounded recursion in `_.flatten`
+  and `_.isEqual` on hostile input, reachable by uploading a crafted document.
+  Bumped to 1.13.8. CI now audits shipped dependencies as a blocking step and
+  build tooling as an advisory one, since only the first is in the image.
+
 - **Concurrent migrations were unserialised.** Every container runs `alembic
   upgrade head` on startup, so replicas starting together read the same current
   revision and raced to apply the next one. Migrations now take a PostgreSQL
