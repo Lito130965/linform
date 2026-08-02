@@ -101,6 +101,35 @@ not delete, for the same reason).
 
 ---
 
+## 3a. A draft is not a version
+
+**Context.** Saving a template used to create a numbered version immediately,
+with a status of "draft".
+
+**Decision.** Numbers are minted at publication. A draft is a working copy: no
+number, mutable, deletable, addressed by its row id, and rejected by every
+render path. A template may hold several.
+
+**Why.** Two things were wrong with numbering on save. A number existed for
+work that had never been published, so "version 3" might mean nothing anyone
+could use — and version numbers are what consumers pin, so they should mean
+exactly one thing. Worse, a consumer that guessed a number could render an
+unpublished draft through the pinning endpoint, which is the opposite of what
+publication is for. (Measured before the change: a fresh template with one
+unpublished draft answered 404 by code and 200 by pin.)
+
+Several drafts are allowed rather than one because two ideas in parallel is a
+normal thing to want, and forbidding it only pushes people into naming
+conventions inside a single working copy.
+
+**Cost.** Drafts and versions are different types in the API and in the UI, so
+the editor has to know which of the two it is holding; a single "current
+document" would have been simpler to write. Draft rows also accumulate until
+somebody deletes them — deliberately, since deleting somebody's unpublished
+work automatically is worse.
+
+---
+
 ## 4. "One published version" is a database constraint, not application logic
 
 **Context.** Exactly one version of a template may be live. The obvious

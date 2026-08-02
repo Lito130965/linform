@@ -63,7 +63,12 @@ export default function Editor({
 }) {
   const isScratch = scratch !== null
   const [detail, setDetail] = useState<TemplateDetail | null>(null)
-  const [loadedVersion, setLoadedVersion] = useState<number | null>(null)
+  // What is open. A draft is addressed by id, a published version by number —
+  // they are different kinds of thing, so the editor tracks which one it holds
+  // rather than pretending both are "a version".
+  const [open, setOpen] = useState<
+    { kind: 'draft'; id: number } | { kind: 'version'; version: number } | null
+  >(null)
   const [html, setHtml] = useState('')
   const [testData, setTestData] = useState('{}')
   const [comment, setComment] = useState('')
@@ -106,13 +111,25 @@ export default function Editor({
   const splitRef = useRef<{ prefix: string; suffix: string; styles: string } | null>(null)
   const visualInitialRef = useRef('')
 
-  const publishedVersion = detail?.versions.find((v) => v.status === 'published')?.version ?? null
+  const currentVersion = detail?.current_version ?? null
+  const openDraftId = open?.kind === 'draft' ? open.id : null
 
   const loadVersion = useCallback(
     async (version: number) => {
       const full = await api.getVersion(code, version)
       setHtml(full.html_content)
-      setLoadedVersion(version)
+      setOpen({ kind: 'version', version })
+      setDirty(false)
+    },
+    [code],
+  )
+
+  const loadDraft = useCallback(
+    async (draftId: number) => {
+      const full = await api.getDraft(code, draftId)
+      setHtml(full.html_content)
+      setComment(full.comment)
+      setOpen({ kind: 'draft', id: draftId })
       setDirty(false)
     },
     [code],
@@ -125,7 +142,7 @@ export default function Editor({
       setDetail(null)
       setHtml(scratch.html)
       setTestData(scratch.data)
-      setLoadedVersion(null)
+      setOpen(null)
       setDirty(false)
       return
     }
@@ -133,19 +150,21 @@ export default function Editor({
       .getTemplate(code)
       .then(async (d) => {
         setDetail(d)
-        const initial =
-          d.versions.find((v) => v.status === 'published')?.version ??
-          d.versions.at(-1)?.version
-        if (initial != null) await loadVersion(initial)
+        // Unfinished work first: coming back to a draft you left open is the
+        // common case. Then whatever consumers currently get, then the newest
+        // published version.
+        if (d.drafts.length > 0) await loadDraft(d.drafts[0].id)
+        else if (d.current_version != null) await loadVersion(d.current_version)
+        else if (d.versions.length > 0) await loadVersion(d.versions[0].version)
         else {
           setHtml(STARTER_TEMPLATE)
           setTestData('{\n  "title": "Demo",\n  "name": "world"\n}')
-          setLoadedVersion(null)
+          setOpen(null)
           setDirty(true)
         }
       })
       .catch((e) => setError(e.message))
-  }, [code, loadVersion, scratch])
+  }, [code, loadVersion, loadDraft, scratch])
 
   const refreshDetail = async () => setDetail(await api.getTemplate(code))
 
@@ -160,14 +179,34 @@ export default function Editor({
     }
   }
 
+  /** The selector holds both kinds, so its value is prefixed: `d12` is a draft
+   * id, `v3` a published version number. */
+  const openFromSelector = async (value: string) => {
+    if (!value) return
+    if (dirty && !confirm('Discard unsaved changes in the editor?')) return
+    setError(null)
+    exitVisual()
+    try {
+      if (value.startsWith('d')) await loadDraft(Number(value.slice(1)))
+      else await loadVersion(Number(value.slice(1)))
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  /** Save the working copy. Editing a draft updates it in place; saving while
+   * a published version is open starts a NEW draft, because a published
+   * version is immutable — that is what makes pinning trustworthy. */
   const save = async () => {
     setBusy(true)
     setError(null)
     try {
-      const created = await api.saveVersion(code, html, comment)
-      setComment('')
+      const draft =
+        openDraftId != null
+          ? await api.updateDraft(code, openDraftId, html, comment)
+          : await api.createDraft(code, html, comment)
+      setOpen({ kind: 'draft', id: draft.id })
       await refreshDetail()
-      setLoadedVersion(created.version)
       setDirty(false)
     } catch (e) {
       setError((e as Error).message)
@@ -176,13 +215,60 @@ export default function Editor({
     }
   }
 
-  const publishVersion = async (version: number | null) => {
-    if (version == null) return
+  /** Publish the open draft: it is numbered, frozen, and becomes what
+   * consumers get. This is the only way a template becomes renderable. */
+  const publish = async () => {
+    if (openDraftId == null) return
     setBusy(true)
     setError(null)
     try {
-      await api.publish(code, version)
+      const published = await api.publishDraft(code, openDraftId)
+      setComment('')
+      setOpen({ kind: 'version', version: published.version })
       await refreshDetail()
+      setDirty(false)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Point consumers at an already-published version — the rollback. */
+  const makeCurrent = async (version: number) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.setCurrentVersion(code, version)
+      await refreshDetail()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const discardDraft = async (draftId: number) => {
+    if (
+      !confirm(
+        'Delete this draft? It was never published, so nothing a consuming application uses is affected.',
+      )
+    )
+      return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteDraft(code, draftId)
+      const fresh = await api.getTemplate(code)
+      setDetail(fresh)
+      if (openDraftId === draftId) {
+        if (fresh.drafts.length > 0) await loadDraft(fresh.drafts[0].id)
+        else if (fresh.current_version != null) await loadVersion(fresh.current_version)
+        else {
+          setHtml(STARTER_TEMPLATE)
+          setOpen(null)
+        }
+      }
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -342,47 +428,59 @@ export default function Editor({
           </button>
         ) : (
           <>
+            {/* Drafts and versions are listed apart: one is work in progress,
+                the other is what consuming applications can render. */}
             <select
-              aria-label="Template version"
-              value={loadedVersion ?? ''}
-              onChange={(e) => switchVersion(Number(e.target.value))}
-              disabled={!detail?.versions.length}
+              aria-label="Open draft or published version"
+              value={open ? (open.kind === 'draft' ? `d${open.id}` : `v${open.version}`) : ''}
+              onChange={(e) => openFromSelector(e.target.value)}
             >
-              {!detail?.versions.length && <option value="">no versions yet</option>}
-              {detail?.versions
-                .slice()
-                .reverse()
-                .map((v) => (
-                  <option key={v.version} value={v.version}>
-                    v{v.version} · {v.status}
-                    {v.comment ? ` · ${v.comment.slice(0, 40)}` : ''}
-                  </option>
-                ))}
+              {!open && <option value="">nothing open</option>}
+              {detail && detail.drafts.length > 0 && (
+                <optgroup label="Drafts (not published)">
+                  {detail.drafts.map((d) => (
+                    <option key={`d${d.id}`} value={`d${d.id}`}>
+                      draft{d.comment ? ` · ${d.comment.slice(0, 40)}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {detail && detail.versions.length > 0 && (
+                <optgroup label="Published versions">
+                  {detail.versions.map((v) => (
+                    <option key={`v${v.version}`} value={`v${v.version}`}>
+                      v{v.version}
+                      {v.version === currentVersion ? ' · current' : ''}
+                      {v.comment ? ` · ${v.comment.slice(0, 40)}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
 
             <input
               className="comment-input"
               placeholder="What changed? (like a commit message)"
-              aria-label="Version comment"
+              aria-label="Draft comment"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
             <button className="btn primary" onClick={save} disabled={busy || !html.trim()}>
-              Save as new version
+              {openDraftId != null ? 'Save draft' : 'Save as draft'}
             </button>
             <button
               className="btn publish"
-              onClick={() => publishVersion(loadedVersion)}
-              disabled={busy || loadedVersion == null || dirty || loadedVersion === publishedVersion}
+              onClick={publish}
+              disabled={busy || openDraftId == null || dirty}
               title={
-                dirty
-                  ? 'Save your changes as a version first'
-                  : loadedVersion === publishedVersion
-                    ? 'This version is already published'
-                    : 'Make this version the one consumers render'
+                openDraftId == null
+                  ? 'Only a draft can be published — save your changes first'
+                  : dirty
+                    ? 'Save the draft before publishing it'
+                    : 'Publish this draft: it gets a version number and becomes what consumers render'
               }
             >
-              {loadedVersion != null && loadedVersion === publishedVersion ? 'Published' : 'Publish'}
+              Publish
             </button>
             <button className="btn" onClick={() => setShowHistory(!showHistory)}>
               History
@@ -434,7 +532,7 @@ export default function Editor({
             />
           ) : (
             <CanvasEditor
-              key={loadedVersion ?? 'new'}
+              key={open ? (open.kind === 'draft' ? `d${open.id}` : `v${open.version}`) : 'new'}
               initialBody={visualInitialRef.current}
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
@@ -538,10 +636,15 @@ export default function Editor({
             overlay={overlayPanels}
             code={code}
             versions={detail.versions}
-            loadedVersion={loadedVersion}
+            drafts={detail.drafts}
+            currentVersion={currentVersion}
+            openDraftId={openDraftId}
+            openVersion={open?.kind === 'version' ? open.version : null}
             editorHtml={html}
-            onLoad={(v) => switchVersion(v)}
-            onPublish={(v) => publishVersion(v)}
+            onOpenVersion={(v) => switchVersion(v)}
+            onOpenDraft={(id) => openFromSelector(`d${id}`)}
+            onMakeCurrent={(v) => makeCurrent(v)}
+            onDeleteDraft={(id) => discardDraft(id)}
             onClose={() => setShowHistory(false)}
           />
         )}

@@ -10,6 +10,7 @@ export interface TemplateInfo {
   code: string
   name: string
   directory_id: number | null
+  archived_at: string | null
   created_at: string
 }
 
@@ -22,10 +23,28 @@ export interface DirectoryInfo {
 }
 
 export interface TemplateDetail extends TemplateInfo {
+  /** Published history, newest first. */
   versions: VersionInfo[]
+  /** Working copies. They have ids, not numbers — see DraftInfo. */
+  drafts: DraftInfo[]
+  /** Which published version consumers currently get, if any. */
+  current_version: number | null
 }
 
 export interface VersionDetail extends VersionInfo {
+  html_content: string
+}
+
+/** A working copy. Deliberately has no `version` field: a number is minted at
+ * publication, so anything holding a number is something consumers can render. */
+export interface DraftInfo {
+  id: number
+  comment: string
+  created_by: string
+  created_at: string
+}
+
+export interface DraftDetail extends DraftInfo {
   html_content: string
 }
 
@@ -324,6 +343,12 @@ export const api = {
     return resp.json()
   },
 
+  archiveTemplate: (code: string) =>
+    request<TemplateInfo>(`/api/templates/${code}`, { method: 'DELETE' }),
+
+  restoreTemplate: (code: string) =>
+    request<TemplateInfo>(`/api/templates/${code}/restore`, { method: 'POST' }),
+
   createTemplate: (code: string, name: string, directory_id: number | null = null) =>
     request<TemplateInfo>('/api/templates', {
       method: 'POST',
@@ -361,14 +386,37 @@ export const api = {
   getVersion: (code: string, version: number) =>
     request<VersionDetail>(`/api/templates/${code}/versions/${version}`),
 
-  saveVersion: (code: string, html_content: string, comment: string) =>
-    request<VersionInfo>(`/api/templates/${code}`, {
+  // --- drafts: working copies, addressed by id ---
+  listDrafts: (code: string) => request<DraftInfo[]>(`/api/templates/${code}/drafts`),
+
+  getDraft: (code: string, draftId: number) =>
+    request<DraftDetail>(`/api/templates/${code}/drafts/${draftId}`),
+
+  createDraft: (code: string, html_content: string, comment = '') =>
+    request<DraftDetail>(`/api/templates/${code}/drafts`, {
+      method: 'POST',
+      body: JSON.stringify({ html_content, comment }),
+    }),
+
+  updateDraft: (code: string, draftId: number, html_content: string, comment = '') =>
+    request<DraftDetail>(`/api/templates/${code}/drafts/${draftId}`, {
       method: 'PUT',
       body: JSON.stringify({ html_content, comment }),
     }),
 
-  publish: (code: string, version: number) =>
-    request<VersionInfo>(`/api/templates/${code}/publish/${version}`, { method: 'POST' }),
+  async deleteDraft(code: string, draftId: number): Promise<void> {
+    const resp = await authFetch(`/api/templates/${code}/drafts/${draftId}`, { method: 'DELETE' })
+    if (!resp.ok) throw await parseError(resp)
+  },
+
+  /** Publish a draft: it is numbered, frozen, and becomes what consumers get. */
+  publishDraft: (code: string, draftId: number) =>
+    request<VersionInfo>(`/api/templates/${code}/drafts/${draftId}/publish`, { method: 'POST' }),
+
+  /** Choose which published version consumers get — pointing it at an older
+   * one is the rollback. */
+  setCurrentVersion: (code: string, version: number) =>
+    request<VersionInfo>(`/api/templates/${code}/versions/${version}/current`, { method: 'POST' }),
 
   placeholders: (html: string) =>
     request<{ placeholders: string[] }>('/api/placeholders', {

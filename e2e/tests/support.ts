@@ -56,6 +56,8 @@ export function uniqueCode(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`
 }
 
+/** Create a template with one PUBLISHED version — the state most tests want to
+ * start from, since an unpublished template cannot be rendered at all. */
 export async function createTemplate(
   api: APIRequestContext,
   code: string,
@@ -64,10 +66,34 @@ export async function createTemplate(
 ): Promise<void> {
   const made = await api.post('/api/templates', { data: { code, name } })
   expect(made.ok(), `create ${code}: ${made.status()}`).toBeTruthy()
-  const saved = await api.put(`/api/templates/${code}`, {
-    data: { html_content: html, comment: 'seed' },
+  const draft = await createDraft(api, code, html, 'seed')
+  const published = await api.post(`/api/templates/${code}/drafts/${draft.id}/publish`)
+  expect(published.ok(), `publish ${code}: ${published.status()}`).toBeTruthy()
+}
+
+/** Create a template that has a draft and nothing published. */
+export async function createTemplateWithDraftOnly(
+  api: APIRequestContext,
+  code: string,
+  html: string,
+  name = 'E2E template',
+): Promise<{ id: number }> {
+  const made = await api.post('/api/templates', { data: { code, name } })
+  expect(made.ok(), `create ${code}: ${made.status()}`).toBeTruthy()
+  return createDraft(api, code, html, 'seed')
+}
+
+export async function createDraft(
+  api: APIRequestContext,
+  code: string,
+  html: string,
+  comment = '',
+): Promise<{ id: number }> {
+  const resp = await api.post(`/api/templates/${code}/drafts`, {
+    data: { html_content: html, comment },
   })
-  expect(saved.ok(), `seed ${code}: ${saved.status()}`).toBeTruthy()
+  expect(resp.ok(), `draft for ${code}: ${resp.status()}`).toBeTruthy()
+  return resp.json()
 }
 
 export async function versionHtml(
@@ -84,6 +110,25 @@ export async function listVersions(api: APIRequestContext, code: string) {
   const resp = await api.get(`/api/templates/${code}`)
   expect(resp.ok()).toBeTruthy()
   return (await resp.json()).versions as { version: number; status: string }[]
+}
+
+export async function templateDetail(api: APIRequestContext, code: string) {
+  const resp = await api.get(`/api/templates/${code}`)
+  expect(resp.ok()).toBeTruthy()
+  return (await resp.json()) as {
+    versions: { version: number; status: string }[]
+    drafts: { id: number; comment: string }[]
+    current_version: number | null
+  }
+}
+
+/** The newest draft's content, which is where "Save" in the editor lands. */
+export async function latestDraftHtml(api: APIRequestContext, code: string): Promise<string> {
+  const detail = await templateDetail(api, code)
+  expect(detail.drafts.length, 'expected a draft to exist').toBeGreaterThan(0)
+  const resp = await api.get(`/api/templates/${code}/drafts/${detail.drafts[0].id}`)
+  expect(resp.ok()).toBeTruthy()
+  return (await resp.json()).html_content
 }
 
 /** Click a top-level nav tab.
@@ -125,10 +170,10 @@ export async function backToCode(page: Page): Promise<void> {
   await expect(page.locator('.cm-content')).toBeVisible()
 }
 
-/** Save the editor's current content as a new version. */
-export async function saveVersion(page: Page, comment = 'from e2e'): Promise<void> {
+/** Save the editor's current content as a draft. */
+export async function saveDraft(page: Page, comment = 'from e2e'): Promise<void> {
   await page.getByPlaceholder(/What changed/i).fill(comment)
-  await page.getByRole('button', { name: /Save as new version/i }).click()
+  await page.getByRole('button', { name: /^Save (as )?draft$/i }).click()
   // The version selector gains the new entry; wait for the save to land.
   await expect(page.locator('.dirty-badge')).toHaveCount(0, { timeout: 20_000 })
 }
