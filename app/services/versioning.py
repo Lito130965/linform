@@ -17,6 +17,8 @@ race is resolved by the database: unique constraints plus retry for numbering,
 a partial unique index for "one current version".
 """
 
+import sys
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -24,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.database import Template, TemplateVersion, VersionStatus
+from app.services import cache
 from app.services.template_engine import validate_template
 
 
@@ -51,6 +54,9 @@ async def create_template(
     except IntegrityError:
         await session.rollback()
         raise ConflictError(f"Template code {code!r} already exists")
+    # A render against this code before it existed may have left a remembered
+    # 404 behind; creating the template is the moment that stops being true.
+    forget(code)
     return template
 
 
@@ -90,6 +96,7 @@ async def archive_template(session: AsyncSession, code: str) -> Template:
     if template.archived_at is None:
         template.archived_at = datetime.now(timezone.utc)
         await session.commit()
+        forget(code)
     return template
 
 
@@ -98,6 +105,7 @@ async def restore_template(session: AsyncSession, code: str) -> Template:
     if template.archived_at is not None:
         template.archived_at = None
         await session.commit()
+        forget(code)
     return template
 
 
@@ -250,6 +258,92 @@ async def get_current_version(session: AsyncSession, code: str) -> TemplateVersi
     return row
 
 
+# --- resolution for the render path ----------------------------------------
+#
+# Rendering by code costs two queries: find the template, find its current
+# version. Nothing about that is slow, and at one replica it disappears next to
+# the render itself. At twenty replicas against one database it is the query
+# load nobody budgeted for, and it is pure repetition — the answer changes only
+# when somebody publishes.
+
+
+@dataclass(frozen=True, slots=True)
+class RenderTarget:
+    """What a render needs, detached from the session that read it.
+
+    Deliberately not the ORM row. A TemplateVersion belongs to the session that
+    loaded it; hold one past that session and the next attribute read tries to
+    refresh itself from a connection that is gone, which in async SQLAlchemy
+    arrives as MissingGreenlet in the middle of somebody's render.
+    """
+
+    version_id: int
+    version: int
+    html: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Unavailable:
+    """A negative answer worth remembering. A consumer configured with a code
+    that was never published — a typo in a deployment, say — otherwise spends
+    two queries per request forever, and those are exactly the requests nobody
+    is watching."""
+
+    archived: bool
+    message: str
+
+
+def _target(row: TemplateVersion) -> RenderTarget:
+    return RenderTarget(version_id=row.id, version=row.version, html=row.html_content)
+
+
+def _remember(key: tuple, value: RenderTarget | _Unavailable) -> None:
+    text = value.html if isinstance(value, RenderTarget) else value.message
+    cache.TARGETS.put(key, value, size=sys.getsizeof(text))
+
+
+def forget(code: str) -> None:
+    """Drop what this replica remembers about a code. Called from every place
+    the pointer moves, so the replica that made the change is never the one
+    still serving the old answer."""
+    cache.TARGETS.invalidate(("current", code))
+
+
+async def resolve_current(session: AsyncSession, code: str) -> RenderTarget:
+    """The current version's content — rendering by code."""
+    key = ("current", code)
+    hit = cache.TARGETS.get(key)
+    if hit is None:
+        try:
+            hit = _target(await get_current_version(session, code))
+        except ArchivedError as exc:
+            hit = _Unavailable(archived=True, message=str(exc))
+        except NotFoundError as exc:
+            hit = _Unavailable(archived=False, message=str(exc))
+        _remember(key, hit)
+    if isinstance(hit, _Unavailable):
+        raise (ArchivedError if hit.archived else NotFoundError)(hit.message)
+    return hit
+
+
+async def resolve_pinned(session: AsyncSession, code: str, version: int) -> RenderTarget:
+    """A pinned version's content.
+
+    A published version is immutable, so this entry can never be wrong about
+    what it holds; it expires anyway for the reason the compiled-template cache
+    hashes its source — a process can outlive the database it read from.
+
+    Misses are not remembered here. A 404 is a caller pinning a version that
+    does not exist *yet*, and publishing it should not have to wait out a TTL.
+    """
+    key = ("pinned", code, version)
+    hit = cache.TARGETS.get(key)
+    if hit is None:
+        hit = _target(await get_version(session, code, version))
+        _remember(key, hit)
+    return hit
+
+
 async def publish_draft(session: AsyncSession, code: str, draft_id: int) -> TemplateVersion:
     """Turn a draft into the current version.
 
@@ -297,6 +391,7 @@ async def publish_draft(session: AsyncSession, code: str, draft_id: int) -> Temp
             row.status = VersionStatus.published
             await session.commit()
             await session.refresh(row)
+            forget(code)
             return row
         except IntegrityError:
             await session.rollback()
@@ -327,4 +422,5 @@ async def set_current_version(session: AsyncSession, code: str, version: int) ->
     except IntegrityError:
         await session.rollback()
         raise ConflictError("Concurrent publish detected, retry the request")
+    forget(code)
     return target

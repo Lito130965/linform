@@ -8,7 +8,7 @@ from jinja2 import StrictUndefined, TemplateSyntaxError, Undefined, meta
 from jinja2.exceptions import SecurityError, UndefinedError
 from jinja2.sandbox import SandboxedEnvironment
 
-from app.services import barcodes
+from app.services import barcodes, cache
 
 
 class TemplateRenderError(Exception):
@@ -65,23 +65,17 @@ def validate_template(template_source: str) -> None:
 # So the source itself is part of the key; a colliding id simply misses the
 # cache instead of rendering somebody else's document. (Found by the suite: a
 # runaway-template test poisoned the cache for every later test that rendered
-# version 1.) Bounded so ad-hoc churn can't grow it unboundedly.
-_MAX_CACHED = 256
-_compiled_cache: dict[tuple[int, bool, int], object] = {}
-
-
+# version 1.)
 def render_version_html(version_id: int, template_source: str, data: dict, *, strict: bool = True) -> str:
     key = (version_id, strict, hash(template_source))
-    template = _compiled_cache.get(key)
+    template = cache.COMPILED.get(key)
     if template is None:
         env = _make_environment(strict)
         try:
             template = env.from_string(template_source)
         except TemplateSyntaxError as exc:
             raise TemplateRenderError(f"Template syntax error at line {exc.lineno}: {exc.message}") from exc
-        if len(_compiled_cache) >= _MAX_CACHED:
-            _compiled_cache.pop(next(iter(_compiled_cache)))
-        _compiled_cache[key] = template
+        cache.COMPILED.put(key, template, size=0)
     try:
         return template.render(**data)
     except UndefinedError as exc:

@@ -38,12 +38,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Examples gallery**: six showcase templates, openable in a scratch editor
   that never saves.
 - **Page-numbers preset** built on CSS counters.
+- **Template archiving.** `DELETE /api/templates/{code}` stops rendering by code
+  with `410` while pinned versions keep working — that promise was made when the
+  version was published — and `restore` brings it back.
+- **Pagination** on the list endpoints, with the total in `X-Total-Count`.
+- **A committed OpenAPI snapshot** (`docs/openapi.json`), checked in CI, so an
+  API change arrives in a reviewable diff rather than in a client's incident.
+- **Pinned Python dependencies** (`constraints.txt`), applied in CI, in the
+  image and in the documented local install.
+- **Caching in the render path.** Assets and compiled templates are keyed by
+  content and cached indefinitely; what a template code currently resolves to
+  carries a short TTL and is dropped immediately by the replica that publishes
+  or rolls back. A warm render touches no database at all.
 - Documentation: [DECISIONS.md](docs/DECISIONS.md),
   [MANUAL-CHECKS.md](docs/MANUAL-CHECKS.md), [SECURITY.md](SECURITY.md),
   [CONTRIBUTING.md](CONTRIBUTING.md), `.env.example`, and a measured
   Performance section.
 
 ### Changed
+
+- **A draft is not a version.** Version numbers are minted at publication
+  instead of on save. A draft has no number, can be edited and deleted, and is
+  rejected by every render path; a template may hold several. The API separates
+  `/drafts` from `/versions` accordingly — rebuilt rather than patched, since
+  there are no consumers to keep compatible yet.
 
 - **Render backpressure**: past the in-flight ceiling the service answers `429`
   with `Retry-After` instead of queueing without bound.
@@ -56,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An unpublished draft was renderable through the version-pinning endpoint by
+  guessing its number — `404` by code, `200` by pin.
+- The asset cache was bounded by entry count rather than by bytes: sixty-four
+  large assets, base64-encoded, is hundreds of megabytes per replica.
+- Both in-process caches evicted the oldest entry rather than the least recently
+  used, so one-off traffic could push out the template every render needs.
 - The compiled-version cache was keyed by a database id alone, so a process
   outliving its database (a restored backup, a repointed instance) could render
   a different template under the same id.

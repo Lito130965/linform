@@ -245,6 +245,9 @@ template code, so scraping reveals which forms a deployment runs.
 | `linform_render_rejected_total` | counter | shed at the ceiling — the 429s |
 | `linform_render_timeout_total` | counter | abandoned at the hard timeout — the 504s |
 | `linform_login_failed_total` | counter | label `reason`; the reason is a metric, never part of the 401 |
+| `linform_cache_hits_total` / `_misses_total` | counter | label `cache`; a TTL expiry counts as a miss, so the ratio is honest |
+| `linform_cache_bytes` / `_entries` | gauge | label `cache`; what the caches are holding right now |
+| `linform_cache_evictions_total` | counter | label `cache`; climbing steadily means the budget is smaller than the working set |
 
 Ad-hoc renders share a single `<ad-hoc>` label instead of minting a series per
 request.
@@ -295,6 +298,42 @@ Scaling levers, in the order worth reaching for: raise
 queueing, and run more replicas — the database invariants are built for that
 (see the concurrency tests). A client rendering in bulk should honour
 `Retry-After`; retry and batching are its job, by design.
+
+### Caching
+
+Caching does not make a render faster — the PDF engine is the cost, and it is
+unchanged. What it removes is the database work around the render, which is what
+stops the shared database becoming the ceiling once replicas multiply.
+
+Statements issued per render, counted by the suite rather than estimated:
+
+| | first render | every render after |
+|---|---:|---:|
+| template with no assets | 2 | **0** |
+| template with one asset | 3 | **0** |
+
+A warm render touches no database at all, so it does not take a connection from
+the pool either. The arithmetic that follows: twenty replicas serving 1000
+renders a second used to put ~3000 queries a second on one database, a third of
+them pulling the same logo blob out again. Now the steady-state cost is one
+lookup per template per replica per TTL — ten a second at the default — and it
+no longer grows with traffic.
+
+What is cached, and for how long, follows from how the key is formed
+(`app/services/cache.py`):
+
+- **Assets and compiled templates never expire.** They are addressed by the
+  hash of their content, so a hit cannot be wrong.
+- **"Which version does this code serve"** is a pointer, and pointers move, so
+  it expires after `LINFORM_TEMPLATE_CACHE_TTL_SECONDS` (default 2). The process
+  that publishes or rolls back drops its own entry immediately, so with one
+  process — which is what the shipped container runs — the cache is never stale
+  at all. Add processes, whether replicas or `uvicorn --workers`, and the TTL
+  becomes the bound on how long a rollback takes to reach all of them.
+
+Set `LINFORM_TEMPLATE_CACHE_TTL_SECONDS=0` to switch it off and resolve every
+render against the database. `linform_cache_hits_total` and
+`linform_cache_misses_total` report whether any of this is earning its memory.
 
 ## Golden PDF tests
 
@@ -430,6 +469,9 @@ and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
 | `LINFORM_RENDER_MAX_CONCURRENCY` | `0` (→ workers × 2) | In-flight ceiling; over it, renders get `429 Retry-After` |
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |
+| `LINFORM_TEMPLATE_CACHE_TTL_SECONDS` | `2` | How long another replica may serve the previous current version after a rollback (0 = no caching) |
+| `LINFORM_TEMPLATE_CACHE_MB` | `32` | Memory budget for resolved template versions |
+| `LINFORM_ASSET_CACHE_MB` | `64` | Memory budget for assets inlined into renders; content-addressed, so never stale |
 | `LINFORM_ALLOW_EXTERNAL_URLS` | `false` | Allow http(s) resources in templates |
 | `LINFORM_ALLOWED_URL_HOSTS` | `[]` | Host allowlist when external URLs are on |
 | `LINFORM_AI_API_KEY` | *(empty — assistant off)* | BYOK key for an OpenAI-compatible API; stays server-side |

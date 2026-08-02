@@ -22,7 +22,7 @@ from app.routers import (
     render,
     templates,
 )
-from app.services import accounts
+from app.services import accounts, cache
 from app.services.renderer import WeasyPrintRenderer
 
 log = logging.getLogger("linform.main")
@@ -32,6 +32,7 @@ log = logging.getLogger("linform.main")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(json_logs=settings.json_logs, level=settings.log_level)
+    cache.configure(settings)
     app.state.renderer = WeasyPrintRenderer(
         max_workers=settings.render_max_workers,
         timeout_seconds=settings.render_timeout_seconds,
