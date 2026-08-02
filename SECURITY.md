@@ -45,10 +45,13 @@ not match your situation, run separate instances.
 
 Stated plainly, because an unlisted gap reads as an overlooked one:
 
-- **No deployment role split yet.** Every instance mounts the management API as
-  well as the render API. A render-only token cannot change templates, but the
-  endpoints are still there. Until that is separated, keep the editor on an
-  internal network.
+- **A single instance mounts everything, by default.** `LINFORM_ROLE=all` is
+  the default and carries both the management API and the render API; a
+  render-only token cannot change templates, but the endpoints are there to
+  reach. Splitting is opt-in: `LINFORM_ROLE=render` builds a process with no
+  management API and no editor bundle at all (see "Deployment roles" in the
+  README). Worth doing when render nodes are reachable from a wider network
+  than the editor.
 - **No per-template or per-directory permissions.** Directories are
   organisational only.
 - **No audit log.** Version authorship is recorded; who *read* what is not.
@@ -69,7 +72,9 @@ Stated plainly, because an unlisted gap reads as an overlooked one:
    static tokens. Without either, **authentication is off**.
 2. Give consuming applications a **render** key, never the admin token.
 3. Terminate TLS in front of the service; it speaks plain HTTP.
-4. Keep the editor off the public internet until the role split lands.
+4. Keep the editor off the public internet. If consuming applications reach the
+   service from somewhere wider, run their nodes with `LINFORM_ROLE=render`, so
+   the management API is not merely refused there — it is absent.
 5. Leave `LINFORM_ALLOW_EXTERNAL_URLS` off unless you need it, and pin
    `LINFORM_ALLOWED_URL_HOSTS` when you do.
 6. Back up the database — it holds the templates *and* the assets.

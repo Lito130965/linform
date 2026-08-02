@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Examples gallery**: six showcase templates, openable in a scratch editor
   that never saves.
 - **Page-numbers preset** built on CSS counters.
+- **Deployment roles.** `LINFORM_ROLE=render` builds a process with no
+  management API and no editor bundle — the routes are absent rather than
+  refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
+  endpoints. `docker-compose.roles.yml` runs the split topology, and
+  `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
 - **Template archiving.** `DELETE /api/templates/{code}` stops rendering by code
   with `410` while pinned versions keep working — that promise was made when the
   version was published — and `restore` brings it back.
@@ -74,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Concurrent migrations were unserialised.** Every container runs `alembic
+  upgrade head` on startup, so replicas starting together read the same current
+  revision and raced to apply the next one. Migrations now take a PostgreSQL
+  advisory lock, and CI runs four upgrades at once to prove it.
 - An unpublished draft was renderable through the version-pinning endpoint by
   guessing its number — `404` by code, `200` by pin.
 - The asset cache was bounded by entry count rather than by bytes: sixty-four

@@ -19,7 +19,12 @@ from app.services.template_engine import (
 )
 from app.services.versioning import ArchivedError, NotFoundError
 
+# Two routers, because a deployment may want only one of them. `router` is what
+# the editor needs — render the markup I am holding, tell me its placeholders.
+# `stored_router` is the consuming application's integration surface: a code, a
+# payload, a PDF. A node serving one audience does not carry the other's routes.
 router = APIRouter(prefix="/api", tags=["render"])
+stored_router = APIRouter(prefix="/api", tags=["render"])
 
 
 def get_renderer(request: Request) -> PdfRenderer:
@@ -118,7 +123,7 @@ async def _render_version(
     )
 
 
-@router.post("/render/{code}", dependencies=[Depends(require_render)])
+@stored_router.post("/render/{code}", dependencies=[Depends(require_render)])
 async def render_published(
     code: str,
     data: dict = Body(default_factory=dict),
@@ -141,7 +146,7 @@ async def render_published(
     return await _render_version(target, data, session, renderer, settings, code)
 
 
-@router.post("/render/{code}/versions/{version}", dependencies=[Depends(require_render)])
+@stored_router.post("/render/{code}/versions/{version}", dependencies=[Depends(require_render)])
 async def render_pinned(
     code: str,
     version: int,
