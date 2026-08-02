@@ -49,6 +49,25 @@ jobs:
         # An API change made in passing is invisible in a router diff; the
         # snapshot puts it where a reviewer has to agree with it.
         run: python -m scripts.openapi_snapshot --check
+      - name: Concurrent migrations are serialised
+        # Replicas start together and every container runs `alembic upgrade
+        # head`. Without the advisory lock they race to apply the same revision;
+        # this proves the lock rather than trusting the comment next to it.
+        env:
+          LINFORM_DATABASE_URL: "postgresql+asyncpg://linform:linform@localhost:5432/linform_concurrent"
+        run: |
+          PGPASSWORD=linform createdb -h localhost -U linform linform_concurrent
+          pids=""
+          for _ in 1 2 3 4; do
+            alembic upgrade head &
+            pids="$pids $!"
+          done
+          failed=0
+          for p in $pids; do wait "$p" || failed=1; done
+          [ "$failed" = "0" ] || { echo "a concurrent migration run failed"; exit 1; }
+          alembic current | grep -q "(head)" || { echo "not at head after the race"; exit 1; }
+          alembic downgrade base
+
       - name: Migrations are reversible
         # Every revision ships a downgrade(); running one proves it. Without
         # this the rollback path is only ever exercised during an incident.
@@ -125,6 +144,12 @@ jobs:
         env:
           E2E_IN_CONTAINER: "1" # browsers are on the runner already
         run: ./run.sh --no-build
+      - name: A split, multi-replica deployment holds up
+        # Reuses the image built above. Checks what only exists once there is
+        # more than one process: concurrent migrations, a render node with no
+        # management API, and how long a rollback takes to reach every replica.
+        run: ./scripts/verify-scale.sh 3
+
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v4

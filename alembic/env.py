@@ -25,7 +25,22 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
+# Any constant works as long as every process uses the same one; this is
+# "linf" in ASCII, read as a number, so it is recognisable in pg_locks.
+MIGRATION_LOCK_ID = 0x6C696E66
+
+
 def _run_sync_migrations(connection) -> None:
+    if connection.dialect.name == "postgresql":
+        # Replicas start together, and the entrypoint of each runs `alembic
+        # upgrade head`. Without a lock they read the same current revision and
+        # race to apply the next one: deadlocks on DDL if you are lucky, a data
+        # migration applied twice if you are not. The lock is session-scoped and
+        # released when this connection closes, a few lines below in the caller.
+        #
+        # Taken BEFORE configure(), so a process that waited here re-reads
+        # alembic_version afterwards and finds the work already done.
+        connection.exec_driver_sql(f"SELECT pg_advisory_lock({MIGRATION_LOCK_ID})")
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()

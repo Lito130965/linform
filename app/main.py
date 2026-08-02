@@ -2,13 +2,13 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.core import metrics
 from app.core.auth import require_render
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.db import get_session_factory
 from app.core.headers import SecurityHeadersMiddleware
 from app.core.logging import RequestLogMiddleware, configure_logging
@@ -51,30 +51,22 @@ async def lifespan(app: FastAPI):
     metrics.render_concurrency_limit.set_function(
         lambda: getattr(getattr(app.state, "renderer", None), "concurrency_limit", 0)
     )
-    # Sync the env-defined superuser into the database (no-op if unset).
-    async with get_session_factory()() as session:
-        await accounts.ensure_superuser(session, settings)
+    # Sync the env-defined superuser into the database (no-op if unset). A
+    # render node has no login to bootstrap and no admin API to reach it with.
+    if getattr(app.state, "role", "all") != "render":
+        async with get_session_factory()() as session:
+            await accounts.ensure_superuser(session, settings)
+    log.info("serving role %r", getattr(app.state, "role", "all"))
     yield
     app.state.renderer.shutdown()
 
 
-app = FastAPI(title="Linform", version="0.1.0", lifespan=lifespan)
-# Order matters: the request-id middleware is added last so it runs FIRST, and
-# every log line produced while serving — including one written by the security
-# middleware — carries the id.
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RequestLogMiddleware)
-app.include_router(render.router)
-app.include_router(templates.router)
-app.include_router(directories.router)
-app.include_router(assets.router)
-app.include_router(assistant.router)
-app.include_router(auth.router)
-app.include_router(admin.router)
-app.include_router(examples.router)
+# Operational endpoints: every node has them, whatever it is for. An
+# orchestrator should not have to know a container's role to probe it.
+ops = APIRouter()
 
 
-@app.get("/health")
+@ops.get("/health")
 async def health() -> dict:
     """Liveness: is this process running? Deliberately checks NOTHING external —
     a health probe that fails when the database blips would have the
@@ -83,7 +75,7 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/ready")
+@ops.get("/ready")
 async def ready(response: Response, request: Request) -> dict:
     """Readiness: can this instance actually serve a request right now? Checks
     the database and the render pool, and answers 503 when either is gone so a
@@ -108,7 +100,7 @@ async def ready(response: Response, request: Request) -> dict:
     return {"status": "ready" if ok else "not ready", "checks": checks}
 
 
-@app.get("/metrics")
+@ops.get("/metrics")
 async def prometheus_metrics(
     settings=Depends(get_settings), _=Depends(require_render)
 ) -> Response:
@@ -125,8 +117,46 @@ async def prometheus_metrics(
     return Response(content=payload, media_type=content_type)
 
 
-# Editor SPA (built by the Dockerfile's node stage). Mounted last so API
-# routes take precedence; absent in dev where Vite serves the frontend.
-_static_dir = Path(__file__).parent / "static"
-if _static_dir.is_dir():
-    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="ui")
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Build the application for one deployment role.
+
+    Which routes exist is decided here rather than by a permission check layered
+    on top. A render node does not refuse the management API — it does not have
+    one, so there is nothing to misconfigure and nothing for a stolen credential
+    to reach.
+    """
+    settings = settings or get_settings()
+    app = FastAPI(title="Linform", version="0.1.0", lifespan=lifespan)
+    app.state.role = settings.role
+    # Order matters: the request-id middleware is added last so it runs FIRST,
+    # and every log line produced while serving — including one written by the
+    # security middleware — carries the id.
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestLogMiddleware)
+
+    # Rendering markup the caller is already holding: the editor's live preview,
+    # and a perfectly reasonable way to use the service without storing anything.
+    app.include_router(render.router)
+    if settings.role in ("all", "render"):
+        # The integration surface: a stable code, a payload, a PDF.
+        app.include_router(render.stored_router)
+    if settings.role in ("all", "editor"):
+        app.include_router(templates.router)
+        app.include_router(directories.router)
+        app.include_router(assets.router)
+        app.include_router(assistant.router)
+        app.include_router(auth.router)
+        app.include_router(admin.router)
+        app.include_router(examples.router)
+    app.include_router(ops)
+
+    # Editor SPA (built by the Dockerfile's node stage). Mounted last so API
+    # routes take precedence; absent in dev where Vite serves the frontend, and
+    # on a render node, which has no management API for it to call.
+    static_dir = Path(__file__).parent / "static"
+    if settings.role in ("all", "editor") and static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")
+    return app
+
+
+app = create_app()

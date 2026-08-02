@@ -1,0 +1,80 @@
+# Split deployment: editor nodes for people, render nodes for consuming
+# applications. The plain docker-compose.yml runs one container that does both,
+# which is the right shape until traffic or security review says otherwise.
+#
+#   docker compose -f docker-compose.roles.yml up -d --build --scale render=3
+#   scripts/verify-scale.sh          # checks that the above actually holds up
+#
+# What the split buys: a render node has no management API to reach. Not
+# "refuses" — does not have. The editor node keeps the UI and the templates, and
+# is not part of the render path for consuming applications.
+#
+# Render replicas deliberately have no fixed host port, because --scale cannot
+# assign the same one to three containers. In a real deployment they sit behind
+# a load balancer; to reach one directly, ask compose where it landed:
+#
+#   docker compose -f docker-compose.roles.yml port --index 2 render 8000
+
+services:
+  editor:
+    build: .
+    image: linform:latest
+    restart: unless-stopped
+    ports:
+      - "${LINFORM_PORT:-8100}:8000"
+    environment:
+      LINFORM_ROLE: editor
+      LINFORM_DATABASE_URL: "postgresql+asyncpg://linform:${LINFORM_DB_PASSWORD:-linform}@db:5432/linform"
+      LINFORM_ADMIN_TOKEN: "${LINFORM_ADMIN_TOKEN:-}"
+      LINFORM_SUPERUSER: "${LINFORM_SUPERUSER:-}"
+      LINFORM_SUPERUSER_PASSWORD: "${LINFORM_SUPERUSER_PASSWORD:-}"
+      LINFORM_JSON_LOGS: "${LINFORM_JSON_LOGS:-false}"
+      LINFORM_METRICS_ENABLED: "${LINFORM_METRICS_ENABLED:-false}"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  render:
+    image: linform:latest
+    restart: unless-stopped
+    ports:
+      - "8000"
+    environment:
+      LINFORM_ROLE: render
+      LINFORM_DATABASE_URL: "postgresql+asyncpg://linform:${LINFORM_DB_PASSWORD:-linform}@db:5432/linform"
+      # Only the render credential: this node has nothing else to authorise.
+      LINFORM_RENDER_TOKEN: "${LINFORM_RENDER_TOKEN:-}"
+      # How long this replica may keep serving the version a code resolved to
+      # after somebody rolls back on the editor node. It is the one number the
+      # split introduces, so it is spelled out rather than left at its default.
+      LINFORM_TEMPLATE_CACHE_TTL_SECONDS: "${LINFORM_TEMPLATE_CACHE_TTL_SECONDS:-2}"
+      LINFORM_RENDER_MAX_WORKERS: "${LINFORM_RENDER_MAX_WORKERS:-2}"
+      LINFORM_JSON_LOGS: "${LINFORM_JSON_LOGS:-false}"
+      LINFORM_METRICS_ENABLED: "${LINFORM_METRICS_ENABLED:-false}"
+    depends_on:
+      db:
+        condition: service_healthy
+      editor:
+        # Not a hard dependency in production — every container migrates under
+        # an advisory lock, so any of them may go first. Ordering here just
+        # keeps the logs of a demo run readable.
+        condition: service_started
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: linform
+      POSTGRES_PASSWORD: "${LINFORM_DB_PASSWORD:-linform}"
+      POSTGRES_DB: linform
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U linform -d linform"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - linform_pgdata:/var/lib/postgresql/data
+
+volumes:
+  linform_pgdata:

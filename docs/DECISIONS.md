@@ -269,3 +269,36 @@ perform it, and a template's first render on each replica still pays full
 price. Negative answers are remembered too, so a code created outside this
 service's API — straight into the database — stays a 404 until the entry ages
 out. Setting the TTL to 0 turns all of it off.
+
+---
+
+## 9. Roles remove routes, they do not guard them
+
+**Context.** Render nodes face consuming applications and are the ones that get
+scaled and exposed. They also carried the template management API, the account
+administration API and the editor bundle, all reachable with the right
+credential — or with a bug in how credentials are checked.
+
+**Decision.** `LINFORM_ROLE` decides which routers are mounted when the process
+starts. `render` mounts the render endpoints and the probes, and nothing else.
+`editor` mounts management, the UI and ad-hoc rendering, but not the consumer
+render endpoints. `all` is the default and mounts everything.
+
+**Why.** An authorisation check is code that can be wrong: a missing dependency
+on one route, a role comparison that reads the wrong field, a new endpoint added
+without one. An absent route is not code. The role split therefore reduces the
+attack surface of the exposed node to the two things it is for, and no
+credential leak or authorisation bug can extend it.
+
+The editor losing the consumer render endpoints is the same argument pointed the
+other way. Leaving them on would work, and would let a consuming application be
+configured against the editor node by accident — putting the node nobody scales,
+the one holding the sessions and the admin API, into the render path.
+
+**Cost.** A role is chosen at startup, so changing it is a restart, and a
+deployment that gets it wrong fails as a 404 rather than as a clear message.
+Splitting also means two things to deploy and a load balancer in front of the
+render nodes; `all` remains the default precisely because most installations
+should not pay that. And every container still migrates on startup, which is why
+migrations take an advisory lock — the split makes concurrent startup normal
+rather than exceptional.
