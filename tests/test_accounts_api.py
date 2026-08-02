@@ -128,11 +128,14 @@ def test_saved_version_records_the_signed_in_author(auth_client):
     )
     ed = _login(auth_client, "anna", "editorpass1").json()["token"]
     auth_client.post("/api/templates", headers=_auth(ed), json={"code": "inv", "name": "Inv"})
-    auth_client.put(
-        "/api/templates/inv",
+    draft = auth_client.post(
+        "/api/templates/inv/drafts",
         headers=_auth(ed),
         json={"html_content": "<p>{{ n }}</p>", "comment": "first"},
-    )
+    ).json()
+    assert draft["created_by"] == "anna"
+    # And it survives publication onto the version that ships.
+    auth_client.post(f"/api/templates/inv/drafts/{draft['id']}/publish", headers=_auth(ed))
     detail = auth_client.get("/api/templates/inv", headers=_auth(ed)).json()
     assert detail["versions"][0]["created_by"] == "anna"
 
@@ -209,9 +212,8 @@ def test_expired_session_is_rejected_and_swept(auth_client):
 
     async def scenario():
         async with auth_client.db_factory() as session:
-            user = (
-                await accounts.list_users(session)
-            )[0]
+            users, _total = await accounts.list_users(session)
+            user = users[0]
             assert user.role == Role.superuser
             token = "expired-token"
             session.add(

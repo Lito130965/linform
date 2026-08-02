@@ -171,8 +171,10 @@ def test_metrics_expose_the_render_series(metrics_client):
 
 def test_a_named_template_gets_its_own_series(metrics_client):
     metrics_client.post("/api/templates", json={"code": "invoice-m", "name": "Invoice"})
-    metrics_client.put("/api/templates/invoice-m", json={"html_content": "<p>{{ x }}</p>"})
-    metrics_client.post("/api/templates/invoice-m/publish/1")
+    draft = metrics_client.post(
+        "/api/templates/invoice-m/drafts", json={"html_content": "<p>{{ x }}</p>"}
+    ).json()
+    metrics_client.post(f"/api/templates/invoice-m/drafts/{draft['id']}/publish")
     metrics_client.post("/api/render/invoice-m", json={"x": 1})
 
     body = metrics_client.get("/metrics").text

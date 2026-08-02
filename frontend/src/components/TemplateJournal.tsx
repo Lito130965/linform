@@ -61,7 +61,9 @@ export default function TemplateJournal({ onOpen }: { onOpen: (code: string) => 
       const c = code.trim()
       await api.createTemplate(c, name.trim() || c, targetDir)
       if (pendingImport) {
-        await api.saveVersion(c, pendingImport.html, `Imported from ${pendingImport.filename}`)
+        // An import starts a draft, not a published version: the conversion
+        // needs reviewing before any consuming application can render it.
+        await api.createDraft(c, pendingImport.html, `Imported from ${pendingImport.filename}`)
       }
       cancelCreate()
       reload()

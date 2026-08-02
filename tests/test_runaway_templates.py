@@ -37,11 +37,11 @@ def test_runaway_range_is_a_client_error_not_a_server_error(db_client):
 def test_a_stored_template_with_a_runaway_loop_fails_the_same_way(db_client):
     db_client.post("/api/templates", json={"code": "runaway", "name": "Runaway"})
     # It compiles fine — the refusal happens at render time, with real data.
-    created = db_client.put(
-        "/api/templates/runaway", json={"html_content": RUNAWAY, "comment": "boom"}
+    created = db_client.post(
+        "/api/templates/runaway/drafts", json={"html_content": RUNAWAY, "comment": "boom"}
     )
     assert created.status_code == 201
-    db_client.post("/api/templates/runaway/publish/1")
+    db_client.post(f"/api/templates/runaway/drafts/{created.json()['id']}/publish")
     resp = db_client.post("/api/render/runaway", json={})
     assert resp.status_code == 422
 

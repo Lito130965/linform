@@ -70,9 +70,13 @@ shipping label with QR/barcode, a fixed-layout certificate — live in
 | GET | `/api/templates` | List templates |
 | POST | `/api/templates` | Create a template |
 | GET | `/api/templates/{code}` | Template + version history |
-| PUT | `/api/templates/{code}` | Add a new **draft** version (never overwrites) |
-| POST | `/api/templates/{code}/publish/{v}` | Publish a version (publishing an older one = rollback) |
+| POST | `/api/templates/{code}/drafts` | Start a working copy (no version number) |
+| PUT | `/api/templates/{code}/drafts/{id}` | Edit a draft in place |
+| DELETE | `/api/templates/{code}/drafts/{id}` | Discard a draft |
+| POST | `/api/templates/{code}/drafts/{id}/publish` | Publish it: numbered, frozen, live |
+| POST | `/api/templates/{code}/versions/{v}/current` | Point consumers at a version (the rollback) |
 | GET | `/api/templates/{code}/versions/{v}` | Full version content |
+| DELETE | `/api/templates/{code}` | Archive (pinned versions keep rendering) |
 | GET | `/api/templates/{code}/placeholders` | Fields the template expects — the integration contract |
 | PUT | `/api/templates/{code}/directory` | File a template under a directory (or `null` for General) |
 | GET / POST | `/api/directories` | List / create organizational buckets (editor-side only) |
@@ -95,11 +99,22 @@ for consuming applications (render only, revocable one at a time). The static
 machine-to-machine use; with nothing configured at all, auth stays off for local
 dev.
 
-Versioning model: versions are **immutable**; exactly one version per template
-is published (enforced by the database, safe with any number of replicas);
-the consumer either renders "whatever is published" or pins an explicit
-version — deciding *which* documents pin *which* version is the consumer's
-business rule, kept out of this service on purpose.
+**A draft is not a version.** A draft is a working copy: no number, editable,
+deletable, and unreachable by any consuming application — not by template code,
+and not by pinning. A template can hold several at once.
+
+A version exists only once something is **published**. It is numbered then,
+which means a version number always refers to something a consumer could
+legitimately have rendered — there are no gaps for work that never shipped.
+Published versions are immutable, and exactly one is *current* (enforced by the
+database, so it holds with any number of replicas). Pointing that at an older
+version is the rollback; it mints no new number.
+
+A consumer either renders "whatever is current" or pins an explicit version.
+Deciding *which* documents pin *which* version is the consumer's business rule,
+kept out of this service on purpose. Archiving a template stops rendering by
+code (`410`) while pinned versions keep working, because that promise was made
+when the version was published.
 
 Assets follow the same philosophy: they are content-addressed
 (`asset://<sha256>`) and immutable — replacing a logo means uploading a new

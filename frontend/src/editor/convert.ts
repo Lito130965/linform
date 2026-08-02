@@ -1,5 +1,5 @@
 /**
- * Convert-existing: the plan's central authoring move — build a static example,
+ * Convert-existing, the central authoring move here — build a static example,
  * then mark it dynamic. These operate on the already-selected canvas node.
  *
  * "Make repeating" and "wrap conditional" are just the bridge's own marker

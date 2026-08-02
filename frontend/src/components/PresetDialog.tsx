@@ -12,7 +12,8 @@ import Modal from './Modal'
  *
  * Before inserting it runs detect() on the generated source and refuses,
  * with the reason, anything the bridge cannot represent: never a silent bad
- * insert (the plan's honest-detect criterion).
+ * insert: an unrepresentable construct is refused with its reason, never
+ * accepted and quietly mangled.
  */
 export default function PresetDialog({
   preset,

@@ -1,7 +1,7 @@
 /**
  * Hints for the preset dialog, mined from the editor's test JSON.
  *
- * The point (from the plan): stop making the author type array and field names
+ * The point: stop making the author type array and field names
  * from memory. If the test data has `items: [{name, price}, …]`, offer `items`
  * as the loop candidate and `name`/`price` as its columns — cheap to compute,
  * a large accuracy win over guessing.

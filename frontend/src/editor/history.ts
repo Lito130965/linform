@@ -1,6 +1,6 @@
 /** Undo/redo as snapshots of the exported body.
  *
- * The decision (recorded from the plan's 1.7): snapshots, not a command
+ * The decision: snapshots, not a command
  * stack. Templates measure 5–25KB, so a hundred steps is a couple of
  * megabytes at worst; a snapshot is trivially correct under ANY mutation —
  * including contenteditable typing, which is exactly where command stacks

@@ -2,7 +2,7 @@
 templates and mint the render API keys consuming applications authenticate with.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import Principal, require_superuser
@@ -27,8 +27,15 @@ router = APIRouter(
 # --- users -----------------------------------------------------------------
 
 @router.get("/users", response_model=list[UserOut])
-async def list_users(session: AsyncSession = Depends(get_session)):
-    return await accounts.list_users(session)
+async def list_users(
+    response: Response,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+):
+    rows, total = await accounts.list_users(session, limit=limit, offset=offset)
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 @router.post("/users", response_model=UserOut, status_code=201)
@@ -83,8 +90,15 @@ async def delete_user(
 # --- render API keys -------------------------------------------------------
 
 @router.get("/keys", response_model=list[ApiKeyOut])
-async def list_keys(session: AsyncSession = Depends(get_session)):
-    return await accounts.list_api_keys(session)
+async def list_keys(
+    response: Response,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+):
+    rows, total = await accounts.list_api_keys(session, limit=limit, offset=offset)
+    response.headers["X-Total-Count"] = str(total)
+    return rows
 
 
 @router.post("/keys", response_model=ApiKeyCreated, status_code=201)

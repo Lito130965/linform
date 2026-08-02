@@ -9,7 +9,7 @@ key creation), where the clear value is returned to the caller exactly once.
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,8 +62,14 @@ async def ensure_superuser(session: AsyncSession, settings: Settings) -> None:
 
 # --- users -----------------------------------------------------------------
 
-async def list_users(session: AsyncSession) -> list[User]:
-    return list((await session.execute(select(User).order_by(User.username))).scalars())
+async def list_users(
+    session: AsyncSession, *, limit: int | None = None, offset: int = 0
+) -> tuple[list[User], int]:
+    total = (await session.execute(select(func.count()).select_from(User))).scalar_one()
+    query = select(User).order_by(User.username).offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    return list((await session.execute(query)).scalars()), total
 
 
 async def get_user(session: AsyncSession, user_id: int) -> User | None:
@@ -227,10 +233,14 @@ async def close_session(session: AsyncSession, token: str) -> None:
 
 # --- API keys (render) -----------------------------------------------------
 
-async def list_api_keys(session: AsyncSession) -> list[ApiKey]:
-    return list(
-        (await session.execute(select(ApiKey).order_by(ApiKey.created_at))).scalars()
-    )
+async def list_api_keys(
+    session: AsyncSession, *, limit: int | None = None, offset: int = 0
+) -> tuple[list[ApiKey], int]:
+    total = (await session.execute(select(func.count()).select_from(ApiKey))).scalar_one()
+    query = select(ApiKey).order_by(ApiKey.created_at).offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    return list((await session.execute(query)).scalars()), total
 
 
 async def create_api_key(

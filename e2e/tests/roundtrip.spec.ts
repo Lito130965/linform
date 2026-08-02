@@ -5,12 +5,11 @@ import {
   enterVisual,
   exampleData,
   exampleHtml,
-  listVersions,
+  latestDraftHtml,
   normalizeBenign,
   openTemplate,
-  saveVersion,
+  saveDraft,
   uniqueCode,
-  versionHtml,
 } from './support'
 
 /**
@@ -44,11 +43,11 @@ test.describe('visual round trip', () => {
       await openTemplate(page, code)
       await enterVisual(page)
       await backToCode(page)
-      await saveVersion(page, 'visual visit, no edits')
+      await saveDraft(page, 'visual visit, no edits')
 
-      const versions = await listVersions(request, code)
-      expect(versions.length, 'the visit should have produced a second version').toBe(2)
-      const after = await versionHtml(request, code, 2)
+      // Saving lands in a draft: a visual visit is work in progress until
+      // somebody publishes it, which is exactly the point of the split.
+      const after = await latestDraftHtml(request, code)
 
       expect(
         normalizeBenign(after),
@@ -64,16 +63,16 @@ test.describe('visual round trip', () => {
       await openTemplate(page, code)
       await enterVisual(page)
       await backToCode(page)
-      await saveVersion(page, 'first visit')
-      const settled = await versionHtml(request, code, 2)
+      await saveDraft(page, 'first visit')
+      const settled = await latestDraftHtml(request, code)
 
       // Second visit over that form must be a no-op, byte for byte.
       await page.reload()
       await openTemplate(page, code)
       await enterVisual(page)
       await backToCode(page)
-      await saveVersion(page, 'second visit')
-      const again = await versionHtml(request, code, 3)
+      await saveDraft(page, 'second visit')
+      const again = await latestDraftHtml(request, code)
 
       expect(again, 'the template drifts a little further on every visit').toBe(settled)
     })
@@ -111,8 +110,8 @@ test('an edit in the canvas changes that text and nothing else', async ({ page, 
   await expect(heading).toContainText('EDITED')
 
   await backToCode(page)
-  await saveVersion(page, 'edited the heading')
-  const after = await versionHtml(request, code, 2)
+  await saveDraft(page, 'edited the heading')
+  const after = await latestDraftHtml(request, code)
 
   expect(after).toContain('EDITED')
   // Everything else survived: removing the insertion must return the document
@@ -130,9 +129,9 @@ test('a Jinja loop survives a visual visit intact', async ({ page, request }) =>
   await openTemplate(page, code)
   await enterVisual(page)
   await backToCode(page)
-  await saveVersion(page)
+  await saveDraft(page)
 
-  const after = await versionHtml(request, code, 2)
+  const after = await latestDraftHtml(request, code)
   // The constructs the bridge folds into attributes and must unfold again.
   expect(after).toContain('{% for item in items %}')
   expect(after).toContain('{% endfor %}')

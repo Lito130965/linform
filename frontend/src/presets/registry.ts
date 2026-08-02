@@ -6,7 +6,7 @@
  *
  * Presets are presentation only. Anything that is a data or business rule —
  * a total, a page number, a threshold like `if amount > 1000` — stays with the
- * consumer and is deliberately absent here (see the plan's exclusions).
+ * consumer and is deliberately absent here.
  *
  * A generator returns Jinja SOURCE. The caller inserts it raw in Code mode, or
  * `protect()`-ed in Visual — which keeps the two forms provably identical.
