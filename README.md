@@ -335,6 +335,38 @@ Set `LINFORM_TEMPLATE_CACHE_TTL_SECONDS=0` to switch it off and resolve every
 render against the database. `linform_cache_hits_total` and
 `linform_cache_misses_total` report whether any of this is earning its memory.
 
+## Deployment roles
+
+One container does everything, and that is the right shape until traffic or a
+security review says otherwise. `LINFORM_ROLE` splits it in two: **editor**
+nodes for people, **render** nodes for consuming applications. Which routes
+exist is decided at startup — a render node does not *refuse* the management
+API, it does not have one, so there is nothing to misconfigure and nothing for a
+stolen credential to reach.
+
+| | `all` (default) | `editor` | `render` |
+|---|:---:|:---:|:---:|
+| `POST /api/render` (markup you send) | ✓ | ✓ | ✓ |
+| `POST /api/render/{code}` and version pinning | ✓ | — | ✓ |
+| Templates, assets, directories, accounts, assistant | ✓ | ✓ | — |
+| Editor UI | ✓ | ✓ | — |
+| `/health`, `/ready`, `/metrics` | ✓ | ✓ | ✓ |
+
+The editor loses the consumer render endpoints deliberately: pointing a
+consuming application at the editor node works by accident, and quietly makes
+the one node nobody scales part of the render path.
+
+```bash
+docker compose -f docker-compose.roles.yml up -d --build --scale render=3
+scripts/verify-scale.sh 3
+```
+
+That script is the multi-replica check, and it runs in CI: several containers
+migrating one database at the same time (serialised by a PostgreSQL advisory
+lock, since every container runs `alembic upgrade head` on startup), a render
+node with no management API, every replica serving the same current version, and
+publish and rollback on the editor reaching all of them within the cache TTL.
+
 ## Golden PDF tests
 
 `tests/test_golden_pdfs.py` renders every example in `examples/` and checks the
@@ -456,6 +488,7 @@ and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 
 | Env variable | Default | Meaning |
 |---|---|---|
+| `LINFORM_ROLE` | `all` | `all`, `editor` or `render` — which half of the service this process serves (see Deployment roles) |
 | `LINFORM_RENDER_TOKEN` | *(empty)* | Bearer token for render endpoints only — give this to consuming applications |
 | `LINFORM_ADMIN_TOKEN` | *(empty)* | Bearer token for everything incl. template/asset management — the editor side |
 | `LINFORM_API_TOKEN` | *(empty)* | Legacy single token, counts as both roles. No tokens at all = auth disabled (dev) |
@@ -539,8 +572,8 @@ your network.
 - [x] Import a starting template from `.docx`
 - [x] Barcodes and QR codes from payload data
 - [x] Optional AI assistant (bring your own key)
-- [ ] Deployment role split (`editor` / `render`) so render nodes carry no management API
-- [ ] Verified multi-replica run (`--scale`)
+- [x] Deployment role split (`editor` / `render`) so render nodes carry no management API
+- [x] Verified multi-replica run (`--scale`), checked in CI
 
 ## License
 

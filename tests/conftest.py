@@ -51,6 +51,51 @@ class StubRenderer:
 
 
 @pytest.fixture()
+def client_for(monkeypatch, tmp_path):
+    """Build a client over a fresh database for a given deployment role.
+
+    A role decides which routers exist, and that is settled when the application
+    is built — so testing it means building one, not flipping a flag on the
+    running singleton.
+    """
+    from contextlib import ExitStack
+
+    from app.core.config import Settings
+    from app.main import create_app
+
+    monkeypatch.setattr("app.main.WeasyPrintRenderer", StubRenderer)
+    stack = ExitStack()
+    built = 0
+
+    def make(role: str = "all") -> TestClient:
+        nonlocal built
+        built += 1
+        engine = create_async_engine(
+            f"sqlite+aiosqlite:///{tmp_path / f'{role}-{built}.db'}", poolclass=NullPool
+        )
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def create_schema():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+        asyncio.run(create_schema())
+
+        async def override_session():
+            async with factory() as session:
+                yield session
+
+        service = create_app(Settings(role=role))
+        service.dependency_overrides[get_session] = override_session
+        client = stack.enter_context(TestClient(service))
+        client.db_factory = factory
+        return client
+
+    yield make
+    stack.close()
+
+
+@pytest.fixture()
 def db_client(monkeypatch, tmp_path):
     """TestClient over a fresh database, with the PDF engine stubbed out."""
     url = f"sqlite+aiosqlite:///{tmp_path / 'test.db'}"

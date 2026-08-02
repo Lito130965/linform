@@ -1,10 +1,18 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LINFORM_", env_file=".env")
+
+    # What this process is for. One box runs "all" and nothing changes; a split
+    # deployment runs editor nodes for people and render nodes for consuming
+    # applications, and each carries only the routes its audience needs. A
+    # render node has no management API to reach, whatever credential leaks.
+    # Typo'd values fail at startup rather than quietly serving everything.
+    role: Literal["all", "editor", "render"] = "all"
 
     # Service auth (empty everywhere = auth disabled, dev mode only).
     # api_token is the legacy single token and counts as both roles.
