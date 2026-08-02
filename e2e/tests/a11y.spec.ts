@@ -15,9 +15,9 @@ import { createTemplate, exampleHtml, openTemplate, uniqueCode, goToTab } from '
  * their markup, their colours — and failing our build over the contrast of
  * somebody's letterhead would be both wrong and unfixable from here.
  *
- * These run for real. They were written before the fixes landed and skipped
- * behind a flag, and removing that flag was the acceptance criterion for the
- * batch that added the labels, the focus outlines and the border contrast.
+ * These run for real. They were written before the accessible names, focus
+ * outlines and border contrast landed, and were skipped until they did —
+ * unskipping them was the point at which that work counted as finished.
  */
 
 const RULESET = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']
