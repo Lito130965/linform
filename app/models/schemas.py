@@ -54,11 +54,28 @@ class TemplateDirectoryUpdate(BaseModel):
     directory_id: int | None = Field(default=None, description="Target bucket, or null to uncategorize")
 
 
-class VersionCreate(BaseModel):
+class DraftWrite(BaseModel):
+    """Body for creating or replacing a draft. Authorship is taken from the
+    authenticated principal server-side, never from the request."""
+
     html_content: str = Field(min_length=1)
-    comment: str = Field(default="", max_length=2000, description="What changed, like a commit message")
-    # Authorship is taken from the authenticated principal server-side, never
-    # from the request, so a saved version records who really saved it.
+    comment: str = Field(default="", max_length=2000, description="A note to yourself")
+
+
+class DraftOut(BaseModel):
+    """A working copy. It has an id but no version number — a number is minted
+    at publication, so every number means something that was really published."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    comment: str
+    created_by: str
+    created_at: datetime
+
+
+class DraftDetailOut(DraftOut):
+    html_content: str
 
 
 class VersionOut(BaseModel):
@@ -81,11 +98,18 @@ class TemplateOut(BaseModel):
     code: str
     name: str
     directory_id: int | None = None
+    archived_at: datetime | None = None
     created_at: datetime
 
 
 class TemplateDetailOut(TemplateOut):
+    """Published history and working copies are separate lists on purpose: they
+    are different kinds of thing, and flattening them is what let an
+    unpublished draft look renderable."""
+
     versions: list[VersionOut]
+    drafts: list[DraftOut]
+    current_version: int | None = None
 
 
 # --- auth & accounts -------------------------------------------------------

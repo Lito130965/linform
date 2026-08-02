@@ -15,7 +15,7 @@ import base64
 import hashlib
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,15 +65,20 @@ async def get_asset(session: AsyncSession, sha256: str) -> Asset | None:
     ).scalar_one_or_none()
 
 
-async def list_assets(session: AsyncSession) -> list[Asset]:
-    rows = (
-        await session.execute(
-            select(
-                Asset.sha256, Asset.filename, Asset.mime_type, Asset.size, Asset.created_at
-            ).order_by(Asset.created_at.desc())
-        )
-    ).all()
-    return rows
+async def list_assets(
+    session: AsyncSession, *, limit: int | None = None, offset: int = 0
+):
+    """A page of asset metadata and the total. The blob column is deliberately
+    not selected: listing a hundred assets should not stream their bytes."""
+    total = (await session.execute(select(func.count()).select_from(Asset))).scalar_one()
+    query = (
+        select(Asset.sha256, Asset.filename, Asset.mime_type, Asset.size, Asset.created_at)
+        .order_by(Asset.created_at.desc())
+        .offset(offset)
+    )
+    if limit is not None:
+        query = query.limit(limit)
+    return (await session.execute(query)).all(), total
 
 
 async def inline_assets(session: AsyncSession, html: str) -> str:

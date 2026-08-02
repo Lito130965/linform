@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -32,7 +32,14 @@ async def upload_asset(file: UploadFile, session: AsyncSession = Depends(get_ses
 
 
 @router.get("", response_model=list[AssetOut], dependencies=[Depends(require_editor)])
-async def list_assets(session: AsyncSession = Depends(get_session)):
+async def list_assets(
+    response: Response,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+):
+    rows, total = await assets_service.list_assets(session, limit=limit, offset=offset)
+    response.headers["X-Total-Count"] = str(total)
     return [
         AssetOut(
             url=f"asset://{row.sha256}",
@@ -41,7 +48,7 @@ async def list_assets(session: AsyncSession = Depends(get_session)):
             mime_type=row.mime_type,
             size=row.size,
         )
-        for row in await assets_service.list_assets(session)
+        for row in rows
     ]
 
 

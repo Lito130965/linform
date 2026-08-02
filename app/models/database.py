@@ -142,6 +142,11 @@ class Template(Base):
     directory_id: Mapped[int | None] = mapped_column(
         ForeignKey("directories.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Archiving, not deletion: a consumer may still be pinning an old version
+    # of a template nobody edits any more, and reproducibility outranks tidiness.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     versions: Mapped[list["TemplateVersion"]] = relationship(
@@ -156,7 +161,12 @@ class TemplateVersion(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     template_id: Mapped[int] = mapped_column(ForeignKey("templates.id", ondelete="CASCADE"))
-    version: Mapped[int] = mapped_column(Integer)
+    # NULL while this row is a draft. A number is assigned at publication, so
+    # a version number always means "something a consumer could have rendered"
+    # — there are no gaps for work that never shipped. A template may hold
+    # several drafts at once; each is addressed by its id, and any of them can
+    # be edited, deleted or published independently.
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     html_content: Mapped[str] = mapped_column(Text)
     status: Mapped[VersionStatus] = mapped_column(
         Enum(VersionStatus, native_enum=False, length=20), default=VersionStatus.draft
@@ -168,11 +178,13 @@ class TemplateVersion(Base):
     template: Mapped[Template] = relationship(back_populates="versions")
 
     __table_args__ = (
-        # Versions are immutable and numbered per template; the constraint is
-        # also what resolves the concurrent-increment race (insert + retry).
+        # Published versions are immutable and numbered per template; the
+        # constraint is also what resolves the concurrent-increment race
+        # (insert + retry). Drafts carry NULL, and both engines treat NULLs as
+        # distinct in a unique constraint, so any number of them coexist.
         UniqueConstraint("template_id", "version", name="uq_version_per_template"),
-        # At most one published version per template, enforced by the database
-        # rather than by "there is only one pod" assumptions.
+        # At most one published version per template — the one consumers get.
+        # Enforced by the database rather than by "there is only one pod".
         Index(
             "uq_one_published_per_template",
             "template_id",

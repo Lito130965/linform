@@ -41,6 +41,10 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Run tests
         run: pytest -q
+      - name: API schema matches its snapshot
+        # An API change made in passing is invisible in a router diff; the
+        # snapshot puts it where a reviewer has to agree with it.
+        run: python -m scripts.openapi_snapshot --check
       - name: Migrations are reversible
         # Every revision ships a downgrade(); running one proves it. Without
         # this the rollback path is only ever exercised during an incident.

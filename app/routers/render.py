@@ -18,7 +18,7 @@ from app.services.template_engine import (
     render_html,
     render_version_html,
 )
-from app.services.versioning import NotFoundError
+from app.services.versioning import ArchivedError, NotFoundError
 
 router = APIRouter(prefix="/api", tags=["render"])
 
@@ -127,13 +127,18 @@ async def render_published(
     renderer: PdfRenderer = Depends(get_renderer),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    """The main integration endpoint: JSON in, PDF out, rendered with the
-    currently published version. Which version that is — the analyst decides
-    by publishing, the consumer's code never changes."""
+    """The main integration endpoint: JSON in, PDF out, rendered with whichever
+    version is current. Which one that is — the analyst decides by publishing;
+    the consumer's code never changes.
+
+    A template with only drafts has no current version and answers 404: work in
+    progress is not something a consuming application can reach."""
     try:
-        row = await versioning.get_published_version(session, code)
+        row = await versioning.get_current_version(session, code)
     except NotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except ArchivedError as exc:
+        raise HTTPException(status_code=410, detail=str(exc))
     return await _render_version(row, data, session, renderer, settings, code)
 
 
@@ -146,9 +151,10 @@ async def render_pinned(
     renderer: PdfRenderer = Depends(get_renderer),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    """Version pinning: render exactly this version, whatever is published.
-    Versions are immutable, so the result is reproducible forever. Which
-    documents pin which version is the consumer's business rule, not ours."""
+    """Version pinning: render exactly this version, whatever is current.
+    Published versions are immutable, so the result is reproducible forever —
+    including after the template is archived. Drafts have no number and cannot
+    be reached here at all."""
     try:
         row = await versioning.get_version(session, code, version)
     except NotFoundError as exc:
