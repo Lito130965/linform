@@ -74,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A DoS advisory in shipped frontend code.** `underscore`, pulled in by the
+  `.docx` importer, was locked at 1.13.1 — unbounded recursion in `_.flatten`
+  and `_.isEqual` on hostile input, reachable by uploading a crafted document.
+  Bumped to 1.13.8. CI now audits shipped dependencies as a blocking step and
+  build tooling as an advisory one, since only the first is in the image.
+
 - An unpublished draft was renderable through the version-pinning endpoint by
   guessing its number — `404` by code, `200` by pin.
 - The asset cache was bounded by entry count rather than by bytes: sixty-four
