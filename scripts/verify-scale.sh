@@ -59,14 +59,18 @@ version_served() { # url -> the version a render node answered with
     | tr -d '\r' | sed -n 's/^[Xx]-[Ll]inform-[Vv]ersion: //p'
 }
 
+# sh has no local variables: everything a function assigns is global. So each of
+# these uses a name of its own — sharing `i` with the caller's loop counter, as
+# an earlier version of this script did, resets it on every call and the caller
+# loops forever over its first item.
 wait_for_health() { # url, label
-  i=0
-  while [ "$i" -lt 60 ]; do
+  health_tries=0
+  while [ "$health_tries" -lt 60 ]; do
     if $CURL --max-time 3 -f "$1/health" >/dev/null 2>&1; then
-      echo "    $2 up after ${i}s"
+      echo "    $2 up after ${health_tries}s"
       return 0
     fi
-    i=$((i + 1))
+    health_tries=$((health_tries + 1))
     sleep 1
   done
   fail "$2 ($1) never became healthy"
@@ -83,34 +87,63 @@ EDITOR="http://localhost:${LINFORM_PORT:-8100}"
 wait_for_health "$EDITOR" "editor"
 
 RENDER_URLS=""
-i=1
-while [ "$i" -le "$REPLICAS" ]; do
-  hostport=$($COMPOSE port --index "$i" render 8000) || fail "replica $i has no published port"
-  url="http://localhost:${hostport##*:}"
-  wait_for_health "$url" "render replica $i"
-  RENDER_URLS="$RENDER_URLS $url"
-  i=$((i + 1))
+replica=1
+while [ "$replica" -le "$REPLICAS" ]; do
+  hostport=$($COMPOSE port --index "$replica" render 8000) \
+    || fail "replica $replica has no published port"
+  [ -n "$hostport" ] || fail "replica $replica reported no published port"
+  replica_url="http://localhost:${hostport##*:}"
+  wait_for_health "$replica_url" "render replica $replica"
+  RENDER_URLS="$RENDER_URLS $replica_url"
+  replica=$((replica + 1))
 done
+found=$(echo "$RENDER_URLS" | tr ' ' '\n' | grep -c 'http') || true
+[ "$found" -eq "$REPLICAS" ] || fail "expected $REPLICAS replica URLs, collected $found:$RENDER_URLS"
 echo "    up:$RENDER_URLS"
 # Every container ran `alembic upgrade head` against the same empty database a
 # moment ago. A container that lost that race exits, and the health wait above
 # is where that shows up — by name, with its logs.
 echo "==> concurrent migrations: all $((REPLICAS + 1)) containers came up"
 
+new_draft() { # html -> draft id
+  $CURL -X POST "$EDITOR/api/templates/$CODE/drafts" \
+    -H 'content-type: application/json' \
+    -d "{\"html_content\":\"$1\",\"comment\":\"scale check\"}" \
+    | sed -n 's/.*"id":\([0-9]*\).*/\1/p'
+}
+
+# Sets CONVERGED_IN rather than printing it, because a function that reports
+# through a command substitution runs in a SUBSHELL: fail() would exit that
+# subshell, the caller would carry on with an empty string, and a deployment
+# that never converged would leave the build green.
+converge() { # expected version
+  converge_waited=0
+  while [ "$converge_waited" -le "$DEADLINE" ]; do
+    converge_agreed=1
+    for check_url in $RENDER_URLS; do
+      [ "$(version_served "$check_url")" = "$1" ] || converge_agreed=0
+    done
+    if [ "$converge_agreed" = "1" ]; then
+      CONVERGED_IN=$converge_waited
+      return 0
+    fi
+    sleep 1
+    converge_waited=$((converge_waited + 1))
+  done
+  fail "replicas never converged on version $1 within ${DEADLINE}s"
+}
+
 echo "==> a render node carries no management API"
-for url in $RENDER_URLS; do
-  status=$(curl -s -o /dev/null -w '%{http_code}' "$url/api/templates")
-  [ "$status" = "404" ] || fail "$url answered $status for GET /api/templates"
-  status=$(curl -s -o /dev/null -w '%{http_code}' "$url/")
-  [ "$status" = "404" ] || fail "$url is serving the editor bundle ($status)"
+for node_url in $RENDER_URLS; do
+  status=$($CURL -o /dev/null -w '%{http_code}' "$node_url/api/templates")
+  [ "$status" = "404" ] || fail "$node_url answered $status for GET /api/templates"
+  status=$($CURL -o /dev/null -w '%{http_code}' "$node_url/")
+  [ "$status" = "404" ] || fail "$node_url is serving the editor bundle ($status)"
 done
 
 echo "==> publishing v1 on the editor"
 post "$EDITOR" "/api/templates" "{\"code\":\"$CODE\",\"name\":\"scale check\"}" >/dev/null
-draft=$(curl -s -X POST "$EDITOR/api/templates/$CODE/drafts" \
-  -H 'content-type: application/json' \
-  -d '{"html_content":"<p>v1 {{ who }}</p>","comment":"first"}' \
-  | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+draft=$(new_draft '<p>v1 {{ who }}</p>')
 [ -n "$draft" ] || fail "the editor did not return a draft id"
 status=$(post "$EDITOR" "/api/templates/$CODE/drafts/$draft/publish")
 [ "$status" = "200" ] || fail "publish answered $status"
@@ -120,41 +153,29 @@ status=$(post "$EDITOR" "/api/render/$CODE" '{"who":"x"}')
 [ "$status" = "404" ] || fail "the editor answered $status for a consumer render"
 
 echo "==> every replica serves v1"
-for url in $RENDER_URLS; do
-  served=$(version_served "$url")
-  [ "$served" = "1" ] || fail "$url served version '${served:-none}', expected 1"
+for node_url in $RENDER_URLS; do
+  served=$(version_served "$node_url")
+  [ "$served" = "1" ] || fail "$node_url served version '${served:-none}', expected 1"
 done
 
-converge() { # expected version -> seconds taken
-  waited=0
-  while [ "$waited" -le "$DEADLINE" ]; do
-    all_agree=1
-    for url in $RENDER_URLS; do
-      [ "$(version_served "$url")" = "$1" ] || all_agree=0
-    done
-    [ "$all_agree" = "1" ] && { echo "$waited"; return 0; }
-    sleep 1
-    waited=$((waited + 1))
-  done
-  fail "replicas never converged on version $1 within ${DEADLINE}s"
-}
-
 echo "==> publishing v2 on the editor, waiting for the replicas to follow"
-draft=$(curl -s -X POST "$EDITOR/api/templates/$CODE/drafts" \
-  -H 'content-type: application/json' \
-  -d '{"html_content":"<p>v2 {{ who }}</p>","comment":"second"}' \
-  | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
-post "$EDITOR" "/api/templates/$CODE/drafts/$draft/publish" >/dev/null
-echo "    all $REPLICAS replicas serving v2 after $(converge 2)s"
+draft=$(new_draft '<p>v2 {{ who }}</p>')
+[ -n "$draft" ] || fail "the editor did not return a draft id for v2"
+status=$(post "$EDITOR" "/api/templates/$CODE/drafts/$draft/publish")
+[ "$status" = "200" ] || fail "publishing v2 answered $status"
+converge 2
+echo "    all $REPLICAS replicas serving v2 after ${CONVERGED_IN}s"
 
 echo "==> rolling back to v1 — the operation the cache must not delay"
-post "$EDITOR" "/api/templates/$CODE/versions/1/current" >/dev/null
-echo "    all $REPLICAS replicas back on v1 after $(converge 1)s"
+status=$(post "$EDITOR" "/api/templates/$CODE/versions/1/current")
+[ "$status" = "200" ] || fail "rollback answered $status"
+converge 1
+echo "    all $REPLICAS replicas back on v1 after ${CONVERGED_IN}s"
 
 echo "==> a pinned version still renders on every replica"
-for url in $RENDER_URLS; do
-  status=$(post "$url" "/api/render/$CODE/versions/2" '{"who":"x"}')
-  [ "$status" = "200" ] || fail "$url answered $status for a pinned version"
+for node_url in $RENDER_URLS; do
+  status=$(post "$node_url" "/api/render/$CODE/versions/2" '{"who":"x"}')
+  [ "$status" = "200" ] || fail "$node_url answered $status for a pinned version"
 done
 
 echo
