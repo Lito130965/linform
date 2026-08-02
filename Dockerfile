@@ -27,9 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /srv/linform
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml constraints.txt README.md ./
 COPY app ./app
-RUN pip install --no-cache-dir .
+# Constraints for the same reason the base images carry digests: without them
+# the packages inside a reproducible image are whatever resolved that day —
+# including WeasyPrint, whose version decides what the PDFs look like.
+RUN pip install --no-cache-dir . -c constraints.txt
 
 COPY alembic.ini docker-entrypoint.sh ./
 COPY alembic ./alembic

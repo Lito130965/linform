@@ -9,10 +9,16 @@ docker compose up --build          # everything, on http://localhost:8100
 Without Docker, backend only:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]" -c constraints.txt
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
+
+`-c constraints.txt` pins the versions CI and the image use. Skip it and you get
+today's PyPI instead, which is how you end up debugging a golden-PDF diff that
+came from a WeasyPrint release rather than from your change. To bump a
+dependency, edit the pin, run the suite and `python -m scripts.openapi_snapshot
+--check`, and commit the results together.
 
 WeasyPrint needs native libraries (Pango and friends). On Debian/Ubuntu:
 

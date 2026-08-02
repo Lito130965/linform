@@ -10,6 +10,12 @@ a reviewer sees it and has to agree with it.
 
 Committed regenerations belong in the same commit as the change that caused
 them, so the two are read together.
+
+The schema is FastAPI's output, so the installed FastAPI is part of what this
+compares: 0.141 spells a binary upload body "contentMediaType" where 0.129 wrote
+"format": "binary". That is a real change for a consumer generating a client, so
+it should be seen — but it should arrive with the version bump that caused it,
+not on an unrelated pull request. Hence constraints.txt; install with it.
 """
 
 import argparse

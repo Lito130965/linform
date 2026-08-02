@@ -38,7 +38,11 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core fonts-liberation
       - name: Install project
-        run: pip install -e ".[dev]"
+        # -c constraints.txt: the exact versions this commit was tested with.
+        # Without it the job resolves to whatever PyPI published this morning,
+        # and an upstream release lands as a failure on an unrelated pull
+        # request — which is how the snapshot check below first went red.
+        run: pip install -e ".[dev]" -c constraints.txt
       - name: Run tests
         run: pytest -q
       - name: API schema matches its snapshot
