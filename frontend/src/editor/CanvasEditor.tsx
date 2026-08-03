@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
 import { BLOCKS } from './blocks'
@@ -10,6 +17,8 @@ import {
   PAGE_FORMATS,
   formatFromStyles,
 } from './page'
+import BoxModel from './BoxModel'
+import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor } from './keyboard'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
@@ -170,6 +179,10 @@ export default function CanvasEditor({
     cursor: string
     onEnd?: () => void
   } | null>(null)
+  // A millimetre grid over the sheet. Kept on while something is being dragged
+  // without being asked for: that is the moment a person is judging alignment,
+  // and a ruler that appears exactly then is the one nobody has to turn on.
+  const [gridPinned, setGridPinned] = useState(false)
   // Live drop target while dragging a block to reorder it.
   const [moveDrop, setMoveDrop] = useState<{ el: Element; where: 'before' | 'after' } | null>(null)
   const dropRef = useRef<{ el: Element; where: 'before' | 'after' } | null>(null)
@@ -517,6 +530,9 @@ export default function CanvasEditor({
   // Width/height mean the column and row when a table cell is selected, so a
   // resize grows the whole column, not one lopsided cell.
   const isCell = selected?.kind === 'cell'
+  // The window the canvas document lives in: computed styles have to be read
+  // from there, not from this one.
+  const canvasWindow = iframeRef.current?.contentWindow ?? null
   const applyWidth = (v: string): void => {
     if (isCell && selected) {
       setColumnWidth(selected.el, v)
@@ -813,6 +829,16 @@ export default function CanvasEditor({
             ↷
           </button>
         </span>
+        <span className="topbar-group">
+          <button
+            className={gridPinned ? 'tb active' : 'tb'}
+            title={`Millimetre grid (${GRID_MINOR_MM} mm, heavier every ${GRID_MAJOR_MM} mm). Shown while dragging either way.`}
+            aria-pressed={gridPinned}
+            onClick={() => setGridPinned((on) => !on)}
+          >
+            Grid
+          </button>
+        </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
       </div>
       {selected && (
@@ -841,24 +867,23 @@ export default function CanvasEditor({
               onChange={(e) => applyStyle('font-size', e.target.value)}
             />
           </label>
-          <label className="prop">
-            {isCell ? 'Col W' : 'W'}
-            <input
-              aria-label={isCell ? 'Column width' : 'Width'}
-              defaultValue={styleValue('width')}
-              placeholder="auto"
-              onChange={(e) => applyWidth(e.target.value)}
+          {canvasWindow && (
+            <BoxModel
+              el={selected.el as HTMLElement}
+              view={canvasWindow}
+              sizeLabel={{
+                width: isCell ? 'Column width' : 'Width',
+                height: isCell ? 'Row height' : 'Height',
+              }}
+              onApply={(prop, value) => {
+                // Width and height on a cell mean the column and the row, so a
+                // change grows the whole one rather than one lopsided cell.
+                if (prop === 'width') applyWidth(value ?? '')
+                else if (prop === 'height') applyHeight(value ?? '')
+                else applyStyle(prop, value ?? '')
+              }}
             />
-          </label>
-          <label className="prop">
-            {isCell ? 'Row H' : 'H'}
-            <input
-              aria-label={isCell ? 'Row height' : 'Height'}
-              defaultValue={styleValue('height')}
-              placeholder="auto"
-              onChange={(e) => applyHeight(e.target.value)}
-            />
-          </label>
+          )}
           {selected.kind === 'image' && (
             <label className="prop">
               Layer
@@ -1024,6 +1049,18 @@ export default function CanvasEditor({
                 display: 'block',
               }}
             />
+            {(gridPinned || !!drag) && (
+              <div
+                aria-hidden="true"
+                className="canvas-grid"
+                style={
+                  {
+                    '--grid-minor': `${GRID_MINOR_MM * PX_PER_MM * zoom}px`,
+                    '--grid-major': `${GRID_MAJOR_MM * PX_PER_MM * zoom}px`,
+                  } as CSSProperties
+                }
+              />
+            )}
             {/* Physical page boundaries: a line where each printed page ends. */}
             {breakOffsets.map((offset, i) => (
               <div

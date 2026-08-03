@@ -1399,6 +1399,124 @@ label {
 
 /* ---- table column/row resize handles ---- */
 
+/* The millimetre grid: a ruler over the sheet, not part of the document. Fine
+   lines to align by, heavier ones to count by. */
+.canvas-grid {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      rgba(120, 150, 200, 0.55) 0 1px,
+      transparent 1px var(--grid-major)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(120, 150, 200, 0.55) 0 1px,
+      transparent 1px var(--grid-major)
+    ),
+    repeating-linear-gradient(
+      to right,
+      rgba(120, 150, 200, 0.22) 0 1px,
+      transparent 1px var(--grid-minor)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(120, 150, 200, 0.22) 0 1px,
+      transparent 1px var(--grid-minor)
+    );
+}
+
+/* The box of the selected element, laid out as the box it describes: each
+   number sits on the side it changes, so there is nothing to memorise. */
+.box-model {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  gap: 2px;
+  align-items: center;
+  justify-items: center;
+  padding: 12px 6px 4px;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+}
+
+.box-model .bm-caption {
+  position: absolute;
+  top: 1px;
+  left: 6px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.bm-padding-area {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  gap: 2px;
+  align-items: center;
+  justify-items: center;
+  padding: 12px 6px 4px;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+}
+
+.bm-input {
+  width: 34px;
+  padding: 1px 2px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Set here versus inherited from the template's stylesheet — the difference
+   between "I chose 0" and "it happens to be 0". */
+.bm-input.set {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--bg-panel);
+}
+
+.bm-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+}
+
+.bm-input.bm-top {
+  grid-area: 1 / 2;
+}
+.bm-input.bm-right {
+  grid-area: 2 / 3;
+}
+.bm-input.bm-bottom {
+  grid-area: 3 / 2;
+}
+.bm-input.bm-left {
+  grid-area: 2 / 1;
+}
+
+.bm-padding-area {
+  grid-area: 2 / 2;
+}
+
+.bm-size {
+  grid-area: 2 / 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .col-resize,
 .row-resize {
   position: absolute;
