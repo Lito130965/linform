@@ -452,6 +452,20 @@ a row stops there instead of surfacing into the next paragraph. The list is also
 in the canvas itself, under "Keyboard", because a shortcut nobody can discover
 is a shortcut nobody has.
 
+**Size and spacing.** The selected element's box is edited as a box: margins
+around it, padding inside it, width and height in the middle, each number on the
+side it changes. Values are **millimetres by default** — type `12`, get `12mm` —
+and any named unit is kept as written. A value set on the element is shown
+solid; an empty box shows what the template's stylesheet decided, greyed, and
+clearing a box returns the property to the stylesheet rather than writing a
+zero. Changes apply on Enter or when the box loses focus, so the layout does not
+jump while a number is being typed. A number can also be **dragged sideways** or
+stepped with `↑`/`↓` (`Shift` for tens) — nobody knows a gap wants 6.5 mm, they
+know it when they see it. **Grid** in the toolbar lays a millimetre
+ruler over the sheet — 5 mm, heavier every 25 mm — and it appears on its own
+whenever geometry is being changed: while anything is dragged, and from the
+moment one of these boxes takes the focus.
+
 What remains mouse-only: the drag handles for column widths and row heights, and
 free positioning of images. Both make the same change the labelled properties
 bar makes, so nothing is only reachable by pointer — but the direct gesture is

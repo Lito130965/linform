@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
 import { BLOCKS } from './blocks'
@@ -10,7 +17,10 @@ import {
   PAGE_FORMATS,
   formatFromStyles,
 } from './page'
-import { CANVAS_SHORTCUTS, intentFor } from './keyboard'
+import BoxModel from './BoxModel'
+import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
+import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
+import { place, placementFor, type Placement } from './placement'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
@@ -170,9 +180,16 @@ export default function CanvasEditor({
     cursor: string
     onEnd?: () => void
   } | null>(null)
+  // A millimetre grid over the sheet. Kept on while something is being dragged
+  // without being asked for: that is the moment a person is judging alignment,
+  // and a ruler that appears exactly then is the one nobody has to turn on.
+  const [gridPinned, setGridPinned] = useState(false)
   // Live drop target while dragging a block to reorder it.
-  const [moveDrop, setMoveDrop] = useState<{ el: Element; where: 'before' | 'after' } | null>(null)
-  const dropRef = useRef<{ el: Element; where: 'before' | 'after' } | null>(null)
+  const [moveDrop, setMoveDrop] = useState<Placement | null>(null)
+  const dropRef = useRef<Placement | null>(null)
+  // True while a spacing or size box has the focus: a ruler is wanted from the
+  // moment somebody reaches for a number, not only once they drag something.
+  const [adjusting, setAdjusting] = useState(false)
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -244,6 +261,56 @@ export default function CanvasEditor({
 
   const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
   const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
+
+  /** Put prepared nodes where they can legally go, relative to the selection.
+   *
+   * One function on purpose: this decision existed in two copies — the shell's
+   * insert API and the canvas's own Insert menu — and fixing cells in one of
+   * them left presets landing beside the table from the other. */
+  const insertNodes = (nodes: Element[], body: HTMLElement): void => {
+    const target = body.querySelector('[data-lf-selected]')
+    if (!target) {
+      for (const node of nodes) body.appendChild(node)
+      return
+    }
+    const at = placementFor(target, 'after')
+    // Inside appends in order; after inserts each one directly behind the
+    // target, so the last one written has to go first.
+    for (const node of at.where === 'inside' ? nodes : [...nodes].reverse()) place(node, at)
+  }
+
+  /** Carry out what a key press asked for. Shared by the listener inside the
+   * canvas document and the one on this document, so the two cannot drift. */
+  const applyIntent = (intent: CanvasIntent, body: HTMLElement): void => {
+    const doc = body.ownerDocument
+    switch (intent.action) {
+      case 'select':
+        select(intent.el)
+        break
+      case 'remove': {
+        const parent = parentSelectable(intent.el, body)
+        intent.el.remove()
+        select(parent)
+        break
+      }
+      case 'editExpression':
+        editExpression(intent.el, doc)
+        break
+      case 'placeCaret': {
+        // Hand the node to text editing: the caret goes to the end of it, the
+        // same place a click inside would have left it. Focus first, since the
+        // press may have come from outside the canvas document.
+        body.focus()
+        const range = doc.createRange()
+        range.selectNodeContents(intent.el)
+        range.collapse(false)
+        const caret = doc.getSelection()
+        caret?.removeAllRanges()
+        caret?.addRange(range)
+        break
+      }
+    }
+  }
 
   // ---- mount the document once -------------------------------------------
   useEffect(() => {
@@ -324,35 +391,10 @@ export default function CanvasEditor({
       // The current selection is read from the DOM, not from React state: this
       // effect runs once, so the state this closure captured is the state at
       // mount — which is null, forever.
-      const current = body.querySelector('[data-lf-selected]')
-      const intent = intentFor(e, current, body)
+      const intent = intentFor(e, body.querySelector('[data-lf-selected]'), body)
       if (!intent) return
       e.preventDefault()
-      switch (intent.action) {
-        case 'select':
-          select(intent.el)
-          break
-        case 'remove': {
-          const parent = parentSelectable(intent.el, body)
-          intent.el.remove()
-          select(parent)
-          break
-        }
-        case 'editExpression':
-          editExpression(intent.el, doc)
-          break
-        case 'placeCaret': {
-          // Hand the node to text editing: put the caret at the end of it, the
-          // same place a click inside would have left it.
-          const range = doc.createRange()
-          range.selectNodeContents(intent.el)
-          range.collapse(false)
-          const caret = doc.getSelection()
-          caret?.removeAllRanges()
-          caret?.addRange(range)
-          break
-        }
-      }
+      applyIntent(intent, body)
     }
     doc.addEventListener('keydown', onKeydown)
 
@@ -381,7 +423,20 @@ export default function CanvasEditor({
     doc.addEventListener('paste', onPaste)
 
     // Content height drives the iframe height (the outer pane scrolls).
-    const measure = () => setFrameHeight(Math.max(doc.documentElement.scrollHeight, 200))
+    //
+    // Measured from the BODY, and with its bottom padding taken back off.
+    // documentElement.scrollHeight is at least the viewport, and the viewport
+    // is the iframe height this number decides — so feeding it back added the
+    // bottom @page margin to the content on every pass, and pageCountFor turned
+    // that into ceil((N*usable + marginBottom) / usable) = N+1. The canvas grew
+    // by a page per edit, without a single page break in the document, and
+    // leaving visual mode "fixed" it because a remount measures real content.
+    const measure = () => {
+      const padBottom = parseFloat(
+        doc.defaultView?.getComputedStyle(body).paddingBottom ?? '0',
+      )
+      setFrameHeight(Math.max(body.scrollHeight - (padBottom || 0), 200))
+    }
     measure()
 
     const observeOpts = { subtree: true, childList: true, characterData: true, attributes: true }
@@ -411,16 +466,11 @@ export default function CanvasEditor({
 
     callbacksRef.current.onReady?.({
       insertHtml: (html: string) => {
-        const target = body.querySelector('[data-lf-selected]')
         const holder = doc.createElement('div')
         holder.innerHTML = html
         const nodes = Array.from(holder.children)
         for (const node of nodes) prepareFragment(node)
-        if (target) {
-          for (const node of nodes.reverse()) target.after(node)
-        } else {
-          for (const node of nodes) body.appendChild(node)
-        }
+        insertNodes(nodes, body)
         // Plain text (no element) — append as text at the end.
         if (nodes.length === 0 && holder.textContent) {
           body.appendChild(doc.createTextNode(holder.textContent))
@@ -444,6 +494,35 @@ export default function CanvasEditor({
     // Mounted once per template/version — the parent remounts via key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The same shortcuts, for when focus is in the editor but not in the canvas
+  // document — after using the toolbar, say.
+  //
+  // Without this, Alt+← and Alt+→ reach the browser, where on Windows they are
+  // Back and Forward: the editor appeared to jump somewhere else entirely.
+  // Handling them here means they are prevented wherever they are pressed, and
+  // that the shortcuts work without clicking into the canvas first.
+  useEffect(() => {
+    const onKeydown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      // Anything being typed into keeps its own arrows — including the spacing
+      // boxes, where up and down nudge a value.
+      if (
+        target?.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+      ) {
+        return
+      }
+      const body = bodyRef.current
+      if (!body) return
+      const intent = intentFor(e, body.querySelector('[data-lf-selected]'), body)
+      if (!intent) return
+      e.preventDefault()
+      applyIntent(intent, body)
+    }
+    document.addEventListener('keydown', onKeydown)
+    return () => document.removeEventListener('keydown', onKeydown)
+  })
 
   // ---- fit the page into the available width -----------------------------
   useEffect(() => {
@@ -504,6 +583,9 @@ export default function CanvasEditor({
   // Width/height mean the column and row when a table cell is selected, so a
   // resize grows the whole column, not one lopsided cell.
   const isCell = selected?.kind === 'cell'
+  // The window the canvas document lives in: computed styles have to be read
+  // from there, not from this one.
+  const canvasWindow = iframeRef.current?.contentWindow ?? null
   const applyWidth = (v: string): void => {
     if (isCell && selected) {
       setColumnWidth(selected.el, v)
@@ -559,10 +641,8 @@ export default function CanvasEditor({
     const nodes = Array.from(holder.children)
     if (nodes.length === 0) return
     for (const node of nodes) prepareFragment(node)
-    const target = selected?.el.isConnected ? selected.el : null
-    // Insert all top-level nodes (header/footer carry a <style> plus the div).
-    if (target) for (const node of [...nodes].reverse()) target.after(node)
-    else for (const node of nodes) body.appendChild(node)
+    // All top-level nodes (header/footer carry a <style> plus the div).
+    insertNodes(nodes, body)
     // Select the last visible node so the author can edit it immediately.
     select(nodes[nodes.length - 1])
   }
@@ -695,16 +775,13 @@ export default function CanvasEditor({
           return
         }
         const tr = (target as HTMLElement).getBoundingClientRect()
-        const where = y < tr.top + tr.height / 2 ? 'before' : 'after'
-        dropRef.current = { el: target, where }
-        setMoveDrop({ el: target, where })
+        const at = placementFor(target, y < tr.top + tr.height / 2 ? 'before' : 'after')
+        dropRef.current = at
+        setMoveDrop(at)
       },
       onEnd: () => {
         const d = dropRef.current
-        if (d && d.el !== dragged && !dragged.contains(d.el)) {
-          if (d.where === 'before') d.el.before(dragged)
-          else d.el.after(dragged)
-        }
+        if (d && d.el !== dragged && !dragged.contains(d.el)) place(dragged, d)
         dropRef.current = null
         setMoveDrop(null)
       },
@@ -800,6 +877,16 @@ export default function CanvasEditor({
             ↷
           </button>
         </span>
+        <span className="topbar-group">
+          <button
+            className={gridPinned ? 'tb active' : 'tb'}
+            title={`Millimetre grid (${GRID_MINOR_MM} mm, heavier every ${GRID_MAJOR_MM} mm). Shown while dragging either way.`}
+            aria-pressed={gridPinned}
+            onClick={() => setGridPinned((on) => !on)}
+          >
+            Grid
+          </button>
+        </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
       </div>
       {selected && (
@@ -828,24 +915,24 @@ export default function CanvasEditor({
               onChange={(e) => applyStyle('font-size', e.target.value)}
             />
           </label>
-          <label className="prop">
-            {isCell ? 'Col W' : 'W'}
-            <input
-              aria-label={isCell ? 'Column width' : 'Width'}
-              defaultValue={styleValue('width')}
-              placeholder="auto"
-              onChange={(e) => applyWidth(e.target.value)}
+          {canvasWindow && (
+            <BoxModel
+              el={selected.el as HTMLElement}
+              view={canvasWindow}
+              sizeLabel={{
+                width: isCell ? 'Column width' : 'Width',
+                height: isCell ? 'Row height' : 'Height',
+              }}
+              onAdjusting={setAdjusting}
+              onApply={(prop, value) => {
+                // Width and height on a cell mean the column and the row, so a
+                // change grows the whole one rather than one lopsided cell.
+                if (prop === 'width') applyWidth(value ?? '')
+                else if (prop === 'height') applyHeight(value ?? '')
+                else applyStyle(prop, value ?? '')
+              }}
             />
-          </label>
-          <label className="prop">
-            {isCell ? 'Row H' : 'H'}
-            <input
-              aria-label={isCell ? 'Row height' : 'Height'}
-              defaultValue={styleValue('height')}
-              placeholder="auto"
-              onChange={(e) => applyHeight(e.target.value)}
-            />
-          </label>
+          )}
           {selected.kind === 'image' && (
             <label className="prop">
               Layer
@@ -992,109 +1079,135 @@ export default function CanvasEditor({
           style={{ width: stageWidth, height: sheetHeight * zoom }}
         >
           <FurnitureStrip edge="top" boxes={furniture} zoom={zoom} />
-          <iframe
-            ref={iframeRef}
-            title="template canvas"
-            style={{
-              width: pageWidth ?? '100%',
-              height: sheetHeight,
-              transform: `scale(${zoom})`,
-              transformOrigin: '0 0',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-          <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
-          {/* Physical page boundaries: a line where each printed page ends. */}
-          {breakOffsets.map((offset, i) => (
-            <div
-              key={i}
-              className="page-boundary"
-              style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
-            >
-              <span>page {i + 2}</span>
-            </div>
-          ))}
-          {cellRect && (
-            <>
-              {/* Pointer-only affordance, hidden from assistive tech on
-                  purpose: the same change is reachable from the labelled
-                  properties bar above (Col W / Row H / W / H), and choosing
-                  which cell to change is a keyboard gesture now too (Alt+arrows,
-                  see keyboard.ts). What has no keyboard equivalent is the drag
-                  itself. */}
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          {/* Everything below is positioned in the canvas document's own
+              coordinates, so it lives in a box that starts exactly where that
+              document starts. It used to sit directly in the stage, which also
+              holds the margin-box strips — and a strip is in normal flow, so on
+              any template with a running header it pushed the canvas down and
+              left every handle and page line drawn that much too high. */}
+          <div className="canvas-sheet" style={{ height: sheetHeight * zoom }}>
+            <iframe
+              ref={iframeRef}
+              title="template canvas"
+              style={{
+                width: pageWidth ?? '100%',
+                height: sheetHeight,
+                transform: `scale(${zoom})`,
+                transformOrigin: '0 0',
+                border: 'none',
+                display: 'block',
+              }}
+            />
+            {(gridPinned || !!drag || adjusting) && (
               <div
                 aria-hidden="true"
-                className="col-resize"
-                title="Drag to resize column"
-                style={{
-                  left: cellRect.right * zoom - 3,
-                  top: cellRect.top * zoom,
-                  height: cellRect.height * zoom,
-                }}
-                onMouseDown={startColResize}
+                className="canvas-grid"
+                style={
+                  {
+                    '--grid-minor': `${GRID_MINOR_MM * PX_PER_MM * zoom}px`,
+                    '--grid-major': `${GRID_MAJOR_MM * PX_PER_MM * zoom}px`,
+                  } as CSSProperties
+                }
               />
-              {/* Pointer-only affordance, hidden from assistive tech on
-                  purpose: the same change is reachable from the labelled
-                  properties bar above (Col W / Row H / W / H), and choosing
-                  which cell to change is a keyboard gesture now too (Alt+arrows,
-                  see keyboard.ts). What has no keyboard equivalent is the drag
-                  itself. */}
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+            )}
+            {/* Physical page boundaries: a line where each printed page ends. */}
+            {breakOffsets.map((offset, i) => (
               <div
-                aria-hidden="true"
-                className="row-resize"
-                title="Drag to resize row"
-                style={{
-                  left: cellRect.left * zoom,
-                  top: cellRect.bottom * zoom - 3,
-                  width: cellRect.width * zoom,
-                }}
-                onMouseDown={startRowResize}
-              />
-            </>
-          )}
-          {imgRect && (
-            <>
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-              <div
-                aria-hidden="true"
-                className="img-resize"
-                title="Drag to resize"
-                style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
-                onMouseDown={startImageResize}
-              />
-              {positioned && (
+                key={i}
+                className="page-boundary"
+                style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
+              >
+                <span>page {i + 2}</span>
+              </div>
+            ))}
+            {cellRect && (
+              <>
+                {/* Pointer-only affordance, hidden from assistive tech on
+                    purpose: the same change is reachable from the labelled
+                    properties bar above (Col W / Row H / W / H), and choosing
+                    which cell to change is a keyboard gesture now too
+                    (Alt+arrows, see keyboard.ts). What has no keyboard
+                    equivalent is the drag itself. */}
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
                 <div
                   aria-hidden="true"
-                  className="img-move"
-                  title="Drag to move freely"
+                  className="col-resize"
+                  title="Drag to resize column"
                   style={{
-                    left: imgRect.left * zoom,
-                    top: imgRect.top * zoom,
-                    width: imgRect.width * zoom,
-                    height: imgRect.height * zoom,
+                    left: cellRect.right * zoom - 3,
+                    top: cellRect.top * zoom,
+                    height: cellRect.height * zoom,
                   }}
-                  onMouseDown={startImageMove}
+                  onMouseDown={startColResize}
                 />
-              )}
-            </>
-          )}
-          {moveDrop &&
-            (() => {
-              const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
-              return (
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
                 <div
-                  className="drop-line"
+                  aria-hidden="true"
+                  className="row-resize"
+                  title="Drag to resize row"
                   style={{
-                    left: tr.left * zoom,
-                    top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
-                    width: tr.width * zoom,
+                    left: cellRect.left * zoom,
+                    top: cellRect.bottom * zoom - 3,
+                    width: cellRect.width * zoom,
                   }}
+                  onMouseDown={startRowResize}
                 />
-              )
-            })()}
+              </>
+            )}
+            {imgRect && (
+              <>
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                <div
+                  aria-hidden="true"
+                  className="img-resize"
+                  title="Drag to resize"
+                  style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
+                  onMouseDown={startImageResize}
+                />
+                {positioned && (
+                  <div
+                    aria-hidden="true"
+                    className="img-move"
+                    title="Drag to move freely"
+                    style={{
+                      left: imgRect.left * zoom,
+                      top: imgRect.top * zoom,
+                      width: imgRect.width * zoom,
+                      height: imgRect.height * zoom,
+                    }}
+                    onMouseDown={startImageMove}
+                  />
+                )}
+              </>
+            )}
+            {moveDrop &&
+              (() => {
+                const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
+                // Dropping into a cell is not a line between two things, it is
+                // a place with an inside — so it is drawn as one.
+                return moveDrop.where === 'inside' ? (
+                  <div
+                    className="drop-inside"
+                    style={{
+                      left: tr.left * zoom,
+                      top: tr.top * zoom,
+                      width: tr.width * zoom,
+                      height: tr.height * zoom,
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="drop-line"
+                    style={{
+                      left: tr.left * zoom,
+                      top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
+                      width: tr.width * zoom,
+                    }}
+                  />
+                )
+              })()}
+          </div>
+          <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
           {drag && (
             // A transient layer that owns the mouse for the duration of a
             // drag; it has no meaning to a screen reader.

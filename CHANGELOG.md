@@ -43,6 +43,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
   endpoints. `docker-compose.roles.yml` runs the split topology, and
   `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
+- **Size and spacing in the canvas.** The selected element's box — margins,
+  padding, width, height — is edited as a box, in millimetres by default, with
+  values set on the element shown apart from values the stylesheet decided.
+  Clearing a box returns the property to the stylesheet instead of writing a
+  zero, and changes apply on Enter rather than per keystroke. Values can be
+  dragged sideways or stepped with the arrow keys. A millimetre grid can be
+  pinned from the toolbar and appears on its own whenever geometry is being
+  changed — while dragging, and from the moment a spacing box has the focus.
 - **The visual canvas can be driven from the keyboard.** `Alt`+arrows select
   structure through the document tree, `Alt`+`Enter` opens the selected element
   (its Jinja expression, or its text), `Alt`+`Delete` removes it, `Esc` clears.
@@ -84,6 +92,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A block inserted with a table cell selected landed beside the table.**
+  "After this cell" is a place nothing block-level can be, so the parser lifted
+  it out — and dragging offered only before/after, never into. A cell is now a
+  thing to put something *in*, for both the insert and the drag paths, and a
+  block aimed at a row lands outside the table where it can legally go.
+- **The canvas grew a page on every edit.** Height was measured from the
+  iframe's viewport, which is the height that measurement itself decides, so
+  each pass fed the sheet's bottom margin back in as content and the page count
+  climbed without a page break anywhere in the document.
+- **Resize handles were drawn above the edge they resize** on any template with
+  a running header: they are positioned in the canvas document's coordinates but
+  sat in a box that the margin-box strips had already pushed down.
 - **A DoS advisory in shipped frontend code.** `underscore`, pulled in by the
   `.docx` importer, was locked at 1.13.1 — unbounded recursion in `_.flatten`
   and `_.isEqual` on hostile input, reachable by uploading a crafted document.
