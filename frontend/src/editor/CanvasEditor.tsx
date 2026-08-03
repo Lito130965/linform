@@ -262,6 +262,23 @@ export default function CanvasEditor({
   const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
   const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
 
+  /** Put prepared nodes where they can legally go, relative to the selection.
+   *
+   * One function on purpose: this decision existed in two copies — the shell's
+   * insert API and the canvas's own Insert menu — and fixing cells in one of
+   * them left presets landing beside the table from the other. */
+  const insertNodes = (nodes: Element[], body: HTMLElement): void => {
+    const target = body.querySelector('[data-lf-selected]')
+    if (!target) {
+      for (const node of nodes) body.appendChild(node)
+      return
+    }
+    const at = placementFor(target, 'after')
+    // Inside appends in order; after inserts each one directly behind the
+    // target, so the last one written has to go first.
+    for (const node of at.where === 'inside' ? nodes : [...nodes].reverse()) place(node, at)
+  }
+
   /** Carry out what a key press asked for. Shared by the listener inside the
    * canvas document and the one on this document, so the two cannot drift. */
   const applyIntent = (intent: CanvasIntent, body: HTMLElement): void => {
@@ -449,22 +466,11 @@ export default function CanvasEditor({
 
     callbacksRef.current.onReady?.({
       insertHtml: (html: string) => {
-        const target = body.querySelector('[data-lf-selected]')
         const holder = doc.createElement('div')
         holder.innerHTML = html
         const nodes = Array.from(holder.children)
         for (const node of nodes) prepareFragment(node)
-        if (target) {
-          // Not simply "after the selection": after a table cell is a place
-          // nothing block-level can be, and the parser answers by putting it
-          // outside the table entirely (see placement.ts).
-          const at = placementFor(target, 'after')
-          // Inside appends in order; after inserts each one directly behind the
-          // target, so the last one written has to go first.
-          for (const node of at.where === 'inside' ? nodes : nodes.reverse()) place(node, at)
-        } else {
-          for (const node of nodes) body.appendChild(node)
-        }
+        insertNodes(nodes, body)
         // Plain text (no element) — append as text at the end.
         if (nodes.length === 0 && holder.textContent) {
           body.appendChild(doc.createTextNode(holder.textContent))
@@ -635,10 +641,8 @@ export default function CanvasEditor({
     const nodes = Array.from(holder.children)
     if (nodes.length === 0) return
     for (const node of nodes) prepareFragment(node)
-    const target = selected?.el.isConnected ? selected.el : null
-    // Insert all top-level nodes (header/footer carry a <style> plus the div).
-    if (target) for (const node of [...nodes].reverse()) target.after(node)
-    else for (const node of nodes) body.appendChild(node)
+    // All top-level nodes (header/footer carry a <style> plus the div).
+    insertNodes(nodes, body)
     // Select the last visible node so the author can edit it immediately.
     select(nodes[nodes.length - 1])
   }
