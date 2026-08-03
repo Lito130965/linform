@@ -27,6 +27,7 @@ export default function BoxModel({
   view,
   sizeLabel,
   onApply,
+  onAdjusting,
 }: {
   /** the selected element, read for both its inline and its computed values */
   el: HTMLElement
