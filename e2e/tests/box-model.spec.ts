@@ -72,6 +72,66 @@ test('clearing a box returns the property to the stylesheet', async ({ page, req
   await expect(marginTop).toHaveAttribute('placeholder', '4')
 })
 
+test('a value can be edited, not only replaced', async ({ page, request }) => {
+  // Reported from use: with 50 in the box you could not delete the 0 and type
+  // 5 to get 55 — the field was re-seeded from a document that was mutating
+  // under it, so every keystroke fought whoever was typing.
+  const code = uniqueCode('box-edit')
+  await createTemplate(request, code, '<p id="body">Body text</p>\n')
+  await openTemplate(page, code)
+  await enterVisual(page)
+  await page.frameLocator(CANVAS).locator('#body').click()
+
+  const marginTop = page.getByLabel('Margin top', { exact: true })
+  await marginTop.fill('50')
+  await page.keyboard.press('Enter')
+
+  await marginTop.click()
+  await page.keyboard.press('End')
+  await page.keyboard.press('Backspace')
+  await page.keyboard.type('5')
+  await expect(marginTop).toHaveValue('55')
+
+  await page.keyboard.press('Enter')
+  await expect(page.frameLocator(CANVAS).locator('#body')).toHaveAttribute(
+    'style',
+    /margin-top:\s*55mm/,
+  )
+})
+
+test('a spacing can be found by dragging or by arrow keys', async ({ page, request }) => {
+  // Nobody knows a gap wants 6.5mm; they know it when they see it. Both of
+  // these change the document live, which is the point.
+  const code = uniqueCode('box-drag')
+  await createTemplate(request, code, '<p id="body">Body text</p>\n')
+  await openTemplate(page, code)
+  await enterVisual(page)
+  await page.frameLocator(CANVAS).locator('#body').click()
+
+  const marginTop = page.getByLabel('Margin top', { exact: true })
+  await marginTop.fill('10')
+  await page.keyboard.press('Enter')
+
+  await marginTop.press('ArrowUp')
+  await expect(marginTop).toHaveValue('11')
+  await marginTop.press('ArrowDown')
+  await marginTop.press('ArrowDown')
+  await expect(marginTop).toHaveValue('9')
+
+  const box = (await marginTop.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  // Half a millimetre per pixel.
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2)
+  await page.mouse.up()
+
+  await expect(marginTop).toHaveValue('19')
+  await expect(page.frameLocator(CANVAS).locator('#body')).toHaveAttribute(
+    'style',
+    /margin-top:\s*19mm/,
+  )
+})
+
 test('the millimetre grid can be turned on over the sheet', async ({ page, request }) => {
   const code = uniqueCode('grid')
   await createTemplate(request, code, '<p>anything</p>')

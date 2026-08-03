@@ -459,7 +459,9 @@ and any named unit is kept as written. A value set on the element is shown
 solid; an empty box shows what the template's stylesheet decided, greyed, and
 clearing a box returns the property to the stylesheet rather than writing a
 zero. Changes apply on Enter or when the box loses focus, so the layout does not
-jump while a number is being typed. **Grid** in the toolbar lays a millimetre
+jump while a number is being typed. A number can also be **dragged sideways** or
+stepped with `↑`/`↓` (`Shift` for tens) — nobody knows a gap wants 6.5 mm, they
+know it when they see it. **Grid** in the toolbar lays a millimetre
 ruler over the sheet — 5 mm, heavier every 25 mm — and it appears on its own
 while anything is being dragged.
 

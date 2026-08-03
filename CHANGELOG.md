@@ -47,8 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   padding, width, height — is edited as a box, in millimetres by default, with
   values set on the element shown apart from values the stylesheet decided.
   Clearing a box returns the property to the stylesheet instead of writing a
-  zero, and changes apply on Enter rather than per keystroke. A millimetre grid
-  can be pinned from the toolbar and appears on its own while dragging.
+  zero, and changes apply on Enter rather than per keystroke. Values can be
+  dragged sideways or stepped with the arrow keys. A millimetre grid can be
+  pinned from the toolbar and appears on its own while dragging.
 - **The visual canvas can be driven from the keyboard.** `Alt`+arrows select
   structure through the document tree, `Alt`+`Enter` opens the selected element
   (its Jinja expression, or its text), `Alt`+`Delete` removes it, `Esc` clears.

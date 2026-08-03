@@ -1467,23 +1467,33 @@ label {
   border-radius: 3px;
 }
 
+/* Every cell looks like a field, whether or not it carries a value: a border
+   that appears only once something is set leaves the rest looking like numbers
+   printed on the panel, and nothing says they can be typed into. */
 .bm-input {
-  width: 34px;
+  width: 36px;
   padding: 1px 2px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: 3px;
-  background: transparent;
+  background: var(--bg);
   color: var(--text-muted);
   font-size: 11px;
   text-align: center;
+  cursor: ew-resize;
 }
 
 /* Set here versus inherited from the template's stylesheet — the difference
-   between "I chose 0" and "it happens to be 0". */
+   between "I chose 0" and "it happens to be 0". Weight and colour, now that
+   the border says something else. */
 .bm-input.set {
   color: var(--text);
-  border-color: var(--border);
+  font-weight: 600;
   background: var(--bg-panel);
+}
+
+.bm-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.65;
 }
 
 .bm-input:focus {

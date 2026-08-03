@@ -19,7 +19,7 @@ import {
 } from './page'
 import BoxModel from './BoxModel'
 import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
-import { CANVAS_SHORTCUTS, intentFor } from './keyboard'
+import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
@@ -258,6 +258,39 @@ export default function CanvasEditor({
   const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
   const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
 
+  /** Carry out what a key press asked for. Shared by the listener inside the
+   * canvas document and the one on this document, so the two cannot drift. */
+  const applyIntent = (intent: CanvasIntent, body: HTMLElement): void => {
+    const doc = body.ownerDocument
+    switch (intent.action) {
+      case 'select':
+        select(intent.el)
+        break
+      case 'remove': {
+        const parent = parentSelectable(intent.el, body)
+        intent.el.remove()
+        select(parent)
+        break
+      }
+      case 'editExpression':
+        editExpression(intent.el, doc)
+        break
+      case 'placeCaret': {
+        // Hand the node to text editing: the caret goes to the end of it, the
+        // same place a click inside would have left it. Focus first, since the
+        // press may have come from outside the canvas document.
+        body.focus()
+        const range = doc.createRange()
+        range.selectNodeContents(intent.el)
+        range.collapse(false)
+        const caret = doc.getSelection()
+        caret?.removeAllRanges()
+        caret?.addRange(range)
+        break
+      }
+    }
+  }
+
   // ---- mount the document once -------------------------------------------
   useEffect(() => {
     const iframe = iframeRef.current
@@ -337,35 +370,10 @@ export default function CanvasEditor({
       // The current selection is read from the DOM, not from React state: this
       // effect runs once, so the state this closure captured is the state at
       // mount — which is null, forever.
-      const current = body.querySelector('[data-lf-selected]')
-      const intent = intentFor(e, current, body)
+      const intent = intentFor(e, body.querySelector('[data-lf-selected]'), body)
       if (!intent) return
       e.preventDefault()
-      switch (intent.action) {
-        case 'select':
-          select(intent.el)
-          break
-        case 'remove': {
-          const parent = parentSelectable(intent.el, body)
-          intent.el.remove()
-          select(parent)
-          break
-        }
-        case 'editExpression':
-          editExpression(intent.el, doc)
-          break
-        case 'placeCaret': {
-          // Hand the node to text editing: put the caret at the end of it, the
-          // same place a click inside would have left it.
-          const range = doc.createRange()
-          range.selectNodeContents(intent.el)
-          range.collapse(false)
-          const caret = doc.getSelection()
-          caret?.removeAllRanges()
-          caret?.addRange(range)
-          break
-        }
-      }
+      applyIntent(intent, body)
     }
     doc.addEventListener('keydown', onKeydown)
 
@@ -470,6 +478,35 @@ export default function CanvasEditor({
     // Mounted once per template/version — the parent remounts via key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The same shortcuts, for when focus is in the editor but not in the canvas
+  // document — after using the toolbar, say.
+  //
+  // Without this, Alt+← and Alt+→ reach the browser, where on Windows they are
+  // Back and Forward: the editor appeared to jump somewhere else entirely.
+  // Handling them here means they are prevented wherever they are pressed, and
+  // that the shortcuts work without clicking into the canvas first.
+  useEffect(() => {
+    const onKeydown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      // Anything being typed into keeps its own arrows — including the spacing
+      // boxes, where up and down nudge a value.
+      if (
+        target?.isContentEditable ||
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+      ) {
+        return
+      }
+      const body = bodyRef.current
+      if (!body) return
+      const intent = intentFor(e, body.querySelector('[data-lf-selected]'), body)
+      if (!intent) return
+      e.preventDefault()
+      applyIntent(intent, body)
+    }
+    document.addEventListener('keydown', onKeydown)
+    return () => document.removeEventListener('keydown', onKeydown)
+  })
 
   // ---- fit the page into the available width -----------------------------
   useEffect(() => {
