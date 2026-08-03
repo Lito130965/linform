@@ -37,6 +37,10 @@ export default function BoxModel({
   sizeLabel: { width: string; height: string }
   /** null clears the property rather than writing a zero */
   onApply: (property: string, value: string | null) => void
+  /** true while one of these boxes has the focus, so the canvas can put its
+   * millimetre ruler up: geometry is about to change, whether by typing, by an
+   * arrow key or by a drag that starts here */
+  onAdjusting: (active: boolean) => void
 }) {
   const computed = view.getComputedStyle(el)
   // What is in the boxes while they are being typed in. Committed values leave
@@ -144,7 +148,11 @@ export default function BoxModel({
             nudge(property, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1))
           }
         }}
-        onBlur={(e) => commit(property, e.target.value)}
+        onFocus={() => onAdjusting(true)}
+        onBlur={(e) => {
+          onAdjusting(false)
+          commit(property, e.target.value)
+        }}
       />
     )
   }

@@ -49,7 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Clearing a box returns the property to the stylesheet instead of writing a
   zero, and changes apply on Enter rather than per keystroke. Values can be
   dragged sideways or stepped with the arrow keys. A millimetre grid can be
-  pinned from the toolbar and appears on its own while dragging.
+  pinned from the toolbar and appears on its own whenever geometry is being
+  changed — while dragging, and from the moment a spacing box has the focus.
 - **The visual canvas can be driven from the keyboard.** `Alt`+arrows select
   structure through the document tree, `Alt`+`Enter` opens the selected element
   (its Jinja expression, or its text), `Alt`+`Delete` removes it, `Esc` clears.
@@ -91,6 +92,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A block inserted with a table cell selected landed beside the table.**
+  "After this cell" is a place nothing block-level can be, so the parser lifted
+  it out — and dragging offered only before/after, never into. A cell is now a
+  thing to put something *in*, for both the insert and the drag paths, and a
+  block aimed at a row lands outside the table where it can legally go.
 - **The canvas grew a page on every edit.** Height was measured from the
   iframe's viewport, which is the height that measurement itself decides, so
   each pass fed the sheet's bottom margin back in as content and the page count

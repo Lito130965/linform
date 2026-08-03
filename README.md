@@ -463,7 +463,8 @@ jump while a number is being typed. A number can also be **dragged sideways** or
 stepped with `↑`/`↓` (`Shift` for tens) — nobody knows a gap wants 6.5 mm, they
 know it when they see it. **Grid** in the toolbar lays a millimetre
 ruler over the sheet — 5 mm, heavier every 25 mm — and it appears on its own
-while anything is being dragged.
+whenever geometry is being changed: while anything is dragged, and from the
+moment one of these boxes takes the focus.
 
 What remains mouse-only: the drag handles for column widths and row heights, and
 free positioning of images. Both make the same change the labelled properties

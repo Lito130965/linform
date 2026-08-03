@@ -1399,6 +1399,17 @@ label {
 
 /* ---- table column/row resize handles ---- */
 
+/* Dropping INTO something — a table cell — is not a line between two places,
+   so it is drawn as the place it is. */
+.drop-inside {
+  position: absolute;
+  z-index: 9;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 /* The millimetre grid: a ruler over the sheet, not part of the document. Fine
    lines to align by, heavier ones to count by. */
 .canvas-grid {

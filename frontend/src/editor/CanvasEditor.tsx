@@ -20,6 +20,7 @@ import {
 import BoxModel from './BoxModel'
 import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
+import { place, placementFor, type Placement } from './placement'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
@@ -184,8 +185,11 @@ export default function CanvasEditor({
   // and a ruler that appears exactly then is the one nobody has to turn on.
   const [gridPinned, setGridPinned] = useState(false)
   // Live drop target while dragging a block to reorder it.
-  const [moveDrop, setMoveDrop] = useState<{ el: Element; where: 'before' | 'after' } | null>(null)
-  const dropRef = useRef<{ el: Element; where: 'before' | 'after' } | null>(null)
+  const [moveDrop, setMoveDrop] = useState<Placement | null>(null)
+  const dropRef = useRef<Placement | null>(null)
+  // True while a spacing or size box has the focus: a ruler is wanted from the
+  // moment somebody reaches for a number, not only once they drag something.
+  const [adjusting, setAdjusting] = useState(false)
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -451,7 +455,13 @@ export default function CanvasEditor({
         const nodes = Array.from(holder.children)
         for (const node of nodes) prepareFragment(node)
         if (target) {
-          for (const node of nodes.reverse()) target.after(node)
+          // Not simply "after the selection": after a table cell is a place
+          // nothing block-level can be, and the parser answers by putting it
+          // outside the table entirely (see placement.ts).
+          const at = placementFor(target, 'after')
+          // Inside appends in order; after inserts each one directly behind the
+          // target, so the last one written has to go first.
+          for (const node of at.where === 'inside' ? nodes : nodes.reverse()) place(node, at)
         } else {
           for (const node of nodes) body.appendChild(node)
         }
@@ -761,16 +771,13 @@ export default function CanvasEditor({
           return
         }
         const tr = (target as HTMLElement).getBoundingClientRect()
-        const where = y < tr.top + tr.height / 2 ? 'before' : 'after'
-        dropRef.current = { el: target, where }
-        setMoveDrop({ el: target, where })
+        const at = placementFor(target, y < tr.top + tr.height / 2 ? 'before' : 'after')
+        dropRef.current = at
+        setMoveDrop(at)
       },
       onEnd: () => {
         const d = dropRef.current
-        if (d && d.el !== dragged && !dragged.contains(d.el)) {
-          if (d.where === 'before') d.el.before(dragged)
-          else d.el.after(dragged)
-        }
+        if (d && d.el !== dragged && !dragged.contains(d.el)) place(dragged, d)
         dropRef.current = null
         setMoveDrop(null)
       },
@@ -912,6 +919,7 @@ export default function CanvasEditor({
                 width: isCell ? 'Column width' : 'Width',
                 height: isCell ? 'Row height' : 'Height',
               }}
+              onAdjusting={setAdjusting}
               onApply={(prop, value) => {
                 // Width and height on a cell mean the column and the row, so a
                 // change grows the whole one rather than one lopsided cell.
@@ -1086,7 +1094,7 @@ export default function CanvasEditor({
                 display: 'block',
               }}
             />
-            {(gridPinned || !!drag) && (
+            {(gridPinned || !!drag || adjusting) && (
               <div
                 aria-hidden="true"
                 className="canvas-grid"
@@ -1171,7 +1179,19 @@ export default function CanvasEditor({
             {moveDrop &&
               (() => {
                 const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
-                return (
+                // Dropping into a cell is not a line between two things, it is
+                // a place with an inside — so it is drawn as one.
+                return moveDrop.where === 'inside' ? (
+                  <div
+                    className="drop-inside"
+                    style={{
+                      left: tr.left * zoom,
+                      top: tr.top * zoom,
+                      width: tr.width * zoom,
+                      height: tr.height * zoom,
+                    }}
+                  />
+                ) : (
                   <div
                     className="drop-line"
                     style={{
