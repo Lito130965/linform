@@ -965,6 +965,16 @@ label {
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.45);
 }
 
+/* The canvas document and everything drawn in ITS coordinates: resize handles,
+   page-boundary lines, the drop indicator. Their offsets come from
+   getBoundingClientRect() inside the iframe, so they are only correct while
+   this box and the iframe start at the same point — which is why the margin-box
+   strips, which are in normal flow, are deliberately outside it. */
+.canvas-sheet {
+  position: relative;
+  width: 100%;
+}
+
 .el-toolbar {
   position: absolute;
   z-index: 10;

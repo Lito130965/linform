@@ -381,7 +381,20 @@ export default function CanvasEditor({
     doc.addEventListener('paste', onPaste)
 
     // Content height drives the iframe height (the outer pane scrolls).
-    const measure = () => setFrameHeight(Math.max(doc.documentElement.scrollHeight, 200))
+    //
+    // Measured from the BODY, and with its bottom padding taken back off.
+    // documentElement.scrollHeight is at least the viewport, and the viewport
+    // is the iframe height this number decides — so feeding it back added the
+    // bottom @page margin to the content on every pass, and pageCountFor turned
+    // that into ceil((N*usable + marginBottom) / usable) = N+1. The canvas grew
+    // by a page per edit, without a single page break in the document, and
+    // leaving visual mode "fixed" it because a remount measures real content.
+    const measure = () => {
+      const padBottom = parseFloat(
+        doc.defaultView?.getComputedStyle(body).paddingBottom ?? '0',
+      )
+      setFrameHeight(Math.max(body.scrollHeight - (padBottom || 0), 200))
+    }
     measure()
 
     const observeOpts = { subtree: true, childList: true, characterData: true, attributes: true }
@@ -992,109 +1005,111 @@ export default function CanvasEditor({
           style={{ width: stageWidth, height: sheetHeight * zoom }}
         >
           <FurnitureStrip edge="top" boxes={furniture} zoom={zoom} />
-          <iframe
-            ref={iframeRef}
-            title="template canvas"
-            style={{
-              width: pageWidth ?? '100%',
-              height: sheetHeight,
-              transform: `scale(${zoom})`,
-              transformOrigin: '0 0',
-              border: 'none',
-              display: 'block',
-            }}
-          />
-          <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
-          {/* Physical page boundaries: a line where each printed page ends. */}
-          {breakOffsets.map((offset, i) => (
-            <div
-              key={i}
-              className="page-boundary"
-              style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
-            >
-              <span>page {i + 2}</span>
-            </div>
-          ))}
-          {cellRect && (
-            <>
-              {/* Pointer-only affordance, hidden from assistive tech on
-                  purpose: the same change is reachable from the labelled
-                  properties bar above (Col W / Row H / W / H), and choosing
-                  which cell to change is a keyboard gesture now too (Alt+arrows,
-                  see keyboard.ts). What has no keyboard equivalent is the drag
-                  itself. */}
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+          {/* Everything below is positioned in the canvas document's own
+              coordinates, so it lives in a box that starts exactly where that
+              document starts. It used to sit directly in the stage, which also
+              holds the margin-box strips — and a strip is in normal flow, so on
+              any template with a running header it pushed the canvas down and
+              left every handle and page line drawn that much too high. */}
+          <div className="canvas-sheet" style={{ height: sheetHeight * zoom }}>
+            <iframe
+              ref={iframeRef}
+              title="template canvas"
+              style={{
+                width: pageWidth ?? '100%',
+                height: sheetHeight,
+                transform: `scale(${zoom})`,
+                transformOrigin: '0 0',
+                border: 'none',
+                display: 'block',
+              }}
+            />
+            {/* Physical page boundaries: a line where each printed page ends. */}
+            {breakOffsets.map((offset, i) => (
               <div
-                aria-hidden="true"
-                className="col-resize"
-                title="Drag to resize column"
-                style={{
-                  left: cellRect.right * zoom - 3,
-                  top: cellRect.top * zoom,
-                  height: cellRect.height * zoom,
-                }}
-                onMouseDown={startColResize}
-              />
-              {/* Pointer-only affordance, hidden from assistive tech on
-                  purpose: the same change is reachable from the labelled
-                  properties bar above (Col W / Row H / W / H), and choosing
-                  which cell to change is a keyboard gesture now too (Alt+arrows,
-                  see keyboard.ts). What has no keyboard equivalent is the drag
-                  itself. */}
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-              <div
-                aria-hidden="true"
-                className="row-resize"
-                title="Drag to resize row"
-                style={{
-                  left: cellRect.left * zoom,
-                  top: cellRect.bottom * zoom - 3,
-                  width: cellRect.width * zoom,
-                }}
-                onMouseDown={startRowResize}
-              />
-            </>
-          )}
-          {imgRect && (
-            <>
-              {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-              <div
-                aria-hidden="true"
-                className="img-resize"
-                title="Drag to resize"
-                style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
-                onMouseDown={startImageResize}
-              />
-              {positioned && (
+                key={i}
+                className="page-boundary"
+                style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
+              >
+                <span>page {i + 2}</span>
+              </div>
+            ))}
+            {cellRect && (
+              <>
+                {/* Pointer-only affordance, hidden from assistive tech on
+                    purpose: the same change is reachable from the labelled
+                    properties bar above (Col W / Row H / W / H), and choosing
+                    which cell to change is a keyboard gesture now too
+                    (Alt+arrows, see keyboard.ts). What has no keyboard
+                    equivalent is the drag itself. */}
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
                 <div
                   aria-hidden="true"
-                  className="img-move"
-                  title="Drag to move freely"
+                  className="col-resize"
+                  title="Drag to resize column"
                   style={{
-                    left: imgRect.left * zoom,
-                    top: imgRect.top * zoom,
-                    width: imgRect.width * zoom,
-                    height: imgRect.height * zoom,
+                    left: cellRect.right * zoom - 3,
+                    top: cellRect.top * zoom,
+                    height: cellRect.height * zoom,
                   }}
-                  onMouseDown={startImageMove}
+                  onMouseDown={startColResize}
                 />
-              )}
-            </>
-          )}
-          {moveDrop &&
-            (() => {
-              const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
-              return (
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
                 <div
-                  className="drop-line"
+                  aria-hidden="true"
+                  className="row-resize"
+                  title="Drag to resize row"
                   style={{
-                    left: tr.left * zoom,
-                    top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
-                    width: tr.width * zoom,
+                    left: cellRect.left * zoom,
+                    top: cellRect.bottom * zoom - 3,
+                    width: cellRect.width * zoom,
                   }}
+                  onMouseDown={startRowResize}
                 />
-              )
-            })()}
+              </>
+            )}
+            {imgRect && (
+              <>
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                <div
+                  aria-hidden="true"
+                  className="img-resize"
+                  title="Drag to resize"
+                  style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
+                  onMouseDown={startImageResize}
+                />
+                {positioned && (
+                  <div
+                    aria-hidden="true"
+                    className="img-move"
+                    title="Drag to move freely"
+                    style={{
+                      left: imgRect.left * zoom,
+                      top: imgRect.top * zoom,
+                      width: imgRect.width * zoom,
+                      height: imgRect.height * zoom,
+                    }}
+                    onMouseDown={startImageMove}
+                  />
+                )}
+              </>
+            )}
+            {moveDrop &&
+              (() => {
+                const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
+                return (
+                  <div
+                    className="drop-line"
+                    style={{
+                      left: tr.left * zoom,
+                      top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
+                      width: tr.width * zoom,
+                    }}
+                  />
+                )
+              })()}
+          </div>
+          <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
           {drag && (
             // A transient layer that owns the mouse for the duration of a
             // drag; it has no meaning to a screen reader.
