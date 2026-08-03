@@ -85,6 +85,27 @@ test('alt+enter hands the selected element to the caret', async ({ page, request
   expect(saved).toContain('EDITED')
 })
 
+test('an edit in the canvas is reported while the canvas is still open', async ({ page, request }) => {
+  /**
+   * The canvas reports its changes to the editor on a debounce. Every other
+   * test in this suite happened to leave visual mode before saving, and leaving
+   * flushes — so nothing here has ever checked that the report arrives on its
+   * own. The live preview and the unsaved marker both depend on it.
+   */
+  const code = uniqueCode('kbd-dirty')
+  await createTemplate(request, code, '<h1>Heading</h1>\n<p>Body</p>\n')
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  await frame.locator('body').focus()
+  await page.keyboard.press('Alt+ArrowDown')
+  await page.keyboard.press('Alt+ArrowDown')
+  await page.keyboard.press('Alt+Delete')
+
+  await expect(page.locator('.dirty-badge')).toHaveCount(1)
+})
+
 test('the shortcuts are written down where somebody can find them', async ({ page, request }) => {
   // A shortcut nobody can discover is a shortcut nobody has, and the canvas
   // offers no other hint that Alt does anything at all.
