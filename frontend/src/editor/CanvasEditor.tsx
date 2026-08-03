@@ -10,6 +10,7 @@ import {
   PAGE_FORMATS,
   formatFromStyles,
 } from './page'
+import { CANVAS_SHORTCUTS, intentFor } from './keyboard'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
@@ -40,6 +41,30 @@ import { protect } from '../jinja-bridge'
 import Icon from '../components/Icon'
 import { PRESETS } from '../presets/registry'
 import { setAlign, toggleInline } from './text-commands'
+
+/** Edit the Jinja expression a chip, loop or conditional carries.
+ *
+ * The attribute is what restore() reads on the way out; the visible label is
+ * kept in sync for placeholders. Shared by the double-click and the keyboard
+ * path, because "the mouse can do one more thing than the keyboard" is how an
+ * editor stops being usable without one. */
+function editExpression(el: Element, doc: Document): void {
+  const attr = el.hasAttribute('data-jinja-expr')
+    ? 'data-jinja-expr'
+    : el.hasAttribute('data-jinja-for')
+      ? 'data-jinja-for'
+      : el.hasAttribute('data-jinja-if')
+        ? 'data-jinja-if'
+        : null
+  if (!attr) return
+  const current = el.getAttribute(attr) ?? ''
+  const next = doc.defaultView?.prompt('Jinja expression', current)
+  if (next === null || next === undefined) return
+  const expr = next.trim()
+  if (!expr) return
+  el.setAttribute(attr, expr)
+  if (attr === 'data-jinja-expr') el.textContent = `{{ ${expr} }}`
+}
 
 /** Does this element force a page break, and on which side? */
 function breakSide(el: HTMLElement): 'after' | 'before' | null {
@@ -275,36 +300,58 @@ export default function CanvasEditor({
     const onDblClick = (e: MouseEvent) => {
       const el = findSelectable(e.target as Element, body)
       if (!el) return
-      const attr = el.hasAttribute('data-jinja-expr')
-        ? 'data-jinja-expr'
-        : el.hasAttribute('data-jinja-for')
-          ? 'data-jinja-for'
-          : el.hasAttribute('data-jinja-if')
-            ? 'data-jinja-if'
-            : null
-      if (!attr) return
+      if (!el.matches('[data-jinja-expr], [data-jinja-for], [data-jinja-if]')) return
       e.preventDefault()
-      const current = el.getAttribute(attr) ?? ''
-      const next = doc.defaultView?.prompt('Jinja expression', current)
-      if (next === null || next === undefined) return
-      const expr = next.trim()
-      if (!expr) return
-      el.setAttribute(attr, expr)
-      if (attr === 'data-jinja-expr') el.textContent = `{{ ${expr} }}`
+      editExpression(el, doc)
     }
     doc.addEventListener('dblclick', onDblClick)
 
     // Undo/redo shortcuts; native contenteditable history is unreliable after
-    // programmatic mutations, so ours replaces it entirely.
+    // programmatic mutations, so ours replaces it entirely. Everything else is
+    // structural navigation — see keyboard.ts for why it hides behind Alt.
     const onKeydown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return
-      const key = e.key.toLowerCase()
-      if (key === 'z' && !e.shiftKey) {
-        e.preventDefault()
-        undo()
-      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
-        e.preventDefault()
-        redo()
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase()
+        if (key === 'z' && !e.shiftKey) {
+          e.preventDefault()
+          undo()
+        } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+          e.preventDefault()
+          redo()
+        }
+        return
+      }
+      // The current selection is read from the DOM, not from React state: this
+      // effect runs once, so the state this closure captured is the state at
+      // mount — which is null, forever.
+      const current = body.querySelector('[data-lf-selected]')
+      const intent = intentFor(e, current, body)
+      if (!intent) return
+      e.preventDefault()
+      switch (intent.action) {
+        case 'select':
+          select(intent.el)
+          break
+        case 'remove': {
+          const parent = parentSelectable(intent.el, body)
+          intent.el.remove()
+          select(parent)
+          break
+        }
+        case 'editExpression':
+          editExpression(intent.el, doc)
+          break
+        case 'placeCaret': {
+          // Hand the node to text editing: put the caret at the end of it, the
+          // same place a click inside would have left it.
+          const range = doc.createRange()
+          range.selectNodeContents(intent.el)
+          range.collapse(false)
+          const caret = doc.getSelection()
+          caret?.removeAllRanges()
+          caret?.addRange(range)
+          break
+        }
       }
     }
     doc.addEventListener('keydown', onKeydown)
@@ -920,6 +967,25 @@ export default function CanvasEditor({
           )}
         </div>
       )}
+      {/* A structural selection has no focus ring of its own — the caret stays
+          with the text — so what is selected is announced instead. */}
+      <p className="sr-only" aria-live="polite">
+        {selected ? `${KIND_LABEL[selected.kind]} selected` : 'No element selected'}
+      </p>
+      {/* Closed by default and reachable by Tab. Shortcuts nobody can discover
+          are shortcuts nobody has, and the canvas offers no other hint that
+          Alt does anything. */}
+      <details className="canvas-keys">
+        <summary>Keyboard</summary>
+        <dl>
+          {CANVAS_SHORTCUTS.map((shortcut) => (
+            <div key={shortcut.keys}>
+              <dt>{shortcut.keys}</dt>
+              <dd>{shortcut.does}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       <div className="canvas-scroll" ref={scrollRef}>
         <div
           className="canvas-stage"
@@ -953,8 +1019,10 @@ export default function CanvasEditor({
             <>
               {/* Pointer-only affordance, hidden from assistive tech on
                   purpose: the same change is reachable from the labelled
-                  properties bar above (Col W / Row H / W / H). Full keyboard
-                  control of the canvas is tracked separately. */}
+                  properties bar above (Col W / Row H / W / H), and choosing
+                  which cell to change is a keyboard gesture now too (Alt+arrows,
+                  see keyboard.ts). What has no keyboard equivalent is the drag
+                  itself. */}
               {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
               <div
                 aria-hidden="true"
@@ -969,8 +1037,10 @@ export default function CanvasEditor({
               />
               {/* Pointer-only affordance, hidden from assistive tech on
                   purpose: the same change is reachable from the labelled
-                  properties bar above (Col W / Row H / W / H). Full keyboard
-                  control of the canvas is tracked separately. */}
+                  properties bar above (Col W / Row H / W / H), and choosing
+                  which cell to change is a keyboard gesture now too (Alt+arrows,
+                  see keyboard.ts). What has no keyboard equivalent is the drag
+                  itself. */}
               {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
               <div
                 aria-hidden="true"

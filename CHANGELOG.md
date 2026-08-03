@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
   endpoints. `docker-compose.roles.yml` runs the split topology, and
   `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
+- **The visual canvas can be driven from the keyboard.** `Alt`+arrows select
+  structure through the document tree, `Alt`+`Enter` opens the selected element
+  (its Jinja expression, or its text), `Alt`+`Delete` removes it, `Esc` clears.
+  Plain typing is untouched. The shortcuts are listed in the canvas itself, and
+  the selection is announced to assistive technology.
 - **Template archiving.** `DELETE /api/templates/{code}` stops rendering by code
   with `410` while pinned versions keep working — that promise was made when the
   version was published — and `restore` brings it back.

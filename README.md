@@ -426,10 +426,28 @@ letterhead would be wrong and unfixable from here; and CodeMirror's scroll
 container, which is reported as a scrollable region with no keyboard access
 when the region it scrolls is the contenteditable the caret lives in.
 
-The visual canvas itself is still driven by the mouse: resize handles and
-free-positioning of images have no keyboard equivalent, though the same
-changes are reachable from the labelled properties bar. That gap is known and
-tracked, not overlooked.
+**The canvas from the keyboard.** The canvas is contenteditable, so the plain
+arrows, Enter and Backspace belong to writing the document and cannot be taken
+away from it. Selecting *structure* therefore lives behind Alt:
+
+| Keys | What it does |
+|---|---|
+| `Alt` + `↓` / `↑` | select the next / previous element at this level |
+| `Alt` + `→` | select the first element inside this one |
+| `Alt` + `←` | select the element around this one |
+| `Alt` + `Enter` | edit the selected element — its Jinja expression, or its text |
+| `Alt` + `Delete` | remove the selected element |
+| `Esc` | clear the selection |
+
+Movement is by tree rather than by document order: `Alt`+`↓` in the last cell of
+a row stops there instead of surfacing into the next paragraph. The list is also
+in the canvas itself, under "Keyboard", because a shortcut nobody can discover
+is a shortcut nobody has.
+
+What remains mouse-only: the drag handles for column widths and row heights, and
+free positioning of images. Both make the same change the labelled properties
+bar makes, so nothing is only reachable by pointer — but the direct gesture is
+not there, and that is a real gap rather than an oversight.
 
 **Theme.** Light and dark, following the system preference, with an override in
 Settings — a dark editor around a white sheet is uncomfortable for exactly the
