@@ -22,17 +22,23 @@ editor; your application gets a PDF with a single API call, passing JSON data.
 ## Quick start
 
 ```bash
-docker run -p 8100:8000 ghcr.io/lito130965/linform:latest   # published on each tag
+git clone https://github.com/Lito130965/linform && cd linform
+docker compose up -d --build   # app on :8100 + PostgreSQL (not exposed)
 ```
 
-That gives a working service on SQLite with authentication off — enough to open
-the editor and render something. For anything else, copy `.env.example` to
-`.env` and use compose; **set an authentication section before exposing it to
-anyone**.
+That gives a working service with authentication **off** — enough to open the
+editor and render something. Before exposing it to anyone, copy `.env.example`
+to `.env` and set an authentication section.
+
+One container and no database to configure, if you prefer — SQLite in a file
+next to the app:
 
 ```bash
-docker compose up -d   # app on :8100 + PostgreSQL (not exposed)
+docker build -t linform . && docker run -p 8100:8000 linform
 ```
+
+(A published image at `ghcr.io/lito130965/linform` arrives with the first
+tagged release; the workflow that pushes it runs on `v*` tags.)
 
 Create a template, publish a version, render a PDF:
 
@@ -42,13 +48,14 @@ curl -X POST localhost:8100/api/templates \
   -H "Content-Type: application/json" \
   -d '{"code": "invoice", "name": "Invoice"}'
 
-# 2. First version (always created as a draft)
-curl -X PUT localhost:8100/api/templates/invoice \
+# 2. A draft — a working copy with no version number yet
+#    → {"id": 1, "status": "draft", ...}
+curl -X POST localhost:8100/api/templates/invoice/drafts \
   -H "Content-Type: application/json" \
   -d '{"html_content": "<h1>Invoice #{{ number }}</h1>", "comment": "initial"}'
 
-# 3. Publish it
-curl -X POST localhost:8100/api/templates/invoice/publish/1
+# 3. Publish that draft by its id — this is where version 1 is minted
+curl -X POST localhost:8100/api/templates/invoice/drafts/1/publish
 
 # 4. Render: JSON in, PDF out
 curl -X POST localhost:8100/api/render/invoice \
@@ -194,11 +201,12 @@ Better to know before you build on it:
   grid support is incomplete. Print forms are tables, blocks and absolute
   positioning, which is what the engine is good at — complex web layouts will
   not survive the trip.
-- **No deployment role split yet.** All endpoints — render *and* template
-  management — are mounted in every instance. Until that is separated, put the
-  editor behind your internal network and hand consuming applications a
-  render-only token (see below), which already prevents a leaked service token
-  from changing templates.
+- **One instance mounts everything, unless you split it.** The default
+  (`LINFORM_ROLE=all`) carries the render API and the management API together. A
+  render-only token already prevents a leaked service token from changing
+  templates; `LINFORM_ROLE=render` goes further and leaves the management API
+  out of the process entirely (see [Deployment roles](#deployment-roles)). Either
+  way, keep the editor on an internal network.
 - **Rendering is synchronous.** One request, one PDF, with a hard timeout and a
   hard in-flight ceiling — past it the service replies `429 Retry-After` instead
   of queueing without bound. Bulk generation ("10 000 invoices") and any retry

@@ -9,8 +9,11 @@ import { createTemplate, enterVisual, latestDraftHtml, openTemplate, saveDraft, 
  * contenteditable, and a browser has opinions about all three. So this drives a
  * real Chromium and only ever presses keys.
  *
- * The one click is on the empty canvas background — the gesture that focuses it
- * and selects nothing. Every selection after that is the keyboard's doing.
+ * Not one click, not even on empty background: focus goes to the canvas the way
+ * Tab would leave it, and every selection after that is the keyboard's doing.
+ * (The first version of this file clicked at 5,5 to "focus without selecting",
+ * which selected the first element — these templates carry no page margins, so
+ * the very corner of the sheet is already inside the heading.)
  */
 
 const CANVAS = 'iframe[title="template canvas"]'
@@ -26,7 +29,7 @@ test('select, enter and remove an element with the keyboard alone', async ({ pag
   await enterVisual(page)
 
   const frame = page.frameLocator(CANVAS)
-  await frame.locator('body').click({ position: { x: 5, y: 5 } })
+  await frame.locator('body').focus()
   await expect(frame.locator('[data-lf-selected]')).toHaveCount(0)
 
   // Alt+Down with nothing selected is the way in.
@@ -66,7 +69,7 @@ test('alt+enter hands the selected element to the caret', async ({ page, request
   await enterVisual(page)
 
   const frame = page.frameLocator(CANVAS)
-  await frame.locator('body').click({ position: { x: 5, y: 5 } })
+  await frame.locator('body').focus()
   await page.keyboard.press('Alt+ArrowDown')
   await expect(frame.locator('[data-lf-selected]')).toHaveText('Heading')
 
