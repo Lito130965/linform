@@ -33,10 +33,12 @@ curl -X POST localhost:8100/api/templates \
   -H "Content-Type: application/json" \
   -d '{"code": "invoice", "name": "Invoice"}'
 
+# A draft first — it carries no version number until it is published.
 python -c "import json;print(json.dumps({'html_content':open('examples/invoice.html').read(),'comment':'from examples'}))" \
-  | curl -X PUT localhost:8100/api/templates/invoice -H 'Content-Type: application/json' -d @-
+  | curl -X POST localhost:8100/api/templates/invoice/drafts -H 'Content-Type: application/json' -d @-
 
-curl -X POST localhost:8100/api/templates/invoice/publish/1
+# Publish it by the id the call above returned; version 1 is minted here.
+curl -X POST localhost:8100/api/templates/invoice/drafts/1/publish
 
 curl -X POST localhost:8100/api/render/invoice \
   -H "Content-Type: application/json" \

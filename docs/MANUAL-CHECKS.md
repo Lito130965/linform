@@ -116,8 +116,10 @@ print from each. **30 min. Last run: —**
 
 Explore the journal, settings, the login screen and the code editor with the
 keyboard only, then with NVDA, targeting names that read wrong rather than names
-that are missing (axe catches missing ones). The visual canvas is known to be
-mouse-driven; the charter is about everything around it. **60 min. Last run: —**
+that are missing (axe catches missing ones). Include the visual canvas now that
+Alt+arrows select structure: the question a test cannot answer is whether the
+announcement ("Row selected") arrives at a useful moment and says something a
+person can act on. **60 min. Last run: —**
 
 ### M-07 — How the editor feels on a real template
 

@@ -907,6 +907,42 @@ label {
   font-size: 13px;
 }
 
+/* The canvas keyboard hint: a disclosure, so it costs one line when closed and
+   is still reachable by Tab. */
+.canvas-keys {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.canvas-keys summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.canvas-keys dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 6px 0 4px;
+}
+
+.canvas-keys dl > div {
+  display: contents;
+}
+
+.canvas-keys dt {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.canvas-keys dd {
+  margin: 0;
+}
+
 .canvas-topbar label {
   display: flex;
   align-items: center;

@@ -201,10 +201,15 @@ export default function Editor({
     setBusy(true)
     setError(null)
     try {
+      const source = currentHtml()
+      if (source !== htmlRef.current) {
+        htmlRef.current = source
+        setHtml(source)
+      }
       const draft =
         openDraftId != null
-          ? await api.updateDraft(code, openDraftId, html, comment)
-          : await api.createDraft(code, html, comment)
+          ? await api.updateDraft(code, openDraftId, source, comment)
+          : await api.createDraft(code, source, comment)
       setOpen({ kind: 'draft', id: draft.id })
       await refreshDetail()
       setDirty(false)
@@ -353,6 +358,22 @@ export default function Editor({
   const exitVisual = () => {
     canvasApiRef.current = null
     setMode('code')
+  }
+
+  /** The document as it is on screen *right now*.
+   *
+   * In visual mode the canvas reports its changes on a debounce, so `html` can
+   * be a fraction of a second behind what the user is looking at — and a save
+   * inside that window writes the document as it was a moment ago, silently
+   * dropping the last edit. Nobody noticed because every path that saved went
+   * through Code mode first, and leaving the canvas flushes it.
+   *
+   * In code mode the state is the document, so there is nothing to ask. */
+  const currentHtml = (): string => {
+    const body = mode === 'visual' ? canvasApiRef.current?.getBody() : null
+    const split = splitRef.current
+    if (!body || !split) return html
+    return joinFromVisual(split.prefix, restore(fromCanvasAssets(body)), split.suffix)
   }
 
   useEffect(() => {
