@@ -20,13 +20,22 @@ test('the sheet does not grow a page every time you edit', async ({ page, reques
    * and the sheet grew by a page per edit with no page break in the document.
    */
   const code = uniqueCode('grow')
-  await createTemplate(request, code, exampleHtml('invoice'))
+  // Deliberately not one of the examples: in the canvas a `{% for %}` is drawn
+  // as the single row it is written as, so a template that prints on two pages
+  // occupies one here. This one is taller than a page as authored, which is the
+  // only way to have a boundary to watch.
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 15mm }</style>\n' +
+      '<h1>Report</h1>\n<div style="height: 400mm">tall block</div>\n<p>after</p>\n',
+  )
   await openTemplate(page, code)
   await enterVisual(page)
 
   const boundaries = page.locator('.page-boundary')
   const before = await boundaries.count()
-  expect(before, 'this example is supposed to paginate at all').toBeGreaterThan(0)
+  expect(before, 'this template is taller than one page and should say so').toBeGreaterThan(0)
 
   const heading = page.frameLocator(CANVAS).locator('h1').first()
   for (let i = 0; i < 3; i++) {
