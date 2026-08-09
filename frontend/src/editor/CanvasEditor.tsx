@@ -557,7 +557,15 @@ export default function CanvasEditor({
       // to record. It commits once, when the hand lets go.
       if (restoringRef.current || gestureRef.current) return
       clearTimeout(timer)
-      timer = setTimeout(() => commitRef.current?.(), 300)
+      timer = setTimeout(() => {
+        // Checked again on the way out, not only on the way in: a timer armed
+        // just before the gesture began — by the click that selected the thing
+        // about to be dragged — would otherwise fire in the middle of it and
+        // commit a half-finished state. Undo then went back to a width the drag
+        // had merely passed through.
+        if (gestureRef.current || restoringRef.current) return
+        commitRef.current?.()
+      }, 300)
     })
 
     commitRef.current = () => {
