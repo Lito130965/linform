@@ -70,7 +70,16 @@ export function intentFor(
   // Ctrl/Cmd belongs to undo, redo and the browser's own shortcuts.
   if (e.ctrlKey || e.metaKey) return null
 
-  if (e.key === 'Escape') return selected ? { action: 'select', el: null } : null
+  if (e.key === 'Escape') {
+    // Escape backs OUT one level, and clears once there is nowhere further to
+    // go. Pressing it repeatedly walks up the document and then lets go, which
+    // is the behaviour every editor with a nested selection has taught people
+    // to expect — and going up is what you want constantly, where clearing is
+    // what you want once.
+    if (!selected) return null
+    const parent = parentSelectable(selected, root)
+    return { action: 'select', el: parent }
+  }
   if (!e.altKey) return null
 
   switch (e.key) {
@@ -119,5 +128,5 @@ export const CANVAS_SHORTCUTS: { keys: string; does: string }[] = [
   { keys: 'Alt + ←', does: 'select the element around this one' },
   { keys: 'Alt + Enter', does: 'edit the selected element (its Jinja expression, or its text)' },
   { keys: 'Alt + Delete', does: 'remove the selected element' },
-  { keys: 'Esc', does: 'clear the selection' },
+  { keys: 'Esc', does: 'step out to the element around this one; clear at the top' },
 ]

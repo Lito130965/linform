@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
   endpoints. `docker-compose.roles.yml` runs the split topology, and
   `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
+- **The canvas selection is visible before it happens.** Hovering outlines what
+  a click would select and names its kind; the selected element's path
+  (`Table › Row › Cell › Block`) is in the properties bar with every level
+  clickable; and `Esc` steps out one level at a time, clearing only once there
+  is nowhere further to go.
 - **Snapping, guides and a live millimetre readout in the canvas.** A dragged
   edge falls onto page margins, page breaks and the edges and centres of other
   elements, with the millimetre grid as a fallback; an explicit alignment always

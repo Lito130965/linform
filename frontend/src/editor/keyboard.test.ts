@@ -133,8 +133,14 @@ describe('acting on the selection', () => {
     }
   })
 
-  it('escape clears the selection, and does nothing when there is none', () => {
-    expect(intentFor(key('Escape'), el('intro'), root)).toEqual({ action: 'select', el: null })
+  it('escape backs out one level, and clears at the top', () => {
+    // Repeated Escape walks up the document and then lets go: going up is what
+    // somebody wants constantly, clearing is what they want once.
+    expect(intentFor(key('Escape'), el('cell1'), root)).toEqual({
+      action: 'select',
+      el: el('row1'),
+    })
+    expect(intentFor(key('Escape'), el('title'), root)).toEqual({ action: 'select', el: null })
     expect(intentFor(key('Escape'), null, root)).toBeNull()
   })
 })
