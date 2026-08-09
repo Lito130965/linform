@@ -280,25 +280,45 @@ What holds regardless of hardware, because it follows from the design:
 - **Past the in-flight ceiling the service refuses immediately** with `429` and
   `Retry-After` rather than building a queue.
 
-The run below is one container with the default 2 workers on an AMD Ryzen 5
-4600H, rendering the `invoice` example (two A4 pages, a 25-row table). Treat it
-as the shape, and the per-render cost — here about a quarter of a second — as
-the number to re-measure on your own hardware and your own templates, both of
-which move it:
+The runs below are one container on an AMD Ryzen 5 4600H (6 cores / 12 threads),
+rendering the `invoice` example — two A4 pages with a 25-row table. **One render
+costs about 235 ms** and that figure does not move with the worker count: it is
+one document on one core, and it is the number to re-measure on your hardware
+and your templates, both of which change it.
 
-| Concurrent clients | Rendered | Refused (429) | PDF/s | p50 | p95 |
-|---:|---:|---:|---:|---:|---:|
-| 1 | 40 | 0 | 3.9 | 236 ms | 314 ms |
-| 2 | 40 | 0 | 7.7 | 239 ms | 323 ms |
-| 4 | 40 | 0 | 7.9 | 526 ms | 545 ms |
-| 8 | 4 | 36 | 7.7 | 510 ms | 513 ms |
-| 16 | 6 | 34 | 7.1 | 500 ms | 621 ms |
+What the worker count buys, at the point where each setting stops gaining:
 
-Two workers saturate at ~8 PDF/s here; at 4 concurrent clients throughput is
-unchanged and the extra wait shows up as doubled latency; at 8, thirty-six of
-forty requests are turned away in milliseconds instead of all forty being
-served slowly. That last row is the backpressure design working end to end —
-the one thing in this table that will look the same on any machine.
+| Render workers | Sustained PDF/s | at clients | p50 | p95 |
+|---:|---:|---:|---:|---:|
+| 2 *(default)* | 7.9 | 4 | 527 ms | 547 ms |
+| 4 | 14.7 | 8 | 529 ms | 627 ms |
+| 6 | 18.1 | 8 | 401 ms | 528 ms |
+
+Doubling the workers from 2 to 4 gives **1.87×** — 93% of linear, which is what
+"throughput tracks core count" means in practice. From 4 to 6 it is 1.23× rather
+than 1.5×: those six workers now share six physical cores with the application
+process and the database. **The default of 2 is a floor, not a ceiling** — it
+exists so the service behaves on a small box, and one environment variable moves
+it.
+
+Past the ceiling, the same runs at 16 concurrent clients:
+
+| Render workers | Served | Refused | Median time to refuse |
+|---:|---:|---:|---:|
+| 2 | 4 | 90% | 24 ms |
+| 4 | 8 | 80% | 19 ms |
+| 6 | 12 | 70% | 10 ms |
+
+The number served is exactly the in-flight ceiling — workers × 2 — in all three
+runs, and everything over it comes back in milliseconds with `429` and
+`Retry-After` rather than joining a queue. That is the backpressure design
+end to end, and it is the row that will look the same on any machine.
+
+Throughput and refusals are reported separately on purpose. Once the ceiling
+starts shedding load the run is over in half a second, so "documents ÷ wall
+clock" stops describing a sustained rate — it describes a handful of renders
+divided by an interval too short to mean anything. The load script marks those
+rows with a `*` for the same reason.
 
 Scaling levers, in the order worth reaching for: raise
 `LINFORM_RENDER_MAX_WORKERS` towards the core count, raise

@@ -302,3 +302,49 @@ render nodes; `all` remains the default precisely because most installations
 should not pay that. And every container still migrates on startup, which is why
 migrations take an advisory lock — the split makes concurrent startup normal
 rather than exceptional.
+
+---
+
+## 10. There is no second rendering engine, and what it would take
+
+**Context.** The obvious answer to "WeasyPrint does not support X" is to add
+headless Chromium as an alternative engine. `PdfRenderer` in
+`app/services/renderer.py` is already a Protocol, so the seam exists.
+
+**Decision.** The seam stays empty. One engine, chosen deliberately (decision 1),
+and its limits are published rather than papered over.
+
+**Why.** The reasons are not about effort; they are about what the product is.
+
+*The security model is the first casualty.* "A template is untrusted code"
+(decision 7) is safe largely because the engine does not execute anything:
+WeasyPrint has no JavaScript, so a template cannot make requests, read what it
+should not, or route around a URL policy that fits in one function. Chromium
+executes. Adding it means a sandbox, a network-less container and a new threat
+model — trading the strongest property of the product for a capability nobody
+has asked for. There is a test asserting the engine does not run scripts
+(`tests/test_engine_capabilities.py`), because that assumption deserves to fail
+loudly if it ever stops holding.
+
+*Reproducibility becomes a matrix.* "This version renders the same forever" is a
+promise about an engine. With two, the engine joins the version's identity: it
+has to be pinned per version, stored, exposed in the API, and every golden file
+doubles. One of the cleanest ideas here turns into bookkeeping.
+
+*The container stops being small.* `python:3.12-slim` plus Pango is not
+`+400 MB` of browser and several hundred megabytes of RAM per worker, and "one
+container, a database and your own backups" stops being true.
+
+*And it is somebody else's ground.* Gotenberg does browser rendering, does it
+well, and has years of head start. A second-string Chromium here would be worse
+at that job while making this service harder to explain.
+
+**Cost.** Templates that need CSS the engine does not implement, or anything
+computed in JavaScript, cannot be served — and that is stated in the README's
+Limits rather than worked around. The engine's real capabilities are tested
+rather than remembered, so the list stays accurate across upgrades.
+
+**What would change this.** A paying deployment with a concrete document that
+cannot be expressed any other way. Then the seam gets an implementation, behind
+its own image and its own threat model, chosen for that requirement — not for
+the possibility of one.

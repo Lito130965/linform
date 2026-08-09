@@ -61,15 +61,28 @@ def run(base: str, code: str, data: dict, concurrency: int, total: int, token: s
         by_status.setdefault(status, []).append(seconds)
 
     ok = by_status.get(200, [])
+    refused = by_status.get(429, [])
+    # Throughput and refusals are different measurements and must not be read
+    # as one number. Once the ceiling starts shedding load, most requests come
+    # back in milliseconds, the run ends almost immediately, and "documents
+    # divided by wall clock" stops describing sustained throughput — it
+    # describes a handful of renders divided by half a second. So the refused
+    # share is reported beside it, and how fast a refusal came back, which is
+    # the thing that actually matters about backpressure.
     return {
         "concurrency": concurrency,
         "requests": total,
         "wall_seconds": round(wall, 2),
         "ok": len(ok),
-        "rejected_429": len(by_status.get(429, [])),
+        "rejected_429": len(refused),
+        "refused_pct": round(100 * len(refused) / total, 1) if total else 0,
+        "refusal_ms_median": round(percentile(refused, 50) * 1000, 1) if refused else None,
         "timeout_504": len(by_status.get(504, [])),
         "other": {s: len(v) for s, v in by_status.items() if s not in (200, 429, 504)},
         "throughput_pdf_per_s": round(len(ok) / wall, 2) if wall else 0,
+        # True only while nothing was refused; past the ceiling the run is too
+        # short for the figure above to mean "per second" in the usual sense.
+        "throughput_is_sustained": not refused,
         "latency_ms": {
             "mean": round(statistics.fmean(ok) * 1000, 1) if ok else None,
             "p50": round(percentile(ok, 50) * 1000, 1) if ok else None,
@@ -95,15 +108,24 @@ def main() -> int:
             raw = handle.read()
     data = json.loads(raw)
 
-    print(f"{'conc':>5} {'ok':>5} {'429':>5} {'504':>5} {'pdf/s':>7} {'p50':>8} {'p95':>8} {'max':>8}")
+    print(
+        f"{'conc':>5} {'ok':>5} {'refused':>9} {'refus.ms':>9} {'504':>5} "
+        f"{'pdf/s':>7} {'p50':>8} {'p95':>8} {'max':>8}"
+    )
     rows = []
     for concurrency in args.concurrency:
         row = run(args.base_url, args.template_code, data, concurrency, args.requests, args.token)
         rows.append(row)
         lat = row["latency_ms"]
+        # A star marks the rows where the throughput figure is not a sustained
+        # rate: the ceiling shed most of the load and the run was over in
+        # milliseconds. Reading those two numbers as one column is the mistake
+        # this column layout exists to prevent.
+        rate = f"{row['throughput_pdf_per_s']}{'' if row['throughput_is_sustained'] else '*'}"
         print(
-            f"{row['concurrency']:>5} {row['ok']:>5} {row['rejected_429']:>5} "
-            f"{row['timeout_504']:>5} {row['throughput_pdf_per_s']:>7} "
+            f"{row['concurrency']:>5} {row['ok']:>5} "
+            f"{str(row['refused_pct']) + '%':>9} {str(row['refusal_ms_median'] or '-'):>9} "
+            f"{row['timeout_504']:>5} {rate:>7} "
             f"{lat['p50'] or 0:>8} {lat['p95'] or 0:>8} {lat['max'] or 0:>8}"
         )
         if row["other"]:
