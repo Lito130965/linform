@@ -1116,12 +1116,22 @@ export default function CanvasEditor({
         if (d && d.el !== dragged && !dragged.contains(d.el)) {
           if (copyRef.current) {
             const copy = dragged.cloneNode(true) as Element
-            // The clone must not arrive already selected: that attribute is an
-            // affordance of this editor, and two of them would leave the
-            // toolbar acting on whichever the query found first.
-            copy.removeAttribute('data-lf-selected')
-            for (const marked of Array.from(copy.querySelectorAll('[data-lf-selected]'))) {
-              marked.removeAttribute('data-lf-selected')
+            // A clone arrives carrying two things it must not keep.
+            //
+            // The selection marker is an affordance of this editor, and two
+            // marked elements would leave the toolbar acting on whichever the
+            // query found first.
+            //
+            // The id is the document's, and it has to be unique: two elements
+            // answering to the same one is invalid markup, and a stylesheet
+            // rule written for `#total` would quietly apply to both. Dropped
+            // rather than renamed — a guessed name would keep the duplicate out
+            // of the way while silently losing whatever styling the id carried,
+            // where dropping it shows up on the canvas at once. Classes and
+            // inline styles come along, which is what most templates style by.
+            for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
+              el.removeAttribute('data-lf-selected')
+              el.removeAttribute('id')
             }
             place(copy, d)
             select(copy)

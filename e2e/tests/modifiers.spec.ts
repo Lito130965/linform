@@ -51,6 +51,8 @@ test('ctrl and drag leaves the original and drops a copy', async ({ page, reques
   // Two paragraphs saying "copy me": the original, still where it was, and one
   // at the drop.
   await expect(frame.locator('p', { hasText: 'copy me' })).toHaveCount(2)
+  // And exactly one #source: an id belongs to one element, and a copy that
+  // kept it would make a stylesheet rule for it apply to both.
   await expect(frame.locator('#source')).toHaveCount(1)
 
   await saveDraft(page, 'duplicated a block')
