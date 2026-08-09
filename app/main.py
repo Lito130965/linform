@@ -144,7 +144,7 @@ def create_app(settings: Settings | None = None, static_dir: Path | None = None)
     to reach.
     """
     settings = settings or get_settings()
-    app = FastAPI(title="Linform", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Linform", version="0.2.0", lifespan=lifespan)
     app.state.role = settings.role
     # Order matters: the request-id middleware is added last so it runs FIRST,
     # and every log line produced while serving — including one written by the
