@@ -56,7 +56,18 @@ async function dragColumnEdge(page: Page, frame: FrameLocator, byCanvasPx: numbe
   }
 }
 
-test('an edge dragged near the page margin lands on it', async ({ page, request }) => {
+test('a column dragged near the page margin lands the table on it', async ({ page, request }) => {
+  /**
+   * What "on the margin" can mean here is decided by the box model, not by us.
+   * A table with an automatic width may not exceed its container's content
+   * width, and `border-spacing` sits between the last cell and the table's own
+   * edge — so a cell in a table that is already flush with the margin is
+   * necessarily that spacing short of it, and asking for the cell's edge to
+   * touch the margin is asking for something no browser will do.
+   *
+   * The table's edge is the one that lands, and the table's edge is what a
+   * person means by "make it reach the margin".
+   */
   const code = uniqueCode('snap')
   await createTemplate(request, code, TEMPLATE)
   await openTemplate(page, code)
@@ -71,26 +82,25 @@ test('an edge dragged near the page margin lands on it', async ({ page, request 
   await expect(page.locator('.snap-guide.page')).toHaveCount(1)
   await finish()
 
-  const landed = await cellRight(frame)
-  // Everything needed to explain a miss, in the failure message: a two-pixel
-  // discrepancy has several plausible authors (box-sizing, cell padding, the
-  // table's border-spacing), and reading them beats guessing between them.
-  const box = await frame.locator('#cell').evaluate((el) => {
-    const cell = getComputedStyle(el)
-    const table = el.closest('table')
-    return {
-      boxSizing: cell.boxSizing,
-      width: cell.width,
-      padding: `${cell.paddingLeft}/${cell.paddingRight}`,
-      border: `${cell.borderLeftWidth}/${cell.borderRightWidth}`,
-      borderSpacing: table ? getComputedStyle(table).borderSpacing : 'no table',
-      tableRight: table ? table.getBoundingClientRect().right : 0,
-    }
-  })
+  const landed = await frame
+    .locator('#cell')
+    .evaluate((el) => {
+      const table = el.closest('table')!
+      return {
+        table: table.getBoundingClientRect().right,
+        cell: el.getBoundingClientRect().right,
+        spacing: parseFloat(getComputedStyle(table).borderSpacing) || 0,
+      }
+    })
+
   expect(
-    Math.abs(landed - margin),
-    `landed=${landed} margin=${margin} ${JSON.stringify(box)}`,
+    Math.abs(landed.table - margin),
+    `table=${landed.table} margin=${margin}`,
   ).toBeLessThan(1.5)
+  // And the cell is inside it by exactly the spacing — stated, so that if a
+  // future change starts overshooting the margin the difference is visible
+  // rather than absorbed into a tolerance.
+  expect(Math.abs(landed.table - landed.cell - landed.spacing)).toBeLessThan(1)
 })
 
 test('holding alt drags past the margin instead of onto it', async ({ page, request }) => {

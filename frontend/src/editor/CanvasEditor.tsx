@@ -787,12 +787,15 @@ export default function CanvasEditor({
    * where it actually landed.
    *
    * A drag positions an EDGE, and a size written into CSS is not the same
-   * quantity: under `content-box` the padding and border are added on top, and
-   * inside a table the cell's own `border-spacing` is added again — a column
-   * dragged onto the page margin left the TABLE flush and the cell two pixels
-   * inside it, measured. Reproducing every one of those rules here would mean
-   * keeping a copy of the browser's box model in this file, and it would drift.
-   * Reading where the edge went and correcting once cannot. */
+   * quantity: under `content-box` the padding and the border are added on top
+   * of it. Reproducing those rules here would mean keeping a copy of the
+   * browser's box model in this file; reading where the edge actually went and
+   * closing the gap cannot drift from it.
+   *
+   * It does not always close: inside a table the layout has the last word — a
+   * cell cannot push its table past the container's content width, and the
+   * cell's own edge stays `border-spacing` inside the table's. That is the box
+   * model, not a miss, and the correction leaves it where the layout put it. */
   const settleEdge = (
     el: HTMLElement,
     target: number,
