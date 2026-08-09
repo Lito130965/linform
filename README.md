@@ -197,10 +197,15 @@ needs no internet access at all.
 Better to know before you build on it:
 
 - **No JavaScript in templates.** WeasyPrint renders documents, not web pages.
-- **Partial CSS grid.** Flexbox works, including nested row/column layouts;
-  grid support is incomplete. Print forms are tables, blocks and absolute
-  positioning, which is what the engine is good at — complex web layouts will
-  not survive the trip.
+- **Print CSS, not browser CSS.** Flexbox lays out, and so does explicit CSS
+  grid — this entry used to say grid support was incomplete, which was true of
+  an older engine and is no longer what the pinned one does. Both are checked by
+  rendering a page and reading back where things landed
+  (`tests/test_engine_capabilities.py`), each against a control, so the claim
+  stays honest across upgrades. What is *not* covered: the further corners of
+  grid (auto-placement, named areas, subgrid) are untested here, and a layout
+  copied from a web page may still not survive the trip. Print forms are tables,
+  blocks and absolute positioning, which is what the engine is best at.
 - **One instance mounts everything, unless you split it.** The default
   (`LINFORM_ROLE=all`) carries the render API and the management API together. A
   render-only token already prevents a leaked service token from changing

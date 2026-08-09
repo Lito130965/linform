@@ -28,9 +28,12 @@ a browser to supervise, sandbox and keep patched.
 **Cost, paid knowingly.**
 - **No JavaScript in templates.** A template that computes something in JS
   cannot be ported here — computation belongs to the caller.
-- **Incomplete CSS grid.** Flexbox works; grid does not, fully. Print forms are
-  tables, blocks and absolute positioning, which the engine is good at, but a
-  design copied from a web page may not survive.
+- **Browser CSS is not print CSS.** Flexbox works, and explicit grid does too —
+  this said "grid does not, fully" until it was measured against the pinned
+  engine rather than recalled (`tests/test_engine_capabilities.py`); the further
+  corners of grid remain untested. Print forms are tables, blocks and absolute
+  positioning, which the engine is good at, but a design copied from a web page
+  may still not survive.
 - **The engine is the ceiling.** When WeasyPrint cannot lay something out,
   there is no second engine to fall back to. This is why a failure of the
   engine is reported as `422` with the message attached, not `500` — it is
