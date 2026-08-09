@@ -71,7 +71,26 @@ test('an edge dragged near the page margin lands on it', async ({ page, request 
   await expect(page.locator('.snap-guide.page')).toHaveCount(1)
   await finish()
 
-  expect(Math.abs((await cellRight(frame)) - margin)).toBeLessThan(1.5)
+  const landed = await cellRight(frame)
+  // Everything needed to explain a miss, in the failure message: a two-pixel
+  // discrepancy has several plausible authors (box-sizing, cell padding, the
+  // table's border-spacing), and reading them beats guessing between them.
+  const box = await frame.locator('#cell').evaluate((el) => {
+    const cell = getComputedStyle(el)
+    const table = el.closest('table')
+    return {
+      boxSizing: cell.boxSizing,
+      width: cell.width,
+      padding: `${cell.paddingLeft}/${cell.paddingRight}`,
+      border: `${cell.borderLeftWidth}/${cell.borderRightWidth}`,
+      borderSpacing: table ? getComputedStyle(table).borderSpacing : 'no table',
+      tableRight: table ? table.getBoundingClientRect().right : 0,
+    }
+  })
+  expect(
+    Math.abs(landed - margin),
+    `landed=${landed} margin=${margin} ${JSON.stringify(box)}`,
+  ).toBeLessThan(1.5)
 })
 
 test('holding alt drags past the margin instead of onto it', async ({ page, request }) => {
