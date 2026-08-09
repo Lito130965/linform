@@ -28,6 +28,7 @@ export default function BoxModel({
   sizeLabel,
   onApply,
   onAdjusting,
+  onGesture,
 }: {
   /** the selected element, read for both its inline and its computed values */
   el: HTMLElement
@@ -42,6 +43,10 @@ export default function BoxModel({
    * millimetre ruler up: geometry is about to change, whether by typing, by an
    * arrow key or by a drag that starts here */
   onAdjusting: (active: boolean) => void
+  /** true for the length of a scrub, so the whole drag is one undo step —
+   * separate from the above, since a value typed and confirmed is a decision of
+   * its own and deserves a step of its own */
+  onGesture: (active: boolean) => void
 }) {
   const computed = view.getComputedStyle(el)
   // What is in the boxes while they are being typed in. Committed values leave
@@ -95,6 +100,7 @@ export default function BoxModel({
       if (!active) return
       const dx = e.clientX - active.startX
       if (!active.moved && Math.abs(dx) < 3) return
+      if (!active.moved) onGesture(true)
       active.moved = true
       e.preventDefault()
       // Half a millimetre per pixel: fine enough to land on a value, coarse
@@ -106,7 +112,11 @@ export default function BoxModel({
     const up = () => {
       const active = scrub.current
       scrub.current = null
-      if (active?.moved) forget(active.property)
+      if (active?.moved) {
+        forget(active.property)
+        // One scrub, one step to undo — however many values it passed through.
+        onGesture(false)
+      }
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
