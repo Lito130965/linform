@@ -20,6 +20,7 @@ import {
 import BoxModel from './BoxModel'
 import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
+import { CANVAS_MODIFIERS, isDuplicating, keepRatio, lockAxis } from './modifiers'
 import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
 import { place, placementFor, type Placement } from './placement'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
@@ -198,6 +199,8 @@ export default function CanvasEditor({
   // Live drop target while dragging a block to reorder it.
   const [moveDrop, setMoveDrop] = useState<Placement | null>(null)
   const dropRef = useRef<Placement | null>(null)
+  // Whether the block being dragged should be copied rather than moved.
+  const copyRef = useRef(false)
   // True while a spacing or size box has the focus: a ruler is wanted from the
   // moment somebody reaches for a number, not only once they drag something.
   const [adjusting, setAdjusting] = useState(false)
@@ -1058,11 +1061,18 @@ export default function CanvasEditor({
           ev.altKey,
           true,
         )
-        const width = Math.max(8, right - box.left)
-        const height = Math.max(8, bottom - box.top)
-        settleEdge(el, right, 'x', width, (px) => (el.style.width = `${px}px`))
-        settleEdge(el, bottom, 'y', height, (px) => (el.style.height = `${px}px`))
-        readOut(ev, `${toMm(width)} × ${toMm(height)} mm`)
+        const asked = {
+          width: Math.max(8, right - box.left),
+          height: Math.max(8, bottom - box.top),
+        }
+        // Shift keeps the proportion, which for a logo or a stamp is usually
+        // the whole point of resizing it carefully.
+        const { width, height } = ev.shiftKey
+          ? keepRatio(asked.width, asked.height, { width: box.width, height: box.height })
+          : asked
+        settleEdge(el, box.left + width, 'x', width, (px) => (el.style.width = `${px}px`))
+        settleEdge(el, box.top + height, 'y', height, (px) => (el.style.height = `${px}px`))
+        readOut(ev, `${toMm(width)} × ${toMm(height)} mm${ev.shiftKey ? ' · proportional' : ''}`)
         setTick((t) => t + 1)
       },
     })
@@ -1096,11 +1106,41 @@ export default function CanvasEditor({
         const at = placementFor(target, y < tr.top + tr.height / 2 ? 'before' : 'after')
         dropRef.current = at
         setMoveDrop(at)
+        // Read on every move rather than at the start: people press Ctrl once
+        // they can see where the thing is going, not before.
+        copyRef.current = isDuplicating(ev)
+        readOut(ev, copyRef.current ? 'copy here' : 'move here')
       },
       onEnd: () => {
         const d = dropRef.current
-        if (d && d.el !== dragged && !dragged.contains(d.el)) place(dragged, d)
+        if (d && d.el !== dragged && !dragged.contains(d.el)) {
+          if (copyRef.current) {
+            const copy = dragged.cloneNode(true) as Element
+            // A clone arrives carrying two things it must not keep.
+            //
+            // The selection marker is an affordance of this editor, and two
+            // marked elements would leave the toolbar acting on whichever the
+            // query found first.
+            //
+            // The id is the document's, and it has to be unique: two elements
+            // answering to the same one is invalid markup, and a stylesheet
+            // rule written for `#total` would quietly apply to both. Dropped
+            // rather than renamed — a guessed name would keep the duplicate out
+            // of the way while silently losing whatever styling the id carried,
+            // where dropping it shows up on the canvas at once. Classes and
+            // inline styles come along, which is what most templates style by.
+            for (const el of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
+              el.removeAttribute('data-lf-selected')
+              el.removeAttribute('id')
+            }
+            place(copy, d)
+            select(copy)
+          } else {
+            place(dragged, d)
+          }
+        }
         dropRef.current = null
+        copyRef.current = false
         setMoveDrop(null)
       },
     })
@@ -1127,11 +1167,20 @@ export default function CanvasEditor({
     startDrag({
       cursor: 'move',
       onMove: (ev) => {
-        const left = snapEdge(box.left + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
-        const top = snapEdge(box.top + (ev.clientY - startY) / zoom, linesY, 'y', ev.altKey, true)
+        // Shift holds it to one axis: nudging something sideways without
+        // losing the vertical placement it already had is most of what moving
+        // a stamp or a logo is.
+        const moved = ev.shiftKey
+          ? lockAxis((ev.clientX - startX) / zoom, (ev.clientY - startY) / zoom)
+          : { dx: (ev.clientX - startX) / zoom, dy: (ev.clientY - startY) / zoom }
+        const left = snapEdge(box.left + moved.dx, linesX, 'x', ev.altKey)
+        const top = snapEdge(box.top + moved.dy, linesY, 'y', ev.altKey, true)
         el.style.left = `${Math.round(startLeft + (left - box.left))}px`
         el.style.top = `${Math.round(startTop + (top - box.top))}px`
-        readOut(ev, `${toMm(left)} × ${toMm(top)} mm from the sheet corner`)
+        readOut(
+          ev,
+          `${toMm(left)} × ${toMm(top)} mm from the sheet corner${ev.shiftKey ? ' · one axis' : ''}`,
+        )
         setTick((t) => t + 1)
       },
     })
@@ -1408,7 +1457,7 @@ export default function CanvasEditor({
       <details className="canvas-keys">
         <summary>Keyboard</summary>
         <dl>
-          {CANVAS_SHORTCUTS.map((shortcut) => (
+          {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS].map((shortcut) => (
             <div key={shortcut.keys}>
               <dt>{shortcut.keys}</dt>
               <dd>{shortcut.does}</dd>
