@@ -158,6 +158,15 @@ export default function CanvasEditor({
   const bodyRef = useRef<HTMLElement | null>(null)
   const historyRef = useRef<SnapshotHistory | null>(null)
   const restoringRef = useRef(false)
+  // Set while a gesture is under way — a drag, or a value being scrubbed in the
+  // spacing boxes. History and the document's dirty state wait for it to end.
+  const gestureRef = useRef(false)
+  // What the document looked like when the gesture began, so Escape can put it
+  // back without needing an undo step to have been recorded first.
+  const gestureStartRef = useRef<string | null>(null)
+  // Commit whatever is on the canvas now: the debounced path calls it, and so
+  // does the end of a gesture.
+  const commitRef = useRef<(() => void) | null>(null)
   const callbacksRef = useRef({ onChange, onReady, onSanitized })
   callbacksRef.current = { onChange, onReady, onSanitized }
 
@@ -274,6 +283,39 @@ export default function CanvasEditor({
 
   const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
   const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
+
+  /** Begin a gesture: remember what to return to, and hold history open. */
+  const beginGesture = (): void => {
+    const body = bodyRef.current
+    gestureStartRef.current = body ? exportBody(body) : null
+    gestureRef.current = true
+  }
+
+  /** End it. Kept, the whole gesture becomes one undo step — a drag is one
+   * action however many mutations it made, and an undo that lands halfway
+   * through a resize reads as a broken program. Abandoned, the document goes
+   * back to where the gesture found it, without having needed a step to be
+   * recorded first. */
+  const endGesture = (keep: boolean): void => {
+    if (!gestureRef.current) return
+    gestureRef.current = false
+    if (keep) commitRef.current?.()
+    else restoreSnapshot(gestureStartRef.current)
+    gestureStartRef.current = null
+    setDrag(null)
+    setGuides([])
+    setReadout(null)
+    setMoveDrop(null)
+  }
+
+  const startDrag = (spec: {
+    onMove: (e: MouseEvent) => void
+    cursor: string
+    onEnd?: () => void
+  }): void => {
+    beginGesture()
+    setDrag(spec)
+  }
 
   /** The selected element and everything it sits inside, outermost first. */
   const selectionTrail = (): Element[] => {
@@ -439,6 +481,14 @@ export default function CanvasEditor({
         }
         return
       }
+      // Changed your mind halfway through a drag: put it back, without letting
+      // go of the mouse first. Checked before anything else, because during a
+      // gesture Escape means this and nothing else.
+      if (e.key === 'Escape' && gestureRef.current) {
+        e.preventDefault()
+        endGesture(false)
+        return
+      }
       // The current selection is read from the DOM, not from React state: this
       // effect runs once, so the state this closure captured is the state at
       // mount — which is null, forever.
@@ -502,15 +552,20 @@ export default function CanvasEditor({
       observer.observe(body, observeOpts)
       measure()
       setTick((t) => t + 1)
-      if (restoringRef.current) return
+      // A gesture holds the history open: a drag is one action however many
+      // mutations it makes, and a pause in the middle of it is not a decision
+      // to record. It commits once, when the hand lets go.
+      if (restoringRef.current || gestureRef.current) return
       clearTimeout(timer)
-      timer = setTimeout(() => {
-        const snapshot = exportBody(body)
-        historyRef.current?.commit(snapshot)
-        refreshHistState()
-        callbacksRef.current.onChange(snapshot)
-      }, 300)
+      timer = setTimeout(() => commitRef.current?.(), 300)
     })
+
+    commitRef.current = () => {
+      const snapshot = exportBody(body)
+      historyRef.current?.commit(snapshot)
+      refreshHistState()
+      callbacksRef.current.onChange(snapshot)
+    }
     paginate(body, geometryRef.current)
     measure()
     observer.observe(body, observeOpts)
@@ -557,6 +612,14 @@ export default function CanvasEditor({
   // that the shortcuts work without clicking into the canvas first.
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => {
+      // Before the guard below: a gesture can be started from a control that
+      // holds the focus — scrubbing a spacing box is one — and Escape has to
+      // reach it there too.
+      if (e.key === 'Escape' && gestureRef.current) {
+        e.preventDefault()
+        endGesture(false)
+        return
+      }
       const target = e.target as HTMLElement | null
       // Anything being typed into keeps its own arrows — including the spacing
       // boxes, where up and down nudge a value.
@@ -864,7 +927,7 @@ export default function CanvasEditor({
     const box = cell.getBoundingClientRect()
     const startX = e.clientX
     const lines = snapLinesFor('x', cell)
-    setDrag({
+    startDrag({
       cursor: 'col-resize',
       onMove: (ev) => {
         // The thing being dragged is the column's right EDGE, so that is what
@@ -886,7 +949,7 @@ export default function CanvasEditor({
     const box = cell.getBoundingClientRect()
     const startY = e.clientY
     const lines = snapLinesFor('y', cell)
-    setDrag({
+    startDrag({
       cursor: 'row-resize',
       onMove: (ev) => {
         const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
@@ -909,7 +972,7 @@ export default function CanvasEditor({
     const startY = e.clientY
     const linesX = snapLinesFor('x', el)
     const linesY = snapLinesFor('y', el)
-    setDrag({
+    startDrag({
       cursor: 'nwse-resize',
       onMove: (ev) => {
         const right = snapEdge(box.right + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
@@ -937,7 +1000,7 @@ export default function CanvasEditor({
     if (!selected) return
     e.preventDefault()
     const dragged = selected.el
-    setDrag({
+    startDrag({
       cursor: 'grabbing',
       onMove: (ev) => {
         const doc = iframeRef.current?.contentDocument
@@ -986,7 +1049,7 @@ export default function CanvasEditor({
     const box = el.getBoundingClientRect()
     const linesX = snapLinesFor('x', el)
     const linesY = snapLinesFor('y', el)
-    setDrag({
+    startDrag({
       cursor: 'move',
       onMove: (ev) => {
         const left = snapEdge(box.left + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
@@ -1128,6 +1191,7 @@ export default function CanvasEditor({
                 height: isCell ? 'Row height' : 'Height',
               }}
               onAdjusting={setAdjusting}
+              onGesture={(active) => (active ? beginGesture() : endGesture(true))}
               onApply={(prop, value) => {
                 // Width and height on a cell mean the column and the row, so a
                 // change grows the whole one rather than one lopsided cell.
@@ -1448,15 +1512,12 @@ export default function CanvasEditor({
               onMouseMove={(e) => drag.onMove(e.nativeEvent)}
               onMouseUp={() => {
                 drag.onEnd?.()
-                setDrag(null)
-                setGuides([])
-                setReadout(null)
+                endGesture(true)
               }}
               onMouseLeave={() => {
-                setDrag(null)
-                setGuides([])
-                setReadout(null)
-                setMoveDrop(null)
+                // The pointer left the sheet mid-drag: keep what was already
+                // applied, but do not complete a pending drop.
+                endGesture(true)
               }}
             />
           )}

@@ -477,6 +477,13 @@ a row stops there instead of surfacing into the next paragraph. The list is also
 in the canvas itself, under "Keyboard", because a shortcut nobody can discover
 is a shortcut nobody has.
 
+**One gesture, one undo.** A drag is a single action however many changes it
+makes on the way, so history is held open for its duration and commits once when
+the hand lets go — an undo that lands halfway through a resize reads as a broken
+program rather than a precise one. And `Esc` **cancels a drag in progress**: the
+document goes back to where the gesture found it, without letting go of the
+mouse first and without leaving a step behind to undo.
+
 **What a click will take is shown before the click.** Hovering outlines the
 element a click would select and names its kind, and the selected element's path
 — `Table › Row › Cell › Block` — sits in the properties bar with every level
