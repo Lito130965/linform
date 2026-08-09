@@ -31,14 +31,15 @@ editor and render something. Before exposing it to anyone, copy `.env.example`
 to `.env` and set an authentication section.
 
 One container and no database to configure, if you prefer — SQLite in a file
-next to the app:
+next to the app, from the published image:
 
 ```bash
-docker build -t linform . && docker run -p 8100:8000 linform
+docker run -p 8100:8000 ghcr.io/lito130965/linform:0.2.0
 ```
 
-(A published image at `ghcr.io/lito130965/linform` arrives with the first
-tagged release; the workflow that pushes it runs on `v*` tags.)
+Images are published on each tagged release, `0.2.0` upwards; `latest` follows
+the newest. Building it yourself is `docker build -t linform . && docker run -p
+8100:8000 linform`.
 
 Create a template, publish a version, render a PDF:
 

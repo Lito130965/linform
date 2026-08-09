@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    # Tags too, or the publish job below is unreachable: it is gated on a v*
+    # ref, and a tag push matches none of the branch filters — so the workflow
+    # never started and no image was ever pushed.
+    tags: ['v*']
   pull_request:
 
 # A new push makes the previous run's answer irrelevant; letting it finish just
