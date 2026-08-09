@@ -224,8 +224,12 @@ Better to know before you build on it:
   canvas draws each page boundary where the page really ends — the sheet minus
   the `@page` margins every page spends — so the line lands on the right row.
   But it lays the document out as one continuous strip and does **not** reflow
-  content across a break: a block that straddles a boundary is drawn whole, with
-  the line through it, while the renderer moves it entirely to the next page.
+  content across a break: a block that straddles a boundary is drawn whole with
+  the line through it, while the renderer either splits it — which is what
+  happens to ordinary text — or moves it to the next page entire, which is what
+  happens to a table row, an image, or anything carrying `break-inside: avoid`.
+  The canvas marks whichever of the two it will be, on the element itself, so
+  the difference is predictable rather than discovered in the PDF.
   Two further differences are inherent rather than unfinished: the browser and
   WeasyPrint are different layout engines with different font metrics, and rules
   like `page-break-inside: avoid`, widows and orphans are applied by the
@@ -476,6 +480,15 @@ Movement is by tree rather than by document order: `Alt`+`↓` in the last cell 
 a row stops there instead of surfacing into the next paragraph. The list is also
 in the canvas itself, under "Keyboard", because a shortcut nobody can discover
 is a shortcut nobody has.
+
+**A page break says what it will do.** The canvas draws the document as one
+strip and marks where each printed page ends; where that line crosses something,
+the element is outlined and labelled — *moves to the next page whole* for a table
+row, an image or anything carrying `break-inside: avoid`, and *splits across the
+break* for ordinary text, which is what the renderer does to it and usually what
+its author wants. The gap between the strip and the printed pages cannot be
+closed without laying the document out twice; this makes it predictable, which
+is most of what "it looked right in the editor" is really asking for.
 
 **One gesture, one undo.** A drag is a single action however many changes it
 makes on the way, so history is held open for its duration and commits once when

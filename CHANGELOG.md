@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
   endpoints. `docker-compose.roles.yml` runs the split topology, and
   `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
+- **The canvas says what a page break will do to what it crosses** — the element
+  is outlined and labelled *moves to the next page whole* (a table row, an
+  image, `break-inside: avoid`) or *splits across the break* (ordinary text).
+  It names the innermost unit the break is about, so a table crossing a page
+  points at the row rather than the table.
 - **One gesture is one undo step in the canvas**, and `Esc` cancels a drag in
   progress — the document returns to where the gesture found it, without
   releasing the mouse and without leaving a step behind. Applies to resizing,

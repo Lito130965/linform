@@ -20,6 +20,7 @@ import {
 import BoxModel from './BoxModel'
 import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
+import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
 import { place, placementFor, type Placement } from './placement'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
@@ -176,7 +177,7 @@ export default function CanvasEditor({
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
   // Bumped on any mutation so the toolbar re-measures its position.
-  const [, setTick] = useState(0)
+  const [tick, setTick] = useState(0)
   // Bumped on each new selection so the props inputs re-seed from that element.
   const [selId, setSelId] = useState(0)
   const [convert, setConvert] = useState<
@@ -283,6 +284,72 @@ export default function CanvasEditor({
 
   const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
   const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
+
+  /** What each page break passes through, and what the renderer will do with
+   * it. The canvas cannot reflow the document, but it can stop the difference
+   * from being a surprise — see page-breaks.ts.
+   *
+   * Only elements a boundary actually crosses are measured: reading a computed
+   * style for every node of a long form on every mutation would cost more than
+   * the answer is worth, and the rule never looks at the others anyway. */
+  const pageCrossings = useMemo(() => {
+    const body = bodyRef.current
+    const view = body?.ownerDocument.defaultView
+    if (!body || !view || breakOffsets.length === 0) return { list: [], boxes: new Map() }
+
+    const origin = body.getBoundingClientRect()
+    const boxes = new Map<string, { left: number; top: number; width: number; height: number }>()
+    let next = 0
+
+    const crossesAny = (top: number, bottom: number): boolean =>
+      breakOffsets.some((edge) => top < edge - 0.5 && bottom > edge + 0.5)
+
+    const build = (el: Element, top: number, bottom: number): BoxNode => {
+      const style = view.getComputedStyle(el)
+      const key = String(next++)
+      const rect = el.getBoundingClientRect()
+      boxes.set(key, {
+        left: rect.left - origin.left,
+        top,
+        width: rect.width,
+        height: bottom - top,
+      })
+      const node: BoxNode = {
+        key,
+        top,
+        bottom,
+        // What the renderer refuses to break: a table row, an image, and
+        // anything the author said so about.
+        keepsTogether:
+          el.tagName === 'TR' ||
+          el.tagName === 'IMG' ||
+          style.breakInside === 'avoid' ||
+          style.pageBreakInside === 'avoid',
+        children: [],
+      }
+      for (const child of Array.from(el.children)) {
+        if (child.hasAttribute('data-lf-spacer')) continue
+        const box = child.getBoundingClientRect()
+        const childTop = box.top - origin.top
+        const childBottom = box.bottom - origin.top
+        if (!crossesAny(childTop, childBottom)) continue
+        node.children.push(build(child, childTop, childBottom))
+      }
+      return node
+    }
+
+    const root: BoxNode = { key: 'body', top: 0, bottom: origin.height, keepsTogether: false, children: [] }
+    for (const child of Array.from(body.children)) {
+      if (child.hasAttribute('data-lf-spacer')) continue
+      const box = child.getBoundingClientRect()
+      const top = box.top - origin.top
+      const bottom = box.bottom - origin.top
+      if (!crossesAny(top, bottom)) continue
+      root.children.push(build(child, top, bottom))
+    }
+    return { list: crossingsAt(root, breakOffsets), boxes }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, zoom, breakOffsets.join(',')])
 
   /** Begin a gesture: remember what to return to, and hold history open. */
   const beginGesture = (): void => {
@@ -1412,6 +1479,29 @@ export default function CanvasEditor({
                 }
               />
             )}
+            {/* What each page break passes through. The canvas draws the
+                document as one strip, so without this the line is honest about
+                where the page ends and silent about what that costs. */}
+            {pageCrossings.list.map(({ node, boundary, verdict }) => {
+              const box = pageCrossings.boxes.get(node.key!)
+              if (!box) return null
+              return (
+                <div
+                  key={node.key}
+                  className={`break-warning ${verdict}`}
+                  style={{
+                    left: box.left * zoom,
+                    top: box.top * zoom,
+                    width: box.width * zoom,
+                    height: box.height * zoom,
+                  }}
+                >
+                  <span style={{ top: (boundary - box.top) * zoom }}>
+                    {VERDICT_LABEL[verdict]}
+                  </span>
+                </div>
+              )
+            })}
             {/* Physical page boundaries: a line where each printed page ends. */}
             {breakOffsets.map((offset, i) => (
               <div
