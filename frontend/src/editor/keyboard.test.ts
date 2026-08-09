@@ -64,6 +64,13 @@ describe('what counts as a level', () => {
   it('treats cells of one row as siblings', () => {
     expect(siblingsOf(el('cell1'), root).map((e) => e.id)).toEqual(['cell1', 'cell2'])
   })
+
+  it('steps through a table section, which is nobody\'s idea of a thing to select', () => {
+    // A <tbody> is usually the parser's doing rather than the author's, and as
+    // a selectable node it was only ever an unnamed level between the table and
+    // its rows.
+    expect(selectableChildren(el('table')).map((e) => e.id)).toEqual(['row1', 'row2'])
+  })
 })
 
 describe('moving', () => {
