@@ -21,6 +21,7 @@ import BoxModel from './BoxModel'
 import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { place, placementFor, type Placement } from './placement'
+import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
@@ -190,6 +191,10 @@ export default function CanvasEditor({
   // True while a spacing or size box has the focus: a ruler is wanted from the
   // moment somebody reaches for a number, not only once they drag something.
   const [adjusting, setAdjusting] = useState(false)
+  // Lines a drag has landed on, drawn while it holds them.
+  const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
+  // The live measurement beside the cursor, in viewport coordinates.
+  const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -702,15 +707,125 @@ export default function CanvasEditor({
       ? (selected.el as HTMLElement).getBoundingClientRect()
       : null
 
+  // ---- snapping ----------------------------------------------------------
+
+  /** How near a dragged edge must come before it falls onto a line — in SCREEN
+   * pixels, divided by the zoom, so the pull feels identical however far out
+   * the sheet is scaled. */
+  const SNAP_SCREEN_PX = 5
+
+  /** The lines a drag may land on, gathered once when the gesture starts.
+   *
+   * Once, because this reads the geometry of every element on the page: doing
+   * it per mouse move would force a full layout on each pixel of a drag. They
+   * also should not move mid-gesture — a target that shifts while you reach for
+   * it is worse than no target. */
+  const snapLinesFor = (axis: 'x' | 'y', dragged: Element | null): SnapLine[] => {
+    const body = bodyRef.current
+    if (!body) return []
+    const style = body.ownerDocument.defaultView?.getComputedStyle(body)
+    const lines: SnapLine[] = []
+    if (axis === 'x') {
+      lines.push({ at: parseFloat(style?.paddingLeft ?? '0') || 0, kind: 'page' })
+      lines.push({
+        at: body.clientWidth - (parseFloat(style?.paddingRight ?? '0') || 0),
+        kind: 'page',
+      })
+    } else {
+      lines.push({ at: margins.top, kind: 'page' })
+      // Where each printed page ends: getting flush with a page break is a
+      // thing people do deliberately in a form.
+      for (const offset of breakOffsets) lines.push({ at: offset, kind: 'page' })
+    }
+    const origin = body.getBoundingClientRect()
+    const rects: Rect[] = []
+    for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
+      // Its own edges are not something to align to; its ancestors' are — a
+      // cell lining up with the table around it is exactly the intent.
+      if (el === dragged || dragged?.contains(el)) continue
+      if (el.hasAttribute('data-lf-spacer') || !kindOf(el)) continue
+      const box = el.getBoundingClientRect()
+      if (box.width === 0 && box.height === 0) continue
+      rects.push({
+        left: box.left - origin.left,
+        right: box.right - origin.left,
+        top: box.top - origin.top,
+        bottom: box.bottom - origin.top,
+      })
+      if (rects.length >= 300) break
+    }
+    return lines.concat(edgeLines(rects, axis))
+  }
+
+  /** Snap one edge, and remember the line to draw. `keepOther` is for a corner
+   * drag, where the second axis must not wipe the first axis's guide. */
+  const snapEdge = (
+    value: number,
+    lines: SnapLine[],
+    axis: 'x' | 'y',
+    altKey: boolean,
+    keepOther = false,
+  ): number => {
+    const { value: snapped, line } = snapTo(value, lines, {
+      // Alt turns it off for the duration: the document wins over every helper.
+      threshold: altKey ? 0 : SNAP_SCREEN_PX / zoom,
+      gridStep: GRID_MINOR_MM * PX_PER_MM,
+    })
+    const drawn = line ? [{ axis, at: line.at, kind: line.kind }] : []
+    setGuides((previous) =>
+      keepOther ? previous.filter((g) => g.axis !== axis).concat(drawn) : drawn,
+    )
+    return snapped
+  }
+
+  /** The live figure beside the cursor. Printed work is measured work, and
+   * pixels are a unit nobody using this program needs. */
+  const readOut = (ev: MouseEvent, text: string): void =>
+    setReadout({ left: ev.clientX + 14, top: ev.clientY + 16, text })
+
+  /** Set a size, then close the gap between where the edge was asked to go and
+   * where it actually landed.
+   *
+   * A drag positions an EDGE, and a size written into CSS is not the same
+   * quantity: under `content-box` the padding and the border are added on top
+   * of it. Reproducing those rules here would mean keeping a copy of the
+   * browser's box model in this file; reading where the edge actually went and
+   * closing the gap cannot drift from it.
+   *
+   * It does not always close: inside a table the layout has the last word — a
+   * cell cannot push its table past the container's content width, and the
+   * cell's own edge stays `border-spacing` inside the table's. That is the box
+   * model, not a miss, and the correction leaves it where the layout put it. */
+  const settleEdge = (
+    el: HTMLElement,
+    target: number,
+    axis: 'x' | 'y',
+    size: number,
+    apply: (px: number) => void,
+  ): void => {
+    apply(Math.round(size))
+    const box = el.getBoundingClientRect()
+    const residual = target - (axis === 'x' ? box.right : box.bottom)
+    if (Math.abs(residual) > 0.5) apply(Math.round(size + residual))
+  }
+
   const startColResize = (e: ReactMouseEvent) => {
     if (!selected) return
     e.preventDefault()
+    const cell = selected.el as HTMLElement
+    const box = cell.getBoundingClientRect()
     const startX = e.clientX
-    const startW = (selected.el as HTMLElement).offsetWidth
+    const lines = snapLinesFor('x', cell)
     setDrag({
       cursor: 'col-resize',
       onMove: (ev) => {
-        setColumnWidth(selected.el, `${Math.round(Math.max(8, startW + (ev.clientX - startX) / zoom))}px`)
+        // The thing being dragged is the column's right EDGE, so that is what
+        // is offered to the page margins and to the columns above it. A width
+        // has nothing to line up with.
+        const edge = snapEdge(box.right + (ev.clientX - startX) / zoom, lines, 'x', ev.altKey)
+        const width = Math.max(8, edge - box.left)
+        settleEdge(cell, edge, 'x', width, (px) => setColumnWidth(cell, `${px}px`))
+        readOut(ev, `${toMm(width)} mm wide`)
         setTick((t) => t + 1)
       },
     })
@@ -719,12 +834,17 @@ export default function CanvasEditor({
   const startRowResize = (e: ReactMouseEvent) => {
     if (!selected) return
     e.preventDefault()
+    const cell = selected.el as HTMLElement
+    const box = cell.getBoundingClientRect()
     const startY = e.clientY
-    const startH = (selected.el as HTMLElement).offsetHeight
+    const lines = snapLinesFor('y', cell)
     setDrag({
       cursor: 'row-resize',
       onMove: (ev) => {
-        setRowHeight(selected.el, `${Math.round(Math.max(8, startH + (ev.clientY - startY) / zoom))}px`)
+        const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
+        const height = Math.max(8, edge - box.top)
+        settleEdge(cell, edge, 'y', height, (px) => setRowHeight(cell, `${px}px`))
+        readOut(ev, `${toMm(height)} mm tall`)
         setTick((t) => t + 1)
       },
     })
@@ -736,15 +856,27 @@ export default function CanvasEditor({
     if (!selected) return
     e.preventDefault()
     const el = selected.el as HTMLElement
+    const box = el.getBoundingClientRect()
     const startX = e.clientX
     const startY = e.clientY
-    const startW = el.offsetWidth
-    const startH = el.offsetHeight
+    const linesX = snapLinesFor('x', el)
+    const linesY = snapLinesFor('y', el)
     setDrag({
       cursor: 'nwse-resize',
       onMove: (ev) => {
-        el.style.width = `${Math.round(Math.max(8, startW + (ev.clientX - startX) / zoom))}px`
-        el.style.height = `${Math.round(Math.max(8, startH + (ev.clientY - startY) / zoom))}px`
+        const right = snapEdge(box.right + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
+        const bottom = snapEdge(
+          box.bottom + (ev.clientY - startY) / zoom,
+          linesY,
+          'y',
+          ev.altKey,
+          true,
+        )
+        const width = Math.max(8, right - box.left)
+        const height = Math.max(8, bottom - box.top)
+        settleEdge(el, right, 'x', width, (px) => (el.style.width = `${px}px`))
+        settleEdge(el, bottom, 'y', height, (px) => (el.style.height = `${px}px`))
+        readOut(ev, `${toMm(width)} × ${toMm(height)} mm`)
         setTick((t) => t + 1)
       },
     })
@@ -800,11 +932,20 @@ export default function CanvasEditor({
     const startY = e.clientY
     const startTop = parseFloat(el.style.top) || 0
     const startLeft = parseFloat(el.style.left) || 0
+    // Where it sits on the sheet now. `style.left` is relative to whatever
+    // positions it; the snap lines are in the canvas's own coordinates, so the
+    // move is worked out as a delta between the two.
+    const box = el.getBoundingClientRect()
+    const linesX = snapLinesFor('x', el)
+    const linesY = snapLinesFor('y', el)
     setDrag({
       cursor: 'move',
       onMove: (ev) => {
-        el.style.top = `${Math.round(startTop + (ev.clientY - startY) / zoom)}px`
-        el.style.left = `${Math.round(startLeft + (ev.clientX - startX) / zoom)}px`
+        const left = snapEdge(box.left + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
+        const top = snapEdge(box.top + (ev.clientY - startY) / zoom, linesY, 'y', ev.altKey, true)
+        el.style.left = `${Math.round(startLeft + (left - box.left))}px`
+        el.style.top = `${Math.round(startTop + (top - box.top))}px`
+        readOut(ev, `${toMm(left)} × ${toMm(top)} mm from the sheet corner`)
         setTick((t) => t + 1)
       },
     })
@@ -1098,6 +1239,18 @@ export default function CanvasEditor({
                 display: 'block',
               }}
             />
+            {guides.map((guide, i) => (
+              <div
+                key={i}
+                aria-hidden="true"
+                className={`snap-guide ${guide.kind}`}
+                style={
+                  guide.axis === 'x'
+                    ? { left: guide.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
+                    : { top: guide.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                }
+              />
+            ))}
             {(gridPinned || !!drag || adjusting) && (
               <div
                 aria-hidden="true"
@@ -1219,9 +1372,13 @@ export default function CanvasEditor({
               onMouseUp={() => {
                 drag.onEnd?.()
                 setDrag(null)
+                setGuides([])
+                setReadout(null)
               }}
               onMouseLeave={() => {
                 setDrag(null)
+                setGuides([])
+                setReadout(null)
                 setMoveDrop(null)
               }}
             />
@@ -1281,6 +1438,21 @@ export default function CanvasEditor({
           )}
         </div>
       </div>
+      {/* The live figure, in viewport coordinates so it follows the cursor
+          rather than the sheet. It says what the drag has reached and, when
+          something stopped it, what it landed on — a measurement without a
+          reason is only half of what the person needs. */}
+      {readout && (
+        <div className="drag-readout" style={{ left: readout.left, top: readout.top }}>
+          {readout.text}
+          {guides.length > 0 && (
+            <span className="snapped">
+              {' · '}
+              {[...new Set(guides.map((guide) => SNAP_LABEL[guide.kind]))].join(' + ')}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

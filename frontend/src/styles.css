@@ -1399,6 +1399,47 @@ label {
 
 /* ---- table column/row resize handles ---- */
 
+/* The line a drag has landed on. Drawn only while it holds it: a guide that
+   stays is clutter, a guide that appears at the moment of contact is an
+   explanation. */
+.snap-guide {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  background: var(--accent);
+}
+
+/* A page margin or a page break is a stronger statement than another element's
+   edge, and a stronger one still than the grid — so it reads that way. */
+.snap-guide.page {
+  background: #e2467a;
+  box-shadow: 0 0 0 0.5px #e2467a;
+}
+
+.snap-guide.grid {
+  opacity: 0.5;
+}
+
+/* The measurement beside the cursor. Fixed, because it follows the pointer
+   rather than the sheet. */
+.drag-readout {
+  position: fixed;
+  z-index: 60;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.drag-readout .snapped {
+  color: var(--text-muted);
+}
+
 /* Dropping INTO something — a table cell — is not a line between two places,
    so it is drawn as the place it is. */
 .drop-inside {
