@@ -1399,6 +1399,65 @@ label {
 
 /* ---- table column/row resize handles ---- */
 
+/* What a click would take, shown before the click. Faint on purpose: it is an
+   answer to a question nobody asked out loud, and it must not compete with the
+   selection outline it precedes. */
+.hover-outline {
+  position: absolute;
+  z-index: 7;
+  pointer-events: none;
+  outline: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 1px;
+}
+
+.hover-outline span {
+  position: absolute;
+  left: 0;
+  top: -15px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: #fff;
+  font: 10px/14px system-ui, sans-serif;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+/* The path to the selection: what it is inside, and a way back out through
+   every level of it. */
+.crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+}
+
+.crumbs .crumb {
+  padding: 1px 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.crumbs .crumb + .crumb::before {
+  content: '›';
+  margin-right: 4px;
+  color: var(--border);
+}
+
+.crumbs .crumb:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+
+.crumbs .crumb.current {
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* The line a drag has landed on. Drawn only while it holds it: a guide that
    stays is clutter, a guide that appears at the moment of contact is an
    explanation. */

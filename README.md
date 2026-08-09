@@ -470,12 +470,19 @@ away from it. Selecting *structure* therefore lives behind Alt:
 | `Alt` + `←` | select the element around this one |
 | `Alt` + `Enter` | edit the selected element — its Jinja expression, or its text |
 | `Alt` + `Delete` | remove the selected element |
-| `Esc` | clear the selection |
+| `Esc` | step out to the element around this one; clear at the top |
 
 Movement is by tree rather than by document order: `Alt`+`↓` in the last cell of
 a row stops there instead of surfacing into the next paragraph. The list is also
 in the canvas itself, under "Keyboard", because a shortcut nobody can discover
 is a shortcut nobody has.
+
+**What a click will take is shown before the click.** Hovering outlines the
+element a click would select and names its kind, and the selected element's path
+— `Table › Row › Cell › Block` — sits in the properties bar with every level
+clickable. Structural selection takes the nearest meaningful node under the
+pointer, which is a fine rule and an invisible one; these make it visible
+instead of something you press to find out.
 
 **Dragging is measured, and it snaps.** While an edge is being dragged it falls
 onto the things a printed form aligns to: the page margins, the page breaks, and

@@ -33,10 +33,15 @@ const BLOCK_TAGS = new Set([
   'SECTION',
   'HEADER',
   'FOOTER',
-  'THEAD',
-  'TBODY',
-  'TFOOT',
 ])
+
+// THEAD, TBODY and TFOOT are deliberately absent. A table section is not
+// something anyone means to select: it usually is not in the author's markup at
+// all — the parser inserts a <tbody> whether or not one was written — it has
+// nothing to style in a print form, and it cannot hold a block (see
+// placement.ts). As a selectable node it only ever appeared as a nameless
+// "Block" between the table and its rows, adding a level to walk through on the
+// way to something real.
 
 export function kindOf(el: Element): NodeKind | null {
   // Canvas-only pagination spacers are never selectable.

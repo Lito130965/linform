@@ -64,6 +64,13 @@ describe('what counts as a level', () => {
   it('treats cells of one row as siblings', () => {
     expect(siblingsOf(el('cell1'), root).map((e) => e.id)).toEqual(['cell1', 'cell2'])
   })
+
+  it('steps through a table section, which is nobody\'s idea of a thing to select', () => {
+    // A <tbody> is usually the parser's doing rather than the author's, and as
+    // a selectable node it was only ever an unnamed level between the table and
+    // its rows.
+    expect(selectableChildren(el('table')).map((e) => e.id)).toEqual(['row1', 'row2'])
+  })
 })
 
 describe('moving', () => {
@@ -133,8 +140,14 @@ describe('acting on the selection', () => {
     }
   })
 
-  it('escape clears the selection, and does nothing when there is none', () => {
-    expect(intentFor(key('Escape'), el('intro'), root)).toEqual({ action: 'select', el: null })
+  it('escape backs out one level, and clears at the top', () => {
+    // Repeated Escape walks up the document and then lets go: going up is what
+    // somebody wants constantly, clearing is what they want once.
+    expect(intentFor(key('Escape'), el('cell1'), root)).toEqual({
+      action: 'select',
+      el: el('row1'),
+    })
+    expect(intentFor(key('Escape'), el('title'), root)).toEqual({ action: 'select', el: null })
     expect(intentFor(key('Escape'), null, root)).toBeNull()
   })
 })

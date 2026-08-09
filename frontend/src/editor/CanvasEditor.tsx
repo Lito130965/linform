@@ -191,6 +191,14 @@ export default function CanvasEditor({
   // True while a spacing or size box has the focus: a ruler is wanted from the
   // moment somebody reaches for a number, not only once they drag something.
   const [adjusting, setAdjusting] = useState(false)
+  // What the pointer is over, and what a click would therefore take.
+  //
+  // Held as a rectangle drawn over the canvas rather than as an attribute on
+  // the element: marking the document would put a DOM mutation behind every
+  // mouse move, and the observer that watches for edits would repaginate,
+  // re-measure and consider committing history on each one.
+  const [hover, setHover] = useState<{ left: number; top: number; width: number; height: number; label: string } | null>(null)
+  const hoverRef = useRef<Element | null>(null)
   // Lines a drag has landed on, drawn while it holds them.
   const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
@@ -266,6 +274,17 @@ export default function CanvasEditor({
 
   const undo = () => restoreSnapshot(historyRef.current?.undo() ?? null)
   const redo = () => restoreSnapshot(historyRef.current?.redo() ?? null)
+
+  /** The selected element and everything it sits inside, outermost first. */
+  const selectionTrail = (): Element[] => {
+    const body = bodyRef.current
+    if (!selected || !body || !selected.el.isConnected) return []
+    const trail: Element[] = []
+    for (let el: Element | null = selected.el; el; el = parentSelectable(el, body)) {
+      trail.unshift(el)
+    }
+    return trail
+  }
 
   /** Put prepared nodes where they can legally go, relative to the selection.
    *
@@ -378,6 +397,33 @@ export default function CanvasEditor({
     }
     doc.addEventListener('dblclick', onDblClick)
 
+    // What a click would select, shown before the click. Without it the canvas
+    // is a "press and find out" surface, and structural selection is the part
+    // people said they could not predict.
+    const onPointerMove = (e: MouseEvent) => {
+      const found = findSelectable(e.target as Element, body)
+      if (found === hoverRef.current) return
+      hoverRef.current = found
+      if (!found) {
+        setHover(null)
+        return
+      }
+      const box = found.getBoundingClientRect()
+      setHover({
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        label: KIND_LABEL[kindOf(found)!],
+      })
+    }
+    const forgetHover = () => {
+      hoverRef.current = null
+      setHover(null)
+    }
+    doc.addEventListener('mousemove', onPointerMove)
+    doc.addEventListener('mouseleave', forgetHover)
+
     // Undo/redo shortcuts; native contenteditable history is unreliable after
     // programmatic mutations, so ours replaces it entirely. Everything else is
     // structural navigation — see keyboard.ts for why it hides behind Alt.
@@ -489,6 +535,8 @@ export default function CanvasEditor({
       observer.disconnect()
       doc.removeEventListener('click', onClick)
       doc.removeEventListener('dblclick', onDblClick)
+      doc.removeEventListener('mousemove', onPointerMove)
+      doc.removeEventListener('mouseleave', forgetHover)
       doc.removeEventListener('keydown', onKeydown)
       doc.removeEventListener('paste', onPaste)
       // Flush the final state so mode switches never lose an edit.
@@ -1032,7 +1080,22 @@ export default function CanvasEditor({
       </div>
       {selected && (
         <div className="canvas-props" key={selId}>
-          <span className="props-kind">{KIND_LABEL[selected.kind]}</span>
+          {/* Where the selection sits in the document, and a way to move
+              through it. A single label said what was selected; this says what
+              it is INSIDE, which is the question somebody actually has when a
+              click lands somewhere unexpected. */}
+          <nav className="crumbs" aria-label="Path to the selected element">
+            {selectionTrail().map((el, index, all) => (
+              <button
+                key={index}
+                className={index === all.length - 1 ? 'crumb current' : 'crumb'}
+                aria-current={index === all.length - 1 ? 'true' : undefined}
+                onClick={() => select(el)}
+              >
+                {KIND_LABEL[kindOf(el)!]}
+              </button>
+            ))}
+          </nav>
           <label className="prop">
             Font
             <select
@@ -1239,6 +1302,20 @@ export default function CanvasEditor({
                 display: 'block',
               }}
             />
+            {hover && !drag && (
+              <div
+                aria-hidden="true"
+                className="hover-outline"
+                style={{
+                  left: hover.left * zoom,
+                  top: hover.top * zoom,
+                  width: hover.width * zoom,
+                  height: hover.height * zoom,
+                }}
+              >
+                <span>{hover.label}</span>
+              </div>
+            )}
             {guides.map((guide, i) => (
               <div
                 key={i}
