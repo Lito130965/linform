@@ -783,11 +783,37 @@ export default function CanvasEditor({
   const readOut = (ev: MouseEvent, text: string): void =>
     setReadout({ left: ev.clientX + 14, top: ev.clientY + 16, text })
 
+  /** What `width`/`height` do NOT include on this element.
+   *
+   * A drag positions an EDGE, so it knows the border-box size it wants — but
+   * `style.width` under the default `content-box` means the content alone, and
+   * the padding and border are added to it. Writing one as the other overshoots
+   * by exactly that much: a column dragged onto the page margin settled two
+   * pixels past it, snapped correctly and still wrong in the document. */
+  const boxExtras = (el: HTMLElement): { x: number; y: number } => {
+    const style = el.ownerDocument.defaultView?.getComputedStyle(el)
+    if (!style || style.boxSizing === 'border-box') return { x: 0, y: 0 }
+    const px = (value: string): number => parseFloat(value) || 0
+    return {
+      x:
+        px(style.paddingLeft) +
+        px(style.paddingRight) +
+        px(style.borderLeftWidth) +
+        px(style.borderRightWidth),
+      y:
+        px(style.paddingTop) +
+        px(style.paddingBottom) +
+        px(style.borderTopWidth) +
+        px(style.borderBottomWidth),
+    }
+  }
+
   const startColResize = (e: ReactMouseEvent) => {
     if (!selected) return
     e.preventDefault()
     const cell = selected.el as HTMLElement
     const box = cell.getBoundingClientRect()
+    const extras = boxExtras(cell)
     const startX = e.clientX
     const lines = snapLinesFor('x', cell)
     setDrag({
@@ -798,7 +824,9 @@ export default function CanvasEditor({
         // has nothing to line up with.
         const edge = snapEdge(box.right + (ev.clientX - startX) / zoom, lines, 'x', ev.altKey)
         const width = Math.max(8, edge - box.left)
-        setColumnWidth(cell, `${Math.round(width)}px`)
+        // The dragged cell's padding stands for the column's: cells in one
+        // column are styled together in every template this serves.
+        setColumnWidth(cell, `${Math.round(width - extras.x)}px`)
         readOut(ev, `${toMm(width)} mm wide`)
         setTick((t) => t + 1)
       },
@@ -810,6 +838,8 @@ export default function CanvasEditor({
     e.preventDefault()
     const cell = selected.el as HTMLElement
     const box = cell.getBoundingClientRect()
+    const row = (cell.closest('tr') as HTMLElement | null) ?? cell
+    const extras = boxExtras(row)
     const startY = e.clientY
     const lines = snapLinesFor('y', cell)
     setDrag({
@@ -817,7 +847,7 @@ export default function CanvasEditor({
       onMove: (ev) => {
         const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
         const height = Math.max(8, edge - box.top)
-        setRowHeight(cell, `${Math.round(height)}px`)
+        setRowHeight(cell, `${Math.round(height - extras.y)}px`)
         readOut(ev, `${toMm(height)} mm tall`)
         setTick((t) => t + 1)
       },
@@ -831,6 +861,7 @@ export default function CanvasEditor({
     e.preventDefault()
     const el = selected.el as HTMLElement
     const box = el.getBoundingClientRect()
+    const extras = boxExtras(el)
     const startX = e.clientX
     const startY = e.clientY
     const linesX = snapLinesFor('x', el)
@@ -848,8 +879,8 @@ export default function CanvasEditor({
         )
         const width = Math.max(8, right - box.left)
         const height = Math.max(8, bottom - box.top)
-        el.style.width = `${Math.round(width)}px`
-        el.style.height = `${Math.round(height)}px`
+        el.style.width = `${Math.round(width - extras.x)}px`
+        el.style.height = `${Math.round(height - extras.y)}px`
         readOut(ev, `${toMm(width)} × ${toMm(height)} mm`)
         setTick((t) => t + 1)
       },
