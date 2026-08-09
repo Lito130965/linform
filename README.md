@@ -481,6 +481,14 @@ a row stops there instead of surfacing into the next paragraph. The list is also
 in the canvas itself, under "Keyboard", because a shortcut nobody can discover
 is a shortcut nobody has.
 
+**The modifier keys mean one thing each.** `Shift` keeps the proportion when
+resizing and the axis when moving; `Alt` ignores snapping for as long as it is
+held; `Ctrl` (or `Cmd`) drags a copy instead of the element itself. People bring
+these habits from other tools, and matching them is worth more than any
+convention this editor could invent. The one departure is `Alt`, which elsewhere
+often means "resize from the centre": in a document made of margins and
+alignments, an escape from snapping is needed far more often than centring is.
+
 **A page break says what it will do.** The canvas draws the document as one
 strip and marks where each printed page ends; where that line crosses something,
 the element is outlined and labelled — *moves to the next page whole* for a table

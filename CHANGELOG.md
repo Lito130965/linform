@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
   endpoints. `docker-compose.roles.yml` runs the split topology, and
   `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
+- **One meaning per modifier key in the canvas.** `Shift` keeps the proportion
+  when resizing and the axis when moving, `Alt` suspends snapping, `Ctrl`/`Cmd`
+  drags a copy instead of the element. Listed in the canvas alongside the
+  keyboard shortcuts, from the same source the behaviour reads.
 - **The canvas says what a page break will do to what it crosses** — the element
   is outlined and labelled *moves to the next page whole* (a table row, an
   image, `break-inside: avoid`) or *splits across the break* (ordinary text).
