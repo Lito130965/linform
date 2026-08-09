@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused; `LINFORM_ROLE=editor` keeps the UI and drops the consumer render
   endpoints. `docker-compose.roles.yml` runs the split topology, and
   `scripts/verify-scale.sh` checks a multi-replica deployment in CI.
+- **Snapping, guides and a live millimetre readout in the canvas.** A dragged
+  edge falls onto page margins, page breaks and the edges and centres of other
+  elements, with the millimetre grid as a fallback; an explicit alignment always
+  beats a round number. The line it landed on is drawn while it holds it, the
+  figure beside the cursor reads in millimetres and says what stopped it, and
+  `Alt` switches snapping off for the length of a gesture.
 - **Size and spacing in the canvas.** The selected element's box — margins,
   padding, width, height — is edited as a box, in millimetres by default, with
   values set on the element shown apart from values the stylesheet decided.

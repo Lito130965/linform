@@ -477,6 +477,15 @@ a row stops there instead of surfacing into the next paragraph. The list is also
 in the canvas itself, under "Keyboard", because a shortcut nobody can discover
 is a shortcut nobody has.
 
+**Dragging is measured, and it snaps.** While an edge is being dragged it falls
+onto the things a printed form aligns to: the page margins, the page breaks, and
+the edges and centres of what is already on the page — with the millimetre grid
+as a fallback when nothing else is near. A page line always beats a round
+number, because "flush with the margin" is what the author meant and "5 mm" is
+only what the ruler happened to say. The line it landed on is drawn while it
+holds it, the figure beside the cursor reads in millimetres and names what
+stopped it, and **`Alt` turns snapping off** for the length of a gesture.
+
 **Size and spacing.** The selected element's box is edited as a box: margins
 around it, padding inside it, width and height in the middle, each number on the
 side it changes. Values are **millimetres by default** — type `12`, get `12mm` —
