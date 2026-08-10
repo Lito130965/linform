@@ -1702,6 +1702,27 @@
         ]
       }
     },
+    "/api/capabilities": {
+      "get": {
+        "description": "What this instance offers, for the interface in front of it.\n\nThe editor has to know which of its parts exist here before it draws them.\nA demo node has no templates to list and nothing to sign in to; a tab that\nopens onto an error is worse than a tab that is not there, and a login\nscreen in front of a service with no accounts is worse than either.\n\nThe tabs are named here rather than derived from the role in the browser:\nwhich routers a role mounts is decided in create_app(), and a second copy of\nthat mapping in the frontend would be a second copy to get wrong.",
+        "operationId": "capabilities_api_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Capabilities Api Capabilities Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Capabilities"
+      }
+    },
     "/api/directories": {
       "get": {
         "operationId": "list_directories_api_directories_get",

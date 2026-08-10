@@ -11,8 +11,14 @@ class Settings(BaseSettings):
     # deployment runs editor nodes for people and render nodes for consuming
     # applications, and each carries only the routes its audience needs. A
     # render node has no management API to reach, whatever credential leaks.
+    #
+    # "demo" is the public shop window: the editor, the examples gallery and
+    # ad-hoc rendering, with nothing that stores anything. There is no template
+    # to vandalise because there is no way to save one, which is what makes it
+    # safe to leave on the open internet.
+    #
     # Typo'd values fail at startup rather than quietly serving everything.
-    role: Literal["all", "editor", "render"] = "all"
+    role: Literal["all", "editor", "render", "demo"] = "all"
 
     # Service auth (empty everywhere = auth disabled, dev mode only).
     # api_token is the legacy single token and counts as both roles.

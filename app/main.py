@@ -117,6 +117,33 @@ async def prometheus_metrics(
     return Response(content=payload, media_type=content_type)
 
 
+@ops.get("/api/capabilities")
+async def capabilities(request: Request) -> dict:
+    """What this instance offers, for the interface in front of it.
+
+    The editor has to know which of its parts exist here before it draws them.
+    A demo node has no templates to list and nothing to sign in to; a tab that
+    opens onto an error is worse than a tab that is not there, and a login
+    screen in front of a service with no accounts is worse than either.
+
+    The tabs are named here rather than derived from the role in the browser:
+    which routers a role mounts is decided in create_app(), and a second copy of
+    that mapping in the frontend would be a second copy to get wrong.
+    """
+    role = getattr(request.app.state, "role", "all")
+    demo = role == "demo"
+    return {
+        "role": role,
+        # A demo is the examples gallery and the editor behind it. Nothing else
+        # is reachable, so nothing else is offered.
+        "tabs": ["examples"] if demo else ["templates", "examples", "settings"],
+        # Whether there is any authentication here at all. Without this the
+        # editor asks who it is talking to, gets a 404, and concludes the
+        # session expired.
+        "accounts": not demo,
+    }
+
+
 @ops.api_route(
     "/api/{rest:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
@@ -163,8 +190,10 @@ def create_app(settings: Settings | None = None, static_dir: Path | None = None)
         app.include_router(directories.router)
         app.include_router(assets.router)
         app.include_router(assistant.router)
-        app.include_router(auth.router)
         app.include_router(admin.router)
+    if settings.role in ("all", "editor"):
+        app.include_router(auth.router)
+    if settings.role in ("all", "editor", "demo"):
         app.include_router(examples.router)
     app.include_router(ops)
 
@@ -176,7 +205,7 @@ def create_app(settings: Settings | None = None, static_dir: Path | None = None)
     # not exist, so without it every test runs against a shape the container
     # never has — which is exactly how the 405 above reached CI.
     static_dir = static_dir or Path(__file__).parent / "static"
-    if settings.role in ("all", "editor") and static_dir.is_dir():
+    if settings.role in ("all", "editor", "demo") and static_dir.is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")
     return app
 

@@ -29,7 +29,7 @@ export default defineConfig({
     {
       name: 'editor',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: /auth\.spec\.ts/,
+      testIgnore: /(auth|demo)\.spec\.ts/,
     },
     {
       name: 'auth',
@@ -41,6 +41,16 @@ export default defineConfig({
         baseURL: process.env.LINFORM_E2E_AUTH_URL ?? 'http://localhost:8102',
       },
       testMatch: /auth\.spec\.ts/,
+    },
+    {
+      name: 'demo',
+      // A third instance, because a demo is a different service: no accounts,
+      // no stored templates, and a shell that has to cope with both absences.
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: process.env.LINFORM_E2E_DEMO_URL ?? 'http://localhost:8103',
+      },
+      testMatch: /demo\.spec\.ts/,
     },
   ],
 })
