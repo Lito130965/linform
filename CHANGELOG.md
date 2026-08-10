@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variable name (`items[].price` → `row.price`).
 - **Typing `{{` in the canvas** offers the same list at the caret, filters as
   the name is typed, and writes the field on Enter.
+- **Test data generated from the template.** Two buttons: build a fresh sample
+  payload from every value the template names — loops become arrays of objects
+  carrying the fields their bodies use — or keep what is there and fill in only
+  what the template has since grown. Sample values are guessed from the field's
+  name, so the preview shows a form rather than a page of the word "Sample".
+- **A block can be put inside another block, and taken back out.** A drag says
+  which it means by where it hovers: near an edge is beside, the middle of
+  something that holds blocks is inside it.
+- **The blocks are a palette of tiles** instead of a dropdown, in the drawer
+  below the canvas, and they work in Code mode too.
 
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
@@ -46,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The structure list and the field list share one column**, as two tabs beside
+  the canvas: they answer the same question about the document and read as one
+  thing said twice when drawn in opposite corners.
 - **Inline content is inserted where the caret is** — a field, an image, a QR
   code, a run of character cells. Everything used to land after the selected
   block, under panels that said "insert at cursor", so a value could never be
