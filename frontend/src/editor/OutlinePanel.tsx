@@ -22,10 +22,19 @@
  */
 
 import { useEffect, useRef } from 'react'
+import FieldsPanel from '../components/FieldsPanel'
 import Icon from '../components/Icon'
+import type { FieldRow } from './fields'
 import type { OutlineItem } from './outline'
 
+export type SideTab = 'structure' | 'fields'
+
 export interface OutlinePanelProps {
+  tab: SideTab
+  onTab: (tab: SideTab) => void
+  /** Every value this document can name, for the other tab. */
+  fields: FieldRow[]
+  onInsertField: (expression: string) => void
   items: OutlineItem[]
   selected: Element | null
   /** How many blocks are hidden in the canvas — never a silent state. */
@@ -43,6 +52,10 @@ export interface OutlinePanelProps {
 const INDENT_PX = 13
 
 export default function OutlinePanel({
+  tab,
+  onTab,
+  fields,
+  onInsertField,
   items,
   selected,
   hiddenCount,
@@ -64,13 +77,40 @@ export default function OutlinePanel({
   }, [selected])
 
   return (
-    <aside className="canvas-outline" aria-label="Document structure">
+    <aside className="canvas-outline" aria-label="Document structure and fields">
       <header className="outline-head">
-        <h2>Structure</h2>
-        <button className="tb" onClick={onClose} aria-label="Hide the structure panel">
+        {/* What is in the document, and what could be — two answers to the same
+            "what am I working with", so they share one column rather than
+            competing for the screen from opposite corners. */}
+        <div className="side-tabs" role="tablist">
+          <button
+            role="tab"
+            aria-selected={tab === 'structure'}
+            className={tab === 'structure' ? 'side-tab active' : 'side-tab'}
+            onClick={() => onTab('structure')}
+          >
+            Structure
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'fields'}
+            className={tab === 'fields' ? 'side-tab active' : 'side-tab'}
+            onClick={() => onTab('fields')}
+          >
+            Fields
+          </button>
+        </div>
+        <button className="tb" onClick={onClose} aria-label="Hide the side panel">
           <Icon name="close" size={14} />
         </button>
       </header>
+
+      {tab === 'fields' ? (
+        <div className="side-scroll">
+          <FieldsPanel rows={fields} onInsert={onInsertField} />
+        </div>
+      ) : (
+        <>
 
       {hiddenCount > 0 && (
         <p className="outline-note">
@@ -142,6 +182,8 @@ export default function OutlinePanel({
             )
           })}
         </ul>
+      )}
+        </>
       )}
     </aside>
   )

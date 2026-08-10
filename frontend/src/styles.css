@@ -1321,6 +1321,102 @@ label {
   justify-content: flex-end;
 }
 
+.test-data-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.test-data-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.muted.small {
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+/* ---- the insert palette ---- */
+
+.insert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.insert-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.insert-tile:hover {
+  border-color: var(--accent);
+}
+
+.insert-tile svg {
+  width: 44px;
+  height: 36px;
+  fill: currentColor;
+  stroke: currentColor;
+  color: var(--text-muted);
+}
+
+.insert-tile:hover svg {
+  color: var(--accent);
+}
+
+.insert-name {
+  text-align: center;
+  line-height: 1.2;
+}
+
+/* ---- the side panel's tabs ---- */
+
+.side-tabs {
+  display: flex;
+  gap: 2px;
+}
+
+.side-tab {
+  border: none;
+  background: none;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.side-tab.active {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+.side-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 4px 10px;
+}
+
 /* ---- the fields panel ---- */
 
 .fields-panel .panel-heading {

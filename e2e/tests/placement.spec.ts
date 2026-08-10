@@ -36,8 +36,8 @@ test('a block inserted with a cell selected lands in that cell', async ({ page, 
   const frame = page.frameLocator(CANVAS)
   await frame.locator('#flag').click()
 
-  // The Insert control is the same path a preset takes into the document.
-  await page.getByRole('combobox', { name: /Insert/i }).selectOption('text')
+  // The palette is the same path a preset takes into the document.
+  await page.locator('.insert-tile', { hasText: 'Text' }).click()
 
   await expect(frame.locator('#flag p')).toHaveCount(1)
   await expect(frame.locator('#t p')).toHaveCount(1)

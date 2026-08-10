@@ -141,9 +141,9 @@ test('the panel can be put away and brought back', async ({ page, request }) => 
 
   const panel = page.locator('.canvas-outline')
   await expect(panel).toBeVisible()
-  await panel.getByRole('button', { name: 'Hide the structure panel' }).click()
+  await panel.getByRole('button', { name: 'Hide the side panel' }).click()
   await expect(panel).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Structure' }).click()
+  await page.locator('.canvas-topbar button', { hasText: 'Panel' }).click()
   await expect(panel).toBeVisible()
 })

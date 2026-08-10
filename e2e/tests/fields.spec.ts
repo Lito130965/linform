@@ -34,7 +34,8 @@ const DATA = JSON.stringify({
 async function setTestData(page: import('@playwright/test').Page, json: string) {
   await page.locator('.panel-tab', { hasText: 'Test data' }).click()
   await page.locator('#test-data-json').fill(json)
-  await page.locator('.panel-tab', { hasText: 'Fields' }).click()
+  // Fields live beside the canvas now, not in the drawer.
+  await page.locator('.side-tab', { hasText: 'Fields' }).click()
 }
 
 test('a fresh template offers the test data as fields', async ({ page, request }) => {
@@ -113,7 +114,9 @@ test('inside a repeat, an array field is offered under the loop’s own name', a
   await setTestData(page, DATA)
 
   const frame = page.frameLocator(CANVAS)
-  // Make the row repeat over items, calling each one `row`.
+  // Make the row repeat over items, calling each one `row`. The structure list
+  // is the only way to take the row rather than the cell inside it.
+  await page.locator('.side-tab', { hasText: 'Structure' }).click()
   await page.locator('.canvas-outline .outline-row', { hasText: 'Row' }).click()
   await page.locator('.convert-actions button', { hasText: 'Repeat' }).click()
   await page.locator('.convert-form input[aria-label="Loop variable name"]').fill('row')
@@ -121,6 +124,7 @@ test('inside a repeat, an array field is offered under the loop’s own name', a
   await page.locator('.convert-form button', { hasText: 'Apply' }).click()
 
   await frame.locator('#cell').click()
+  await page.locator('.side-tab', { hasText: 'Fields' }).click()
   const price = page.locator('.fields-panel .field-row', { hasText: 'items[].price' })
   await expect(price).toBeVisible()
   await expect(price).toHaveAttribute('title', /row\.price/)
@@ -155,4 +159,45 @@ test('bolding across a field does not give the template a second copy of it', as
 
   // One field before, one field after. The chip was taken whole or not at all.
   await expect(line.locator('[data-jinja-expr="customer"]')).toHaveCount(1)
+})
+
+test('the payload is generated from the template, not typed before it', async ({
+  page,
+  request,
+}) => {
+  // The order that made the first ten minutes an exercise in typing braces into
+  // a text box: fields could only be offered once the JSON existed. Now the
+  // fields go on the page and the payload follows them.
+  const code = uniqueCode('fields-gen')
+  await createTemplate(
+    request,
+    code,
+    '<h1>Invoice {{ number }}</h1>\n' +
+      '<table>{% for row in items %}<tr><td>{{ row.title }}</td>' +
+      '<td>{{ row.price }}</td></tr>{% endfor %}</table>\n',
+  )
+  await openTemplate(page, code)
+
+  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await page.getByRole('button', { name: 'Generate', exact: true }).click()
+
+  const generated = JSON.parse(await page.locator('#test-data-json').inputValue())
+  expect(generated.number).toBeTruthy()
+  expect(Array.isArray(generated.items)).toBe(true)
+  expect(Object.keys(generated.items[0]).sort()).toEqual(['price', 'title'])
+
+  // Adjust one value by hand, then let the template grow a field.
+  generated.number = 'REAL-42'
+  await page.locator('#test-data-json').fill(JSON.stringify(generated))
+  await page.locator('.btn.mode', { hasText: 'Code' }).click()
+  await page.locator('.cm-content').click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type('<p>{{ signed_by }}</p>')
+
+  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await page.getByRole('button', { name: 'Fill in missing' }).click()
+
+  const filled = JSON.parse(await page.locator('#test-data-json').inputValue())
+  expect(filled.number, 'the value adjusted by hand was thrown away').toBe('REAL-42')
+  expect(filled.signed_by, 'the new field was not added').toBeTruthy()
 })
