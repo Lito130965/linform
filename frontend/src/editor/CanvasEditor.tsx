@@ -95,12 +95,14 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
   for (const s of Array.from(body.querySelectorAll('[data-lf-spacer]'))) s.remove()
   if (!canPaginate(geom)) return
   const doc = body.ownerDocument
-  const bodyTop = body.getBoundingClientRect().top
   for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
     const side = breakSide(el)
     if (!side) continue
     const rect = el.getBoundingClientRect()
-    const edge = (side === 'after' ? rect.bottom : rect.top) - bodyTop
+    const edge = side === 'after' ? rect.bottom : rect.top
+    // Sheet coordinates, which is what the page geometry is expressed in. A
+    // rect inside the iframe is already measured from the sheet corner; the
+    // body starts one top margin below it.
     // Land on the next page's CONTENT band, not the next sheet edge: every page
     // spends its top and bottom margins, so the two are not the same place.
     const gap = gapToNextPage(edge, geom)
@@ -229,7 +231,7 @@ export default function CanvasEditor({
   const furniture = useMemo(() => parseMarginBoxes(canvasStyles), [canvasStyles])
   // Page geometry so a page-background image can bleed past the margins.
   const pageBox = useMemo(() => parsePageBox(canvasStyles), [canvasStyles])
-  // Margins in px, measured from the body's own padding (which is set from the
+  // Margins in px, read back off the laid-out body (which is inset by the
   // @page margins), so no unit conversion is done by hand.
   const [margins, setMargins] = useState({ top: 0, bottom: 0 })
   // What a printed page can actually hold: the sheet minus the margins it
@@ -312,7 +314,10 @@ export default function CanvasEditor({
       const key = String(next++)
       const rect = el.getBoundingClientRect()
       boxes.set(key, {
-        left: rect.left - origin.left,
+        left: rect.left,
+    // Everything here is in sheet coordinates — the same ones breakOffsets and
+    // the overlays use. Inside the iframe a rect is already measured from the
+    // sheet corner, so nothing has to be rebased.
         top,
         width: rect.width,
         height: bottom - top,
@@ -333,22 +338,18 @@ export default function CanvasEditor({
       for (const child of Array.from(el.children)) {
         if (child.hasAttribute('data-lf-spacer')) continue
         const box = child.getBoundingClientRect()
-        const childTop = box.top - origin.top
-        const childBottom = box.bottom - origin.top
-        if (!crossesAny(childTop, childBottom)) continue
-        node.children.push(build(child, childTop, childBottom))
+        if (!crossesAny(box.top, box.bottom)) continue
+        node.children.push(build(child, box.top, box.bottom))
       }
       return node
     }
 
-    const root: BoxNode = { key: 'body', top: 0, bottom: origin.height, keepsTogether: false, children: [] }
+    const root: BoxNode = { key: 'body', top: 0, bottom: origin.bottom, keepsTogether: false, children: [] }
     for (const child of Array.from(body.children)) {
       if (child.hasAttribute('data-lf-spacer')) continue
       const box = child.getBoundingClientRect()
-      const top = box.top - origin.top
-      const bottom = box.bottom - origin.top
-      if (!crossesAny(top, bottom)) continue
-      root.children.push(build(child, top, bottom))
+      if (!crossesAny(box.top, box.bottom)) continue
+      root.children.push(build(child, box.top, box.bottom))
     }
     return { list: crossingsAt(root, breakOffsets), boxes }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -473,20 +474,38 @@ export default function CanvasEditor({
     body.innerHTML = cleaned.html
     callbacksRef.current.onSanitized?.(describeRemoved(cleaned.removed))
     prepareBody(body)
-    // Show content in its real position: inset by the @page margins, so the
-    // canvas matches where things actually print. body.style is canvas-only —
-    // export is body.innerHTML, never the body element itself.
+    // The printed <body> IS the page area. WeasyPrint spends the @page margins
+    // on the page box, so the body box begins inside them — and everything that
+    // resolves against the body resolves against the page: an absolutely
+    // positioned logo, a percentage width, a `right: 0`.
+    //
+    // The canvas used to draw the same inset with padding on the body. Content
+    // then LOOKED right while the origin for all of that was one margin away,
+    // at the corner of the sheet — so a logo dragged into the top-right corner
+    // of the canvas printed 18mm further right and 26mm further down, half of it
+    // over the edge of the paper. Positioning the body instead makes the two
+    // agree by construction rather than by correction.
+    //
+    // The bottom stays padding: it only has to draw the last page's margin band,
+    // and as padding it keeps the body's own height honest for the measurement
+    // below. body.style is canvas-only — export is body.innerHTML, never the
+    // body element itself.
     body.style.margin = '0'
     if (pageBox) {
       const m = pageBox.margin
-      body.style.padding = `${m.top} ${m.right} ${m.bottom} ${m.left}`
+      body.style.position = 'absolute'
+      body.style.top = m.top
+      body.style.left = m.left
+      body.style.right = m.right
+      body.style.paddingBottom = m.bottom
     }
-    // Read the margins back in px rather than converting mm/cm/in by hand:
-    // the browser already did the conversion when it applied the padding.
-    const pad = doc.defaultView?.getComputedStyle(body)
+    // Read the margins back in px rather than converting mm/cm/in by hand: the
+    // browser already did the conversion when it laid the body out.
+    const shown = doc.defaultView?.getComputedStyle(body)
+    const insetTop = parseFloat(shown?.top ?? '0') || 0
     setMargins({
-      top: parseFloat(pad?.paddingTop ?? '0') || 0,
-      bottom: parseFloat(pad?.paddingBottom ?? '0') || 0,
+      top: insetTop,
+      bottom: parseFloat(shown?.paddingBottom ?? '0') || 0,
     })
     bodyRef.current = body
     historyRef.current = new SnapshotHistory(exportBody(body))
@@ -606,7 +625,10 @@ export default function CanvasEditor({
       const padBottom = parseFloat(
         doc.defaultView?.getComputedStyle(body).paddingBottom ?? '0',
       )
-      setFrameHeight(Math.max(body.scrollHeight - (padBottom || 0), 200))
+      // The sheet is the top margin plus what the body holds. The body no longer
+      // carries the top margin as padding — it is inset by it — so that band is
+      // added back here rather than read out of scrollHeight.
+      setFrameHeight(Math.max(insetTop + body.scrollHeight - (padBottom || 0), 200))
     }
     measure()
 
@@ -912,21 +934,16 @@ export default function CanvasEditor({
   const snapLinesFor = (axis: 'x' | 'y', dragged: Element | null): SnapLine[] => {
     const body = bodyRef.current
     if (!body) return []
-    const style = body.ownerDocument.defaultView?.getComputedStyle(body)
     const lines: SnapLine[] = []
     if (axis === 'x') {
-      lines.push({ at: parseFloat(style?.paddingLeft ?? '0') || 0, kind: 'page' })
-      lines.push({
-        at: body.clientWidth - (parseFloat(style?.paddingRight ?? '0') || 0),
-        kind: 'page',
-      })
+      lines.push({ at: page.left, kind: 'page' })
+      lines.push({ at: page.right, kind: 'page' })
     } else {
       lines.push({ at: margins.top, kind: 'page' })
       // Where each printed page ends: getting flush with a page break is a
       // thing people do deliberately in a form.
       for (const offset of breakOffsets) lines.push({ at: offset, kind: 'page' })
     }
-    const origin = body.getBoundingClientRect()
     const rects: Rect[] = []
     for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
       // Its own edges are not something to align to; its ancestors' are — a
@@ -935,12 +952,7 @@ export default function CanvasEditor({
       if (el.hasAttribute('data-lf-spacer') || !kindOf(el)) continue
       const box = el.getBoundingClientRect()
       if (box.width === 0 && box.height === 0) continue
-      rects.push({
-        left: box.left - origin.left,
-        right: box.right - origin.left,
-        top: box.top - origin.top,
-        bottom: box.bottom - origin.top,
-      })
+      rects.push({ left: box.left, right: box.right, top: box.top, bottom: box.bottom })
       if (rects.length >= 300) break
     }
     return lines.concat(edgeLines(rects, axis))
@@ -1030,6 +1042,9 @@ export default function CanvasEditor({
     startDrag({
       cursor: 'row-resize',
       onMove: (ev) => {
+    // Sheet coordinates throughout — the guides are drawn over the stage, whose
+    // origin is the sheet corner, and the body's own edges ARE the page margins.
+    const page = body.getBoundingClientRect()
         const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
         const height = Math.max(8, edge - box.top)
         settleEdge(cell, edge, 'y', height, (px) => setRowHeight(cell, `${px}px`))
