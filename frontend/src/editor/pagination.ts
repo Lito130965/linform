@@ -11,9 +11,10 @@
  * below the true break (`k*H - (mT + k*U) = k*(mT+mB) - mT`), which on a real
  * form was two full rows of content shown on the wrong page.
  *
- * Everything here is in canvas coordinates: y is measured from the top of the
- * body box, and the body carries `padding-top = marginTop`, so the first page's
- * content band starts at exactly `marginTop`.
+ * Everything here is in sheet coordinates: y is measured from the top edge of
+ * the paper, and the body — which is the page area, inset by the @page margins
+ * exactly as it is in print — starts at `marginTop`, where the first page's
+ * content band begins.
  *
  * What this does NOT do, deliberately (see README "Limits"): it says where a
  * page ENDS, not what moves. The canvas keeps the document as one continuous
@@ -33,7 +34,7 @@
 export interface PageGeometry {
   /** Full sheet height in px (A4 at 96dpi = 1123). */
   pageHeight: number
-  /** @page margin-top in px — the body's padding-top on the canvas. */
+  /** @page margin-top in px — how far the body is inset on the canvas. */
   marginTop: number
   /** @page margin-bottom in px. */
   marginBottom: number

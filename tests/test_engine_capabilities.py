@@ -95,6 +95,52 @@ def test_flexbox_places_items_in_a_row():
     )
 
 
+MM = 96 / 25.4  # CSS px per millimetre, which is what the box tree is measured in
+
+
+def corner_of(html: str, mark: str = "probe") -> tuple[float, float]:
+    """Top-left of the marked box, in px from the corner of the SHEET.
+
+    Read from the engine's own anchor table (every id becomes one), so the
+    number is where the box was actually laid out rather than where a text
+    matrix suggests it was drawn.
+    """
+    page = weasyprint.HTML(string=html).render().pages[0]
+    x, y, *_ = page.anchors[mark]
+    return x, y
+
+
+PROBE_PAGE = "@page { size: A4; margin: 26mm 18mm }"
+
+
+@pytest.mark.parametrize("position", ["absolute", "fixed"])
+def test_positioned_boxes_are_placed_against_the_page_area_not_the_sheet(position):
+    """`left: 0` means the corner of the page AREA — inside the @page margins —
+    because the body box begins there. The editor's canvas has to agree with
+    this or a logo placed in the corner of the canvas prints over the edge of
+    the paper; see e2e/tests/canvas-geometry.spec.ts for the other half.
+    """
+    x, y = corner_of(
+        f"<style>{PROBE_PAGE} body {{ margin: 0 }}</style>"
+        f'<p>flow</p><div id="probe" style="position:{position}; left:0; top:0; '
+        'width:20mm; height:10mm; background:#000"></div>'
+    )
+    assert x == pytest.approx(18 * MM, abs=0.5), f"left edge landed at {x}px"
+    assert y == pytest.approx(26 * MM, abs=0.5), f"top edge landed at {y}px"
+
+
+def test_a_page_background_reaches_the_sheet_edge_by_going_negative():
+    """The other side of the same rule, and the reason the page-background layer
+    writes negative offsets: from the page area, minus the margins is the paper.
+    """
+    x, y = corner_of(
+        f"<style>{PROBE_PAGE} body {{ margin: 0 }}</style>"
+        '<div id="probe" style="position:fixed; left:-18mm; top:-26mm; '
+        'width:210mm; height:297mm; background:#eee"></div>'
+    )
+    assert (x, y) == pytest.approx((0.0, 0.0), abs=0.5)
+
+
 def test_javascript_in_a_template_does_not_run():
     """The security model rests on this: the engine draws documents and does not
     execute them. If a WeasyPrint release ever grew a script engine, everything

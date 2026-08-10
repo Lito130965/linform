@@ -50,6 +50,50 @@ test('the sheet does not grow a page every time you edit', async ({ page, reques
   expect(await boundaries.count(), 'the sheet grew while nothing was added to it').toBe(before)
 })
 
+test('the page area is where the canvas positions from, as it is in print', async ({
+  page,
+  request,
+}) => {
+  /**
+   * `position: absolute; left: 0` means the corner of the PAGE AREA — inside the
+   * @page margins — because in print the body box begins there. Measured against
+   * the engine in tests/test_engine_capabilities.py; this is the canvas half of
+   * the same claim.
+   *
+   * The canvas used to draw the margins as padding on the body, which put that
+   * origin one margin away, at the corner of the sheet. Everything in flow still
+   * looked right, so the difference only surfaced on export: a logo dragged into
+   * the top-right corner of the canvas printed 18mm further right, over the edge
+   * of the paper.
+   */
+  const code = uniqueCode('page-origin')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 26mm 18mm }</style>\n' +
+      '<div id="flow">in flow</div>\n' +
+      '<div id="probe" style="position:absolute; left:0; top:0; width:20mm; height:10mm; ' +
+      'background:#000"></div>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  const probe = (await frame.locator('#probe').boundingBox())!
+  const flow = (await frame.locator('#flow').boundingBox())!
+  const sheet = (await page.locator(CANVAS).boundingBox())!
+
+  // Compared with the first thing in normal flow, which starts at that same
+  // corner: both are drawn at the canvas zoom, so the factor cancels.
+  expect(Math.abs(probe.x - flow.x), 'the probe is not at the page-area left edge').toBeLessThan(2)
+  expect(Math.abs(probe.y - flow.y), 'the probe is not at the page-area top edge').toBeLessThan(2)
+
+  // And the page area is not the sheet: without this the assertions above would
+  // also pass with both of them wrong in the same direction.
+  expect(probe.x - sheet.x, 'the left margin is not being kept').toBeGreaterThan(10)
+  expect(probe.y - sheet.y, 'the top margin is not being kept').toBeGreaterThan(10)
+})
+
 test('a resize handle sits on the edge it resizes', async ({ page, request }) => {
   /**
    * Handles are positioned in the canvas document's coordinates. The margin-box

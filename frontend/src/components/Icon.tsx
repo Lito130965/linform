@@ -24,6 +24,9 @@ export type IconName =
   | 'close'
   | 'edit'
   | 'trash'
+  | 'eye'
+  | 'eye-off'
+  | 'structure'
 
 const PATHS: Record<IconName, JSX.Element> = {
   menu: (
@@ -67,6 +70,29 @@ const PATHS: Record<IconName, JSX.Element> = {
       <line x1="3" y1="6" x2="21" y2="6" />
       <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
       <path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </>
+  ),
+  'eye-off': (
+    <>
+      <path d="M10.6 6.1A9.8 9.8 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5a17 17 0 0 1-3.3 4" />
+      <path d="M6.4 7.9A16.6 16.6 0 0 0 2 12s3.6 6.5 10 6.5a10 10 0 0 0 3.6-.7" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <line x1="3" y1="3" x2="21" y2="21" />
+    </>
+  ),
+  structure: (
+    <>
+      <line x1="9" y1="6" x2="21" y2="6" />
+      <line x1="12" y1="12" x2="21" y2="12" />
+      <line x1="12" y1="18" x2="21" y2="18" />
+      <path d="M4 4v13a1 1 0 0 0 1 1h4" />
+      <path d="M4 11h5" />
     </>
   ),
 }

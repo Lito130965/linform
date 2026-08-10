@@ -29,9 +29,10 @@ async function zoomOf(frame: FrameLocator, page: Page): Promise<number> {
 /** Where the page's content band ends, in canvas coordinates — the margin an
  * edge should fall onto. */
 async function bandRight(frame: FrameLocator): Promise<number> {
-  return frame
-    .locator('body')
-    .evaluate((body) => body.clientWidth - parseFloat(getComputedStyle(body).paddingRight))
+  // The body IS the page area — it is inset by the @page margins, exactly as it
+  // is in print — so its own right edge is the one an edge should fall onto.
+  // Sheet coordinates, like every other measurement here.
+  return frame.locator('body').evaluate((body) => body.getBoundingClientRect().right)
 }
 
 const cellRight = (frame: FrameLocator): Promise<number> =>

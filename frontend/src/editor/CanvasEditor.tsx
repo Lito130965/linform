@@ -37,6 +37,8 @@ import {
   usablePageHeight,
   type PageGeometry,
 } from './pagination'
+import OutlinePanel from './OutlinePanel'
+import { CROWDED, outlineOf, selectableChildren, type OutlineItem } from './outline'
 import { describeRemoved, sanitizeHtml } from './sanitize'
 import {
   BorderMode,
@@ -95,12 +97,14 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
   for (const s of Array.from(body.querySelectorAll('[data-lf-spacer]'))) s.remove()
   if (!canPaginate(geom)) return
   const doc = body.ownerDocument
-  const bodyTop = body.getBoundingClientRect().top
   for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
     const side = breakSide(el)
     if (!side) continue
+    // Sheet coordinates, which is what the page geometry is expressed in. A
+    // rect inside the iframe is already measured from the sheet corner; the
+    // body starts one top margin below it.
     const rect = el.getBoundingClientRect()
-    const edge = (side === 'after' ? rect.bottom : rect.top) - bodyTop
+    const edge = side === 'after' ? rect.bottom : rect.top
     // Land on the next page's CONTENT band, not the next sheet edge: every page
     // spends its top and bottom margins, so the two are not the same place.
     const gap = gapToNextPage(edge, geom)
@@ -142,6 +146,7 @@ export default function CanvasEditor({
   onReady,
   arrayHints = [],
   onSanitized,
+  compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -154,6 +159,8 @@ export default function CanvasEditor({
   arrayHints?: string[]
   /** fires with a warning when executable markup was stripped on load, or null */
   onSanitized?: (warning: string | null) => void
+  /** the window is tight enough that panels cost more than they give */
+  compact?: boolean
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -181,6 +188,14 @@ export default function CanvasEditor({
   const [tick, setTick] = useState(0)
   // Bumped on each new selection so the props inputs re-seed from that element.
   const [selId, setSelId] = useState(0)
+  // The structure panel. Open by default where there is room for it: a panel
+  // nobody knows about answers nobody's question.
+  const [outlineOpen, setOutlineOpen] = useState(!compact)
+  // Which containers the panel has been told to open or close. A WeakMap rather
+  // than the document, because opening a twisty is not an edit: writing it into
+  // the DOM would put a mutation burst — repaginate, re-measure, re-export —
+  // behind every click on an arrow.
+  const outlineFolds = useRef(new WeakMap<Element, boolean>())
   const [convert, setConvert] = useState<
     { type: 'repeat' | 'if' | 'cells'; value: string; item: string } | null
   >(null)
@@ -229,7 +244,7 @@ export default function CanvasEditor({
   const furniture = useMemo(() => parseMarginBoxes(canvasStyles), [canvasStyles])
   // Page geometry so a page-background image can bleed past the margins.
   const pageBox = useMemo(() => parsePageBox(canvasStyles), [canvasStyles])
-  // Margins in px, measured from the body's own padding (which is set from the
+  // Margins in px, read back off the laid-out body (which is inset by the
   // @page margins), so no unit conversion is done by hand.
   const [margins, setMargins] = useState({ top: 0, bottom: 0 })
   // What a printed page can actually hold: the sheet minus the margins it
@@ -300,6 +315,9 @@ export default function CanvasEditor({
     const view = body?.ownerDocument.defaultView
     if (!body || !view || breakOffsets.length === 0) return { list: [], boxes: new Map() }
 
+    // Everything here is in sheet coordinates — the same ones breakOffsets and
+    // the overlays use. Inside the iframe a rect is already measured from the
+    // sheet corner, so nothing has to be rebased.
     const origin = body.getBoundingClientRect()
     const boxes = new Map<string, { left: number; top: number; width: number; height: number }>()
     let next = 0
@@ -312,7 +330,7 @@ export default function CanvasEditor({
       const key = String(next++)
       const rect = el.getBoundingClientRect()
       boxes.set(key, {
-        left: rect.left - origin.left,
+        left: rect.left,
         top,
         width: rect.width,
         height: bottom - top,
@@ -333,26 +351,121 @@ export default function CanvasEditor({
       for (const child of Array.from(el.children)) {
         if (child.hasAttribute('data-lf-spacer')) continue
         const box = child.getBoundingClientRect()
-        const childTop = box.top - origin.top
-        const childBottom = box.bottom - origin.top
-        if (!crossesAny(childTop, childBottom)) continue
-        node.children.push(build(child, childTop, childBottom))
+        if (!crossesAny(box.top, box.bottom)) continue
+        node.children.push(build(child, box.top, box.bottom))
       }
       return node
     }
 
-    const root: BoxNode = { key: 'body', top: 0, bottom: origin.height, keepsTogether: false, children: [] }
+    const root: BoxNode = { key: 'body', top: 0, bottom: origin.bottom, keepsTogether: false, children: [] }
     for (const child of Array.from(body.children)) {
       if (child.hasAttribute('data-lf-spacer')) continue
       const box = child.getBoundingClientRect()
-      const top = box.top - origin.top
-      const bottom = box.bottom - origin.top
-      if (!crossesAny(top, bottom)) continue
-      root.children.push(build(child, top, bottom))
+      if (!crossesAny(box.top, box.bottom)) continue
+      root.children.push(build(child, box.top, box.bottom))
     }
     return { list: crossingsAt(root, breakOffsets), boxes }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, zoom, breakOffsets.join(',')])
+
+  // ---- the structure panel ------------------------------------------------
+
+  /** Whether a container shows its parts. Told, if it has been told; otherwise
+   * open unless it is crowded — a static table of a hundred rows is a haystack,
+   * and everything smaller is worth seeing without asking. */
+  const outlineIsOpen = (el: HTMLElement, children?: number): boolean => {
+    const told = outlineFolds.current.get(el)
+    if (told !== undefined) return told
+    return (children ?? selectableChildren(el).length) <= CROWDED
+  }
+
+  const outline = useMemo(() => {
+    const body = bodyRef.current
+    if (!body || !outlineOpen) return { items: [] as OutlineItem[], hidden: 0 }
+    return {
+      items: outlineOf(body, outlineIsOpen),
+      // Read off the document rather than kept beside it: the attribute IS the
+      // state, so it cannot drift, and an undo that replaces the body takes the
+      // hiding with it instead of leaving a counter behind.
+      hidden: body.querySelectorAll('[data-lf-hidden]').length,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, selId, outlineOpen])
+
+  /** Bring an element into view in the canvas. Selecting something from the
+   * panel and watching nothing happen — because it is two pages down — reads as
+   * a panel that does not work. */
+  const revealInCanvas = (el: HTMLElement): void => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const box = el.getBoundingClientRect()
+    const top = box.top * zoom
+    const bottom = box.bottom * zoom
+    const margin = 48
+    if (top < scroll.scrollTop + margin) {
+      scroll.scrollTop = Math.max(0, top - margin)
+    } else if (bottom > scroll.scrollTop + scroll.clientHeight - margin) {
+      scroll.scrollTop = bottom - scroll.clientHeight + margin
+    }
+  }
+
+  /** Outline the element a row points at, using the same overlay a hover over
+   * the canvas draws — so pointing at a row and pointing at the page say the
+   * same thing in the same way. */
+  const outlineHover = (el: HTMLElement | null): void => {
+    hoverRef.current = el
+    if (!el) {
+      setHover(null)
+      return
+    }
+    const box = el.getBoundingClientRect()
+    setHover({
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+      label: KIND_LABEL[kindOf(el)!],
+    })
+  }
+
+  /** Out of sight, still in the document.
+   *
+   * `visibility: hidden` rather than `display: none` on purpose: the box keeps
+   * its size, so the page breaks stay where the printed ones are and the canvas
+   * does not start telling a different story about pagination than the PDF. It
+   * is also canvas-only — data-lf-hidden is stripped on export, so nothing here
+   * can reach the template or the render. The panel says how many are hidden
+   * for exactly that reason: a view state that changes nothing must not look
+   * like an edit that changed something. */
+  const toggleHidden = (el: HTMLElement): void => {
+    if (el.hasAttribute('data-lf-hidden')) el.removeAttribute('data-lf-hidden')
+    else el.setAttribute('data-lf-hidden', '')
+    setTick((t) => t + 1)
+  }
+
+  const showAllHidden = (): void => {
+    const body = bodyRef.current
+    if (!body) return
+    for (const el of Array.from(body.querySelectorAll('[data-lf-hidden]'))) {
+      el.removeAttribute('data-lf-hidden')
+    }
+    setTick((t) => t + 1)
+  }
+
+  // A selection made in the canvas has to be findable in the panel, which means
+  // opening whatever it is buried inside. The panel scrolls to it itself.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!selected || !body || !outlineOpen) return
+    let changed = false
+    for (let p = selected.el.parentElement; p && p !== body; p = p.parentElement) {
+      if (outlineFolds.current.get(p) !== true) {
+        outlineFolds.current.set(p, true)
+        changed = true
+      }
+    }
+    if (changed) setTick((t) => t + 1)
+  }, [selId, outlineOpen, selected])
 
   /** Begin a gesture: remember what to return to, and hold history open. */
   const beginGesture = (): void => {
@@ -473,20 +586,38 @@ export default function CanvasEditor({
     body.innerHTML = cleaned.html
     callbacksRef.current.onSanitized?.(describeRemoved(cleaned.removed))
     prepareBody(body)
-    // Show content in its real position: inset by the @page margins, so the
-    // canvas matches where things actually print. body.style is canvas-only —
-    // export is body.innerHTML, never the body element itself.
+    // The printed <body> IS the page area. WeasyPrint spends the @page margins
+    // on the page box, so the body box begins inside them — and everything that
+    // resolves against the body resolves against the page: an absolutely
+    // positioned logo, a percentage width, a `right: 0`.
+    //
+    // The canvas used to draw the same inset with padding on the body. Content
+    // then LOOKED right while the origin for all of that was one margin away,
+    // at the corner of the sheet — so a logo dragged into the top-right corner
+    // of the canvas printed 18mm further right and 26mm further down, half of it
+    // over the edge of the paper. Positioning the body instead makes the two
+    // agree by construction rather than by correction.
+    //
+    // The bottom stays padding: it only has to draw the last page's margin band,
+    // and as padding it keeps the body's own height honest for the measurement
+    // below. body.style is canvas-only — export is body.innerHTML, never the
+    // body element itself.
     body.style.margin = '0'
     if (pageBox) {
       const m = pageBox.margin
-      body.style.padding = `${m.top} ${m.right} ${m.bottom} ${m.left}`
+      body.style.position = 'absolute'
+      body.style.top = m.top
+      body.style.left = m.left
+      body.style.right = m.right
+      body.style.paddingBottom = m.bottom
     }
-    // Read the margins back in px rather than converting mm/cm/in by hand:
-    // the browser already did the conversion when it applied the padding.
-    const pad = doc.defaultView?.getComputedStyle(body)
+    // Read the margins back in px rather than converting mm/cm/in by hand: the
+    // browser already did the conversion when it laid the body out.
+    const shown = doc.defaultView?.getComputedStyle(body)
+    const insetTop = parseFloat(shown?.top ?? '0') || 0
     setMargins({
-      top: parseFloat(pad?.paddingTop ?? '0') || 0,
-      bottom: parseFloat(pad?.paddingBottom ?? '0') || 0,
+      top: insetTop,
+      bottom: parseFloat(shown?.paddingBottom ?? '0') || 0,
     })
     bodyRef.current = body
     historyRef.current = new SnapshotHistory(exportBody(body))
@@ -606,7 +737,10 @@ export default function CanvasEditor({
       const padBottom = parseFloat(
         doc.defaultView?.getComputedStyle(body).paddingBottom ?? '0',
       )
-      setFrameHeight(Math.max(body.scrollHeight - (padBottom || 0), 200))
+      // The sheet is the top margin plus what the body holds. The body no longer
+      // carries the top margin as padding — it is inset by it — so that band is
+      // added back here rather than read out of scrollHeight.
+      setFrameHeight(Math.max(insetTop + body.scrollHeight - (padBottom || 0), 200))
     }
     measure()
 
@@ -647,6 +781,10 @@ export default function CanvasEditor({
     paginate(body, geometryRef.current)
     measure()
     observer.observe(body, observeOpts)
+    // The document exists now. Everything derived from it — the structure
+    // panel above all — is memoised on this counter, and nothing else will
+    // move it until the first edit.
+    setTick((t) => t + 1)
 
     callbacksRef.current.onReady?.({
       insertHtml: (html: string) => {
@@ -912,21 +1050,19 @@ export default function CanvasEditor({
   const snapLinesFor = (axis: 'x' | 'y', dragged: Element | null): SnapLine[] => {
     const body = bodyRef.current
     if (!body) return []
-    const style = body.ownerDocument.defaultView?.getComputedStyle(body)
     const lines: SnapLine[] = []
+    // Sheet coordinates throughout — the guides are drawn over the stage, whose
+    // origin is the sheet corner, and the body's own edges ARE the page margins.
+    const page = body.getBoundingClientRect()
     if (axis === 'x') {
-      lines.push({ at: parseFloat(style?.paddingLeft ?? '0') || 0, kind: 'page' })
-      lines.push({
-        at: body.clientWidth - (parseFloat(style?.paddingRight ?? '0') || 0),
-        kind: 'page',
-      })
+      lines.push({ at: page.left, kind: 'page' })
+      lines.push({ at: page.right, kind: 'page' })
     } else {
       lines.push({ at: margins.top, kind: 'page' })
       // Where each printed page ends: getting flush with a page break is a
       // thing people do deliberately in a form.
       for (const offset of breakOffsets) lines.push({ at: offset, kind: 'page' })
     }
-    const origin = body.getBoundingClientRect()
     const rects: Rect[] = []
     for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
       // Its own edges are not something to align to; its ancestors' are — a
@@ -935,12 +1071,7 @@ export default function CanvasEditor({
       if (el.hasAttribute('data-lf-spacer') || !kindOf(el)) continue
       const box = el.getBoundingClientRect()
       if (box.width === 0 && box.height === 0) continue
-      rects.push({
-        left: box.left - origin.left,
-        right: box.right - origin.left,
-        top: box.top - origin.top,
-        bottom: box.bottom - origin.top,
-      })
+      rects.push({ left: box.left, right: box.right, top: box.top, bottom: box.bottom })
       if (rects.length >= 300) break
     }
     return lines.concat(edgeLines(rects, axis))
@@ -1262,6 +1393,15 @@ export default function CanvasEditor({
           >
             Grid
           </button>
+          <button
+            className={outlineOpen ? 'tb active' : 'tb'}
+            title="List every part of the document, and take the one a click keeps missing"
+            aria-pressed={outlineOpen}
+            onClick={() => setOutlineOpen((on) => !on)}
+          >
+            <Icon name="structure" size={14} />
+            Structure
+          </button>
         </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
       </div>
@@ -1465,263 +1605,289 @@ export default function CanvasEditor({
           ))}
         </dl>
       </details>
-      <div className="canvas-scroll" ref={scrollRef}>
-        <div
-          className="canvas-stage"
-          style={{ width: stageWidth, height: sheetHeight * zoom }}
-        >
-          <FurnitureStrip edge="top" boxes={furniture} zoom={zoom} />
-          {/* Everything below is positioned in the canvas document's own
-              coordinates, so it lives in a box that starts exactly where that
-              document starts. It used to sit directly in the stage, which also
-              holds the margin-box strips — and a strip is in normal flow, so on
-              any template with a running header it pushed the canvas down and
-              left every handle and page line drawn that much too high. */}
-          <div className="canvas-sheet" style={{ height: sheetHeight * zoom }}>
-            <iframe
-              ref={iframeRef}
-              title="template canvas"
-              style={{
-                width: pageWidth ?? '100%',
-                height: sheetHeight,
-                transform: `scale(${zoom})`,
-                transformOrigin: '0 0',
-                border: 'none',
-                display: 'block',
-              }}
-            />
-            {hover && !drag && (
-              <div
-                aria-hidden="true"
-                className="hover-outline"
+      {/* The page and its structure, side by side. The panel points at the
+          canvas — it outlines what a row is about — so it must never be drawn
+          over the thing it points at. */}
+      <div className="canvas-body">
+        <div className="canvas-scroll" ref={scrollRef}>
+          <div
+            className="canvas-stage"
+            style={{ width: stageWidth, height: sheetHeight * zoom }}
+          >
+            <FurnitureStrip edge="top" boxes={furniture} zoom={zoom} />
+            {/* Everything below is positioned in the canvas document's own
+                coordinates, so it lives in a box that starts exactly where that
+                document starts. It used to sit directly in the stage, which also
+                holds the margin-box strips — and a strip is in normal flow, so on
+                any template with a running header it pushed the canvas down and
+                left every handle and page line drawn that much too high. */}
+            <div className="canvas-sheet" style={{ height: sheetHeight * zoom }}>
+              <iframe
+                ref={iframeRef}
+                title="template canvas"
                 style={{
-                  left: hover.left * zoom,
-                  top: hover.top * zoom,
-                  width: hover.width * zoom,
-                  height: hover.height * zoom,
+                  width: pageWidth ?? '100%',
+                  height: sheetHeight,
+                  transform: `scale(${zoom})`,
+                  transformOrigin: '0 0',
+                  border: 'none',
+                  display: 'block',
                 }}
-              >
-                <span>{hover.label}</span>
-              </div>
-            )}
-            {guides.map((guide, i) => (
-              <div
-                key={i}
-                aria-hidden="true"
-                className={`snap-guide ${guide.kind}`}
-                style={
-                  guide.axis === 'x'
-                    ? { left: guide.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
-                    : { top: guide.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
-                }
               />
-            ))}
-            {(gridPinned || !!drag || adjusting) && (
-              <div
-                aria-hidden="true"
-                className="canvas-grid"
-                style={
-                  {
-                    '--grid-minor': `${GRID_MINOR_MM * PX_PER_MM * zoom}px`,
-                    '--grid-major': `${GRID_MAJOR_MM * PX_PER_MM * zoom}px`,
-                  } as CSSProperties
-                }
-              />
-            )}
-            {/* What each page break passes through. The canvas draws the
-                document as one strip, so without this the line is honest about
-                where the page ends and silent about what that costs. */}
-            {pageCrossings.list.map(({ node, boundary, verdict }) => {
-              const box = pageCrossings.boxes.get(node.key!)
-              if (!box) return null
-              return (
+              {hover && !drag && (
                 <div
-                  key={node.key}
-                  className={`break-warning ${verdict}`}
+                  aria-hidden="true"
+                  className="hover-outline"
                   style={{
-                    left: box.left * zoom,
-                    top: box.top * zoom,
-                    width: box.width * zoom,
-                    height: box.height * zoom,
+                    left: hover.left * zoom,
+                    top: hover.top * zoom,
+                    width: hover.width * zoom,
+                    height: hover.height * zoom,
                   }}
                 >
-                  <span style={{ top: (boundary - box.top) * zoom }}>
-                    {VERDICT_LABEL[verdict]}
-                  </span>
+                  <span>{hover.label}</span>
                 </div>
-              )
-            })}
-            {/* Physical page boundaries: a line where each printed page ends. */}
-            {breakOffsets.map((offset, i) => (
-              <div
-                key={i}
-                className="page-boundary"
-                style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
-              >
-                <span>page {i + 2}</span>
-              </div>
-            ))}
-            {cellRect && (
-              <>
-                {/* Pointer-only affordance, hidden from assistive tech on
-                    purpose: the same change is reachable from the labelled
-                    properties bar above (Col W / Row H / W / H), and choosing
-                    which cell to change is a keyboard gesture now too
-                    (Alt+arrows, see keyboard.ts). What has no keyboard
-                    equivalent is the drag itself. */}
-                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+              )}
+              {guides.map((guide, i) => (
+                <div
+                  key={i}
+                  aria-hidden="true"
+                  className={`snap-guide ${guide.kind}`}
+                  style={
+                    guide.axis === 'x'
+                      ? { left: guide.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
+                      : { top: guide.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                  }
+                />
+              ))}
+              {(gridPinned || !!drag || adjusting) && (
                 <div
                   aria-hidden="true"
-                  className="col-resize"
-                  title="Drag to resize column"
-                  style={{
-                    left: cellRect.right * zoom - 3,
-                    top: cellRect.top * zoom,
-                    height: cellRect.height * zoom,
-                  }}
-                  onMouseDown={startColResize}
+                  className="canvas-grid"
+                  style={
+                    {
+                      '--grid-minor': `${GRID_MINOR_MM * PX_PER_MM * zoom}px`,
+                      '--grid-major': `${GRID_MAJOR_MM * PX_PER_MM * zoom}px`,
+                    } as CSSProperties
+                  }
                 />
-                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-                <div
-                  aria-hidden="true"
-                  className="row-resize"
-                  title="Drag to resize row"
-                  style={{
-                    left: cellRect.left * zoom,
-                    top: cellRect.bottom * zoom - 3,
-                    width: cellRect.width * zoom,
-                  }}
-                  onMouseDown={startRowResize}
-                />
-              </>
-            )}
-            {imgRect && (
-              <>
-                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-                <div
-                  aria-hidden="true"
-                  className="img-resize"
-                  title="Drag to resize"
-                  style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
-                  onMouseDown={startImageResize}
-                />
-                {positioned && (
+              )}
+              {/* What each page break passes through. The canvas draws the
+                  document as one strip, so without this the line is honest about
+                  where the page ends and silent about what that costs. */}
+              {pageCrossings.list.map(({ node, boundary, verdict }) => {
+                const box = pageCrossings.boxes.get(node.key!)
+                if (!box) return null
+                return (
                   <div
-                    aria-hidden="true"
-                    className="img-move"
-                    title="Drag to move freely"
+                    key={node.key}
+                    className={`break-warning ${verdict}`}
                     style={{
-                      left: imgRect.left * zoom,
-                      top: imgRect.top * zoom,
-                      width: imgRect.width * zoom,
-                      height: imgRect.height * zoom,
-                    }}
-                    onMouseDown={startImageMove}
-                  />
-                )}
-              </>
-            )}
-            {moveDrop &&
-              (() => {
-                const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
-                // Dropping into a cell is not a line between two things, it is
-                // a place with an inside — so it is drawn as one.
-                return moveDrop.where === 'inside' ? (
-                  <div
-                    className="drop-inside"
-                    style={{
-                      left: tr.left * zoom,
-                      top: tr.top * zoom,
-                      width: tr.width * zoom,
-                      height: tr.height * zoom,
-                    }}
-                  />
-                ) : (
-                  <div
-                    className="drop-line"
-                    style={{
-                      left: tr.left * zoom,
-                      top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
-                      width: tr.width * zoom,
-                    }}
-                  />
-                )
-              })()}
-          </div>
-          <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
-          {drag && (
-            // A transient layer that owns the mouse for the duration of a
-            // drag; it has no meaning to a screen reader.
-            <div
-              aria-hidden="true"
-              className="drag-overlay"
-              style={{ cursor: drag.cursor }}
-              onMouseMove={(e) => drag.onMove(e.nativeEvent)}
-              onMouseUp={() => {
-                drag.onEnd?.()
-                endGesture(true)
-              }}
-              onMouseLeave={() => {
-                // The pointer left the sheet mid-drag: keep what was already
-                // applied, but do not complete a pending drop.
-                endGesture(true)
-              }}
-            />
-          )}
-          {selected && toolbarPos && (
-            <div className="el-toolbar" style={{ left: toolbarPos.left, top: toolbarPos.top }}>
-              <span className="el-kind">{KIND_LABEL[selected.kind]}</span>
-              <button title="Select parent" onClick={() => select(parentSelectable(selected.el, bodyRef.current!))}>
-                ↑
-              </button>
-              <button className="grip" title="Drag to move" onMouseDown={startBlockMove}>
-                ⠿
-              </button>
-              <button title="Move up" onClick={() => moveSelected(-1)}>
-                ▲
-              </button>
-              <button title="Move down" onClick={() => moveSelected(1)}>
-                ▼
-              </button>
-              {inTable && (
-                <>
-                  <button title="Add row" onClick={() => tableOp(addRow)}>
-                    +R
-                  </button>
-                  <button title="Delete row" onClick={() => tableOp(deleteRow)}>
-                    −R
-                  </button>
-                  <button title="Add column" onClick={() => tableOp(addColumn)}>
-                    +C
-                  </button>
-                  <button title="Delete column" onClick={() => tableOp(deleteColumn)}>
-                    −C
-                  </button>
-                  <select
-                    className="el-borders"
-                    title="Table borders"
-                    value=""
-                    onChange={(e) => {
-                      if (e.target.value) tableOp((el) => setTableBorders(el, e.target.value as BorderMode))
-                      e.target.value = ''
+                      left: box.left * zoom,
+                      top: box.top * zoom,
+                      width: box.width * zoom,
+                      height: box.height * zoom,
                     }}
                   >
-                    <option value="">border…</option>
-                    <option value="all">all cells</option>
-                    <option value="outer">outer only</option>
-                    <option value="none">none</option>
-                  </select>
+                    <span style={{ top: (boundary - box.top) * zoom }}>
+                      {VERDICT_LABEL[verdict]}
+                    </span>
+                  </div>
+                )
+              })}
+              {/* Physical page boundaries: a line where each printed page ends. */}
+              {breakOffsets.map((offset, i) => (
+                <div
+                  key={i}
+                  className="page-boundary"
+                  style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
+                >
+                  <span>page {i + 2}</span>
+                </div>
+              ))}
+              {cellRect && (
+                <>
+                  {/* Pointer-only affordance, hidden from assistive tech on
+                      purpose: the same change is reachable from the labelled
+                      properties bar above (Col W / Row H / W / H), and choosing
+                      which cell to change is a keyboard gesture now too
+                      (Alt+arrows, see keyboard.ts). What has no keyboard
+                      equivalent is the drag itself. */}
+                  {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                  <div
+                    aria-hidden="true"
+                    className="col-resize"
+                    title="Drag to resize column"
+                    style={{
+                      left: cellRect.right * zoom - 3,
+                      top: cellRect.top * zoom,
+                      height: cellRect.height * zoom,
+                    }}
+                    onMouseDown={startColResize}
+                  />
+                  {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                  <div
+                    aria-hidden="true"
+                    className="row-resize"
+                    title="Drag to resize row"
+                    style={{
+                      left: cellRect.left * zoom,
+                      top: cellRect.bottom * zoom - 3,
+                      width: cellRect.width * zoom,
+                    }}
+                    onMouseDown={startRowResize}
+                  />
                 </>
               )}
-              <button title="Duplicate" onClick={duplicateSelected}>
-                ⧉
-              </button>
-              <button aria-label="Delete the selected element" title="Delete" onClick={removeSelected}>
-                <Icon name="trash" size={13} />
-              </button>
+              {imgRect && (
+                <>
+                  {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                  <div
+                    aria-hidden="true"
+                    className="img-resize"
+                    title="Drag to resize"
+                    style={{ left: imgRect.right * zoom - 7, top: imgRect.bottom * zoom - 7 }}
+                    onMouseDown={startImageResize}
+                  />
+                  {positioned && (
+                    <div
+                      aria-hidden="true"
+                      className="img-move"
+                      title="Drag to move freely"
+                      style={{
+                        left: imgRect.left * zoom,
+                        top: imgRect.top * zoom,
+                        width: imgRect.width * zoom,
+                        height: imgRect.height * zoom,
+                      }}
+                      onMouseDown={startImageMove}
+                    />
+                  )}
+                </>
+              )}
+              {moveDrop &&
+                (() => {
+                  const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
+                  // Dropping into a cell is not a line between two things, it is
+                  // a place with an inside — so it is drawn as one.
+                  return moveDrop.where === 'inside' ? (
+                    <div
+                      className="drop-inside"
+                      style={{
+                        left: tr.left * zoom,
+                        top: tr.top * zoom,
+                        width: tr.width * zoom,
+                        height: tr.height * zoom,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className="drop-line"
+                      style={{
+                        left: tr.left * zoom,
+                        top: (moveDrop.where === 'before' ? tr.top : tr.bottom) * zoom - 1,
+                        width: tr.width * zoom,
+                      }}
+                    />
+                  )
+                })()}
             </div>
-          )}
+            <FurnitureStrip edge="bottom" boxes={furniture} zoom={zoom} />
+            {drag && (
+              // A transient layer that owns the mouse for the duration of a
+              // drag; it has no meaning to a screen reader.
+              <div
+                aria-hidden="true"
+                className="drag-overlay"
+                style={{ cursor: drag.cursor }}
+                onMouseMove={(e) => drag.onMove(e.nativeEvent)}
+                onMouseUp={() => {
+                  drag.onEnd?.()
+                  endGesture(true)
+                }}
+                onMouseLeave={() => {
+                  // The pointer left the sheet mid-drag: keep what was already
+                  // applied, but do not complete a pending drop.
+                  endGesture(true)
+                }}
+              />
+            )}
+            {selected && toolbarPos && (
+              <div className="el-toolbar" style={{ left: toolbarPos.left, top: toolbarPos.top }}>
+                <span className="el-kind">{KIND_LABEL[selected.kind]}</span>
+                <button title="Select parent" onClick={() => select(parentSelectable(selected.el, bodyRef.current!))}>
+                  ↑
+                </button>
+                <button className="grip" title="Drag to move" onMouseDown={startBlockMove}>
+                  ⠿
+                </button>
+                <button title="Move up" onClick={() => moveSelected(-1)}>
+                  ▲
+                </button>
+                <button title="Move down" onClick={() => moveSelected(1)}>
+                  ▼
+                </button>
+                {inTable && (
+                  <>
+                    <button title="Add row" onClick={() => tableOp(addRow)}>
+                      +R
+                    </button>
+                    <button title="Delete row" onClick={() => tableOp(deleteRow)}>
+                      −R
+                    </button>
+                    <button title="Add column" onClick={() => tableOp(addColumn)}>
+                      +C
+                    </button>
+                    <button title="Delete column" onClick={() => tableOp(deleteColumn)}>
+                      −C
+                    </button>
+                    <select
+                      className="el-borders"
+                      title="Table borders"
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value) tableOp((el) => setTableBorders(el, e.target.value as BorderMode))
+                        e.target.value = ''
+                      }}
+                    >
+                      <option value="">border…</option>
+                      <option value="all">all cells</option>
+                      <option value="outer">outer only</option>
+                      <option value="none">none</option>
+                    </select>
+                  </>
+                )}
+                <button title="Duplicate" onClick={duplicateSelected}>
+                  ⧉
+                </button>
+                <button aria-label="Delete the selected element" title="Delete" onClick={removeSelected}>
+                  <Icon name="trash" size={13} />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+        {outlineOpen && (
+          <OutlinePanel
+            items={outline.items}
+            selected={selected?.el ?? null}
+            hiddenCount={outline.hidden}
+            isOpen={(el) => outlineIsOpen(el)}
+            isHidden={(el) => el.hasAttribute('data-lf-hidden')}
+            onHover={outlineHover}
+            onSelect={(el) => {
+              select(el)
+              revealInCanvas(el)
+            }}
+            onToggleOpen={(el) => {
+              outlineFolds.current.set(el, !outlineIsOpen(el))
+              setTick((t) => t + 1)
+            }}
+            onToggleHidden={toggleHidden}
+            onShowAll={showAllHidden}
+            onClose={() => setOutlineOpen(false)}
+          />
+        )}
       </div>
       {/* The live figure, in viewport coordinates so it follows the cursor
           rather than the sheet. It says what the drag has reached and, when

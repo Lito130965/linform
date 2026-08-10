@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A structure panel beside the canvas.** Every part of the document as a list,
+  from the same notion of "selectable" a click uses — so the cell, its row, the
+  table and the block around it can each be taken directly instead of hoping a
+  click lands on the right one. Hovering a row outlines it on the page, the
+  selection is mirrored both ways, and the eye takes a block out of sight
+  without taking it out of the template (`visibility`, so nothing moves and the
+  page breaks stay honest). It reserves a column, so below 1600px it starts
+  closed and the toolbar toggle brings it back.
+
 - **A demo role.** `LINFORM_ROLE=demo` serves the examples gallery and the
   editor behind it and nothing else: no stored templates, no accounts, no
   sign-in. `GET /api/capabilities` tells the interface what an instance offers,
@@ -25,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A link to the source** in the navigation rail.
 - **`$PORT` is honoured** by the container entrypoint, for serverless hosts that
   assign one.
+
+### Fixed
+
+- **Anything positioned against the page printed one margin away from where the
+  canvas drew it.** A logo dragged into the top-right corner came out 18mm
+  further right and 26mm further down, half of it over the edge of the paper.
+  In print the `<body>` is the page area — the margins are spent on the page box
+  — so an absolute offset, a percentage width and a `right: 0` all resolve
+  there; the canvas drew that inset as padding on the body, which left the
+  origin for all of them at the corner of the sheet. Content in flow looked
+  right either way, so the difference existed only on export.
 
 ## [0.2.0] — 2026-08-09
 

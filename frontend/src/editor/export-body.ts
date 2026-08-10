@@ -21,6 +21,7 @@ const CANVAS_ONLY_ATTRS = [
   'data-lf-pagebg',
   'data-lf-running',
   'data-lf-pagebreak',
+  'data-lf-hidden',
 ]
 
 // Placeholder chips and inert raw chips are both atomic: the caret must never
