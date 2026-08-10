@@ -27,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   something that holds blocks is inside it.
 - **The blocks are a palette of tiles** instead of a dropdown, in the drawer
   below the canvas, and they work in Code mode too.
+- **Page setup.** Size, orientation, margins in millimetres and the page
+  background, written into the template's own `@page` rule — so what the canvas
+  draws and what the renderer prints come from one sentence. Reading takes every
+  `@page` rule in cascade order, as a browser would, and where a later one wins
+  — a header or footer block reserving its strip of margin — the panel says
+  which side and what set it.
+- **Borders per side** on any element: the rule under a signature, the box round
+  a note, one cell ruled differently from its neighbours.
+- **Merging and splitting table cells**, including a block already several
+  columns wide. A merge keeps what the cells it swallows said; a split puts them
+  back in the columns the merge covered.
+- **Vertical alignment in a cell**, and **a style menu** that turns a paragraph
+  into a heading and back, keeping its fields, styles and text.
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
   table and the block around it can each be taken directly instead of hoping a
@@ -66,6 +79,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The page-size menu changed the canvas and nothing else.** Choosing A5 drew
+  an A5 sheet and went on printing A4, with nothing anywhere saying so. The
+  canvas now follows the document, and the menu that could disagree with it is
+  gone.
 - **A click on a field left no caret, so typing near one was silently
   discarded.** A chip is `contenteditable="false"`; clicking one selected it and
   put the caret nowhere, and every keystroke after that went nowhere too. On a
