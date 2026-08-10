@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   createTemplate,
   enterVisual,
@@ -75,38 +75,62 @@ test('a selection made in the canvas is findable in the list', async ({ page, re
   await expect(current.locator('.outline-label')).toHaveText('Cell')
 })
 
-test('hiding a block takes it out of sight and leaves the template alone', async ({
-  page,
-  request,
-}) => {
+/** Hide the first block whose row says `label`. */
+async function hideRow(page: Page, label: string) {
+  const row = page.locator('.canvas-outline .outline-item', { hasText: label })
+  await row.hover()
+  await row.locator('.outline-eye').click()
+}
+
+test('hiding a block takes it out of sight without moving anything', async ({ page, request }) => {
   const code = uniqueCode('outline-hide')
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
 
   const heading = page.frameLocator(CANVAS).locator('h1')
+  const tableTop = () =>
+    page
+      .frameLocator(CANVAS)
+      .locator('table')
+      .evaluate((el) => el.getBoundingClientRect().top)
+
   await expect(heading).toBeVisible()
-  const before = (await heading.boundingBox())!
+  const before = await tableTop()
 
-  const row = page.locator('.canvas-outline .outline-item', { hasText: 'Heading 1' })
-  await row.hover()
-  await row.locator('.outline-eye').click()
-
+  await hideRow(page, 'Heading 1')
   await expect(heading).toBeHidden()
-  // Hidden, not removed: the box keeps its size, so nothing below it moved and
-  // the canvas still tells the truth about where the pages break.
-  const after = (await heading.boundingBox())!
-  expect(Math.abs(after.height - before.height)).toBeLessThan(1)
+
+  // Hidden, not removed. The box keeps its size, so nothing below it moved —
+  // which is what lets the canvas go on telling the truth about page breaks
+  // while a full-bleed background is out of the way.
+  expect(Math.abs((await tableTop()) - before)).toBeLessThan(1)
   await expect(page.locator('.canvas-outline .outline-note')).toContainText('still print')
 
-  // And the document itself never heard about it.
-  await saveDraft(page, 'nothing should have changed')
+  await page.locator('.canvas-outline .outline-note .linkish').click()
+  await expect(heading).toBeVisible()
+  await expect(page.locator('.canvas-outline .outline-note')).toHaveCount(0)
+})
+
+test('what is hidden in the canvas never reaches the template', async ({ page, request }) => {
+  const code = uniqueCode('outline-hide-save')
+  await createTemplate(request, code, NESTED)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  await hideRow(page, 'Heading 1')
+  await expect(page.frameLocator(CANVAS).locator('h1')).toBeHidden()
+
+  await saveDraft(page, 'saved with a block hidden')
   const saved = await latestDraftHtml(request, code)
   expect(saved).toContain('<h1>Report</h1>')
   expect(saved).not.toContain('data-lf-hidden')
 
-  await page.locator('.canvas-outline .outline-note .linkish').click()
-  await expect(heading).toBeVisible()
+  // Saving a new draft re-opens the editor on it, and the canvas is built again
+  // from the saved markup — so the hiding, which lives only in the canvas, is
+  // gone. That is the same fact from the other side, and the reason nothing
+  // here is worth worrying about losing.
+  await expect(page.frameLocator(CANVAS).locator('h1')).toBeVisible()
 })
 
 test('the panel can be put away and brought back', async ({ page, request }) => {
