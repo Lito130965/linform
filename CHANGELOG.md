@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A field list built from the test data**, replacing the panel that could only
+  show placeholders the template already used — which meant a fresh template
+  offered nothing and the first field of every document had to be typed in Code
+  mode. Nested objects become paths, and an array's fields say which repeat
+  would put them in reach; inside one, they are offered under that loop's own
+  variable name (`items[].price` → `row.price`).
+- **Typing `{{` in the canvas** offers the same list at the caret, filters as
+  the name is typed, and writes the field on Enter.
+
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
   table and the block around it can each be taken directly instead of hoping a
@@ -35,8 +44,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`$PORT` is honoured** by the container entrypoint, for serverless hosts that
   assign one.
 
+### Changed
+
+- **Inline content is inserted where the caret is** — a field, an image, a QR
+  code, a run of character cells. Everything used to land after the selected
+  block, under panels that said "insert at cursor", so a value could never be
+  named inside a line of text. Block content still lands beside the selected
+  block, since a table dropped into a paragraph is not what anyone meant.
+
 ### Fixed
 
+- **Bold, italic or underline across a placeholder duplicated it.** A chip is
+  one thing — the attribute carries the expression, the visible text is only a
+  label — but a selection ending halfway into one split the element, and export
+  reads the attribute of each half. Nothing on screen showed it; the second
+  `{{ … }}` appeared in the saved template. Selections now take a chip whole or
+  not at all.
 - **Anything positioned against the page printed one margin away from where the
   canvas drew it.** A logo dragged into the top-right corner came out 18mm
   further right and 26mm further down, half of it over the edge of the paper.
