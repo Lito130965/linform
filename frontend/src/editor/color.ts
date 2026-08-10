@@ -48,6 +48,9 @@ function clampHex(n: string): string {
 
 /** For a CSS property value. */
 export function toCss(c: Colour): string {
+  // A stylesheet reads better for the value somebody actually chose: rgba() is
+  // only needed once there is transparency to express.
+  if (c.opacity >= 100) return c.hex
   const { r, g, b } = rgb(c.hex)
   return `rgba(${r}, ${g}, ${b}, ${round2(c.opacity / 100)})`
 }

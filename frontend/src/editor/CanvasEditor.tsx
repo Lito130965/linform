@@ -38,7 +38,9 @@ import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from '
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
 import { getFilterArg, setFilterArg } from './filter-args'
-import { parseMarginBoxes, parsePageBox, runningAffordanceCss } from './furniture'
+import { parseMarginBoxes, parsePageBox, runningAffordanceCss, type PageBox } from './furniture'
+import PageSetupPanel from './PageSetupPanel'
+import { laterOverrides, readPageSetup, type PageSetup } from './page-css'
 import {
   canPaginate,
   gapToNextPage,
@@ -97,6 +99,25 @@ function breakSide(el: HTMLElement): 'after' | 'before' | null {
   if (isBreak(el.style.pageBreakAfter) || isBreak(el.style.breakAfter)) return 'after'
   if (isBreak(el.style.pageBreakBefore) || isBreak(el.style.breakBefore)) return 'before'
   return null
+}
+
+/** Make the canvas body the page area: inset by the @page margins exactly as
+ * the printed body is. Applied at mount and again whenever the page changes,
+ * so the two can never say different things. */
+function insetBody(body: HTMLElement, pageBox: PageBox | null): void {
+  body.style.margin = '0'
+  if (!pageBox) {
+    body.style.removeProperty('position')
+    for (const side of ['top', 'left', 'right'] as const) body.style.removeProperty(side)
+    body.style.removeProperty('padding-bottom')
+    return
+  }
+  const m = pageBox.margin
+  body.style.position = 'absolute'
+  body.style.top = m.top
+  body.style.left = m.left
+  body.style.right = m.right
+  body.style.paddingBottom = m.bottom
 }
 
 /** Push content past a page break onto the next sheet, so the canvas shows the
@@ -160,6 +181,7 @@ export default function CanvasEditor({
   fields = [],
   onSanitized,
   onScopes,
+  onPageSetup,
   compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
@@ -178,6 +200,9 @@ export default function CanvasEditor({
   /** fires with the loops in force at the selection, so the field list can say
    * which of them can be written here and under what name */
   onScopes?: (scopes: LoopScope[]) => void
+  /** fires when the page itself is changed; the shell writes it into the
+   * template's @page rule and hands the new stylesheet back */
+  onPageSetup?: (setup: PageSetup) => void
   /** the window is tight enough that panels cost more than they give */
   compact?: boolean
 }) {
@@ -198,10 +223,20 @@ export default function CanvasEditor({
   // The palette lives in the shell, and the function it calls is declared
   // below the mount effect that publishes the API.
   const insertBlockRef = useRef<((id: string) => void) | null>(null)
-  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes })
-  callbacksRef.current = { onChange, onReady, onSanitized, onScopes }
+  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes, onPageSetup })
+  callbacksRef.current = { onChange, onReady, onSanitized, onScopes, onPageSetup }
+  // The stylesheet element the canvas injects, kept so a change to the page
+  // can be applied without tearing the document down and losing its history.
+  const styleElRef = useRef<HTMLStyleElement | null>(null)
+  const measureRef = useRef<(() => void) | null>(null)
 
-  const [format, setFormat] = useState(() => formatFromStyles(canvasStyles))
+  const format = useMemo(() => formatFromStyles(canvasStyles), [canvasStyles])
+  const pageSetup = useMemo(() => readPageSetup(`<style>${canvasStyles}</style>`), [canvasStyles])
+  const pageOverrides = useMemo(
+    () => laterOverrides(`<style>${canvasStyles}</style>`),
+    [canvasStyles],
+  )
+  const [pageSetupOpen, setPageSetupOpen] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
@@ -714,6 +749,7 @@ export default function CanvasEditor({
     doc.close()
 
     const style = doc.createElement('style')
+    styleElRef.current = style
     // Author CSS first, affordances second, so selection outlines win. The
     // running-element badges come from the author's own @page rules: a footer
     // parked at the top of <body> must read as a footer, not as stray text.
@@ -744,15 +780,7 @@ export default function CanvasEditor({
     // and as padding it keeps the body's own height honest for the measurement
     // below. body.style is canvas-only — export is body.innerHTML, never the
     // body element itself.
-    body.style.margin = '0'
-    if (pageBox) {
-      const m = pageBox.margin
-      body.style.position = 'absolute'
-      body.style.top = m.top
-      body.style.left = m.left
-      body.style.right = m.right
-      body.style.paddingBottom = m.bottom
-    }
+    insetBody(body, pageBox)
     // Read the margins back in px rather than converting mm/cm/in by hand: the
     // browser already did the conversion when it laid the body out.
     const shown = doc.defaultView?.getComputedStyle(body)
@@ -917,6 +945,7 @@ export default function CanvasEditor({
       setFrameHeight(Math.max(insetTop + body.scrollHeight - (padBottom || 0), 200))
     }
     measure()
+    measureRef.current = measure
 
     const observeOpts = { subtree: true, childList: true, characterData: true, attributes: true }
     // Any settled burst of DOM changes: repaginate, re-measure, reposition the
@@ -994,6 +1023,26 @@ export default function CanvasEditor({
     // Mounted once per template/version — the parent remounts via key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A change to the page arrives as new CSS. Re-injecting it and re-applying
+  // the inset keeps the canvas honest without remounting — which would be a
+  // remount per margin nudge, and an undo history thrown away with it.
+  useEffect(() => {
+    const style = styleElRef.current
+    const body = bodyRef.current
+    const doc = body?.ownerDocument
+    if (!style || !body || !doc) return
+    style.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS + runningAffordanceCss(canvasStyles)
+    insetBody(body, pageBox)
+    const shown = doc.defaultView?.getComputedStyle(body)
+    setMargins({
+      top: parseFloat(shown?.top ?? '0') || 0,
+      bottom: parseFloat(shown?.paddingBottom ?? '0') || 0,
+    })
+    measureRef.current?.()
+    setTick((t) => t + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasStyles])
 
   // The same shortcuts, for when focus is in the editor but not in the canvas
   // document — after using the toolbar, say.
@@ -1502,16 +1551,28 @@ export default function CanvasEditor({
   return (
     <div className="canvas-editor">
       <div className="canvas-topbar">
-        <label>
-          Page
-          <select value={format} onChange={(e) => setFormat(e.target.value)}>
-            {PAGE_FORMATS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* The page, from the document's own @page rule — not a view setting.
+            The menu that used to be here changed the canvas and left the PDF
+            printing something else. */}
+        <span className="page-setup-host">
+          <button
+            className={pageSetupOpen ? 'tb active' : 'tb'}
+            aria-expanded={pageSetupOpen}
+            title="Size, orientation, margins and background of the printed page"
+            onClick={() => setPageSetupOpen((on) => !on)}
+          >
+            Page: {pageSetup.size || 'A4'}
+            {pageSetup.landscape ? ' landscape' : ''}
+          </button>
+          {pageSetupOpen && (
+            <PageSetupPanel
+              setup={pageSetup}
+              overrides={pageOverrides}
+              onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
+              onClose={() => setPageSetupOpen(false)}
+            />
+          )}
+        </span>
         <span className="topbar-group">
           <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
             <b>B</b>

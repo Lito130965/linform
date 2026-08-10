@@ -1339,6 +1339,62 @@ label {
   margin: 4px 0 0;
 }
 
+/* ---- page setup ---- */
+
+.page-setup-host {
+  position: relative;
+}
+
+.page-setup {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+
+.page-margins {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.page-margins .cc-label {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+}
+
+.page-margins .prop input:not([type='checkbox']) {
+  width: 56px;
+}
+
+.page-margins .link-margins {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+}
+
+.page-background {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-note {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
 /* ---- the insert palette ---- */
 
 .insert-grid {
@@ -2716,4 +2772,9 @@ label {
 .preset-del .icon,
 .sidebar-toggle .icon {
   display: block;
+}
+
+.page-overridden {
+  color: var(--warn, #d0a02a);
+  cursor: help;
 }

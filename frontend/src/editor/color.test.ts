@@ -19,7 +19,8 @@ describe('color parse', () => {
 describe('color serialise', () => {
   it('CSS is always rgba', () => {
     expect(toCss({ hex: '#ff0000', opacity: 50 })).toBe('rgba(255, 0, 0, 0.5)')
-    expect(toCss({ hex: '#000000', opacity: 100 })).toBe('rgba(0, 0, 0, 1)')
+    // Opaque: the hex the person picked, not an rgba() spelling of it.
+    expect(toCss({ hex: '#000000', opacity: 100 })).toBe('#000000')
   })
 
   it('filter hex is 6-digit at full opacity, 8-digit otherwise', () => {

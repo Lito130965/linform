@@ -22,6 +22,7 @@ import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import { BLOCKS } from '../editor/blocks'
 import { fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
+import { writePageSetup, type PageSetup } from '../editor/page-css'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import { fieldRows, type LoopScope } from '../editor/fields'
@@ -386,6 +387,18 @@ export default function Editor({
     )
   }
 
+  /** The page changed. It lives in the template's own stylesheet, so this is a
+   * source edit like any other — and the canvas is told about it by handing it
+   * the new CSS, not by being rebuilt. */
+  const applyPageSetup = (setup: PageSetup) => {
+    const next = writePageSetup(currentHtml(), setup)
+    const split = splitForVisual(next)
+    if (split.ok) splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    htmlRef.current = next
+    setHtml(next)
+    setDirty(true)
+  }
+
   const insertBlock = (id: string) => {
     if (mode === 'visual') {
       canvasApiRef.current?.insertBlock(id)
@@ -639,6 +652,7 @@ export default function Editor({
               onSanitized={setSanitizeWarning}
               compact={overlayPanels}
               fields={fields}
+              onPageSetup={applyPageSetup}
               onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
