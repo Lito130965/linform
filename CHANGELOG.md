@@ -27,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   something that holds blocks is inside it.
 - **The blocks are a palette of tiles** instead of a dropdown, in the drawer
   below the canvas, and they work in Code mode too.
-
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
   table and the block around it can each be taken directly instead of hoping a
