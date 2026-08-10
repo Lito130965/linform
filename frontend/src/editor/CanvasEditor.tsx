@@ -511,27 +511,54 @@ export default function CanvasEditor({
     return trail
   }
 
-  /** Put prepared nodes where they can legally go, relative to the selection.
+  /** Put prepared nodes where they can legally go.
    *
    * One function on purpose: this decision existed in two copies — the shell's
    * insert API and the canvas's own Insert menu — and fixing cells in one of
-   * them left presets landing beside the table from the other. */
-  const insertNodes = (nodes: Element[], body: HTMLElement): void => {
+   * them left presets landing beside the table from the other.
+   *
+   * Inline content goes to the CARET. A field, a QR code, a run of character
+   * cells belong in the sentence somebody is writing, and putting them after
+   * the paragraph instead — which is what everything used to do, under a panel
+   * that said "insert at cursor" — makes the commonest act in the editor
+   * impossible: naming a value inside a line of text.
+   *
+   * Block content still lands beside the selected block. A table dropped into a
+   * paragraph is not what anyone meant, and the parser would lift it out again
+   * anyway. The choice is made by what is being inserted rather than by which
+   * panel asked, so the answer is the same from all of them. */
+  const insertNodes = (nodes: Node[], body: HTMLElement): void => {
     const target = body.querySelector('[data-lf-selected]')
     if (!target) {
       for (const node of nodes) body.appendChild(node)
       return
     }
-    const at = placementFor(target, 'after')
+    const placement = placementFor(target, 'after')
     // Inside appends in order; after inserts each one directly behind the
     // target, so the last one written has to go first.
-    for (const node of at.where === 'inside' ? nodes : [...nodes].reverse()) place(node, at)
+    for (const node of placement.where === 'inside' ? nodes : [...nodes].reverse()) {
+      place(node, placement)
+    }
   }
 
   /** Carry out what a key press asked for. Shared by the listener inside the
    * canvas document and the one on this document, so the two cannot drift. */
   const applyIntent = (intent: CanvasIntent, body: HTMLElement): void => {
     const doc = body.ownerDocument
+    const caret = allInline(nodes) ? caretRangeIn(body) : null
+    // Only when the caret is in the thing that is selected: picking a table in
+    // the structure panel and inserting a field should not send it to wherever
+    // the mouse happened to leave the caret ten minutes ago.
+    if (caret && (!target || target.contains(caret.startContainer))) {
+      const at = clampOutOfAtomic(caret.cloneRange())
+      at.collapse(false)
+      const fragment = body.ownerDocument.createDocumentFragment()
+      for (const node of nodes) fragment.appendChild(node)
+      const last = fragment.lastChild
+      at.insertNode(fragment)
+      if (last) caretAfter(last)
+      return
+    }
     switch (intent.action) {
       case 'select':
         select(intent.el)
@@ -790,12 +817,11 @@ export default function CanvasEditor({
       insertHtml: (html: string) => {
         const holder = doc.createElement('div')
         holder.innerHTML = html
-        const nodes = Array.from(holder.children)
-        for (const node of nodes) prepareFragment(node)
-        insertNodes(nodes, body)
-        // Plain text (no element) — append as text at the end.
-        if (nodes.length === 0 && holder.textContent) {
-          body.appendChild(doc.createTextNode(holder.textContent))
+        // childNodes, not children: bare text is content too, and it used to be
+        // dropped on the floor unless the markup held no elements at all.
+        const nodes = Array.from(holder.childNodes)
+        for (const node of nodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) prepareFragment(node as Element)
         }
       },
       getBody: () => exportBody(body),
@@ -811,6 +837,7 @@ export default function CanvasEditor({
       doc.removeEventListener('keydown', onKeydown)
       doc.removeEventListener('paste', onPaste)
       // Flush the final state so mode switches never lose an edit.
+        if (nodes.length > 0) insertNodes(nodes, body)
       callbacksRef.current.onChange(exportBody(body))
       bodyRef.current = null
       historyRef.current = null

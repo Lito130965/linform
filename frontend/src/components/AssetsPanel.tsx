@@ -7,8 +7,10 @@ function humanSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** Uploaded assets (logos, backgrounds). Click one to insert an <img> with
- * its immutable asset:// reference at the cursor. */
+/** Uploaded assets (logos, backgrounds). Click one to place an <img> carrying
+ * its immutable asset:// reference where the caret is — an image is inline
+ * content, so it lands in the line being written rather than after the block
+ * (editor/range-ops.ts). */
 export default function AssetsPanel({ onInsert }: { onInsert: (text: string) => void }) {
   const [assets, setAssets] = useState<AssetInfo[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -39,7 +41,7 @@ export default function AssetsPanel({ onInsert }: { onInsert: (text: string) => 
   return (
     <div className="assets-panel">
       <label>
-        Assets — click to insert at cursor
+        Assets — click to place one where the caret is
         <button
           className="btn small"
           onClick={() => fileRef.current?.click()}
