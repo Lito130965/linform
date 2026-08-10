@@ -5,7 +5,7 @@ import ExamplesGallery from './components/ExamplesGallery'
 import SettingsPanel from './components/SettingsPanel'
 import Icon, { type IconName } from './components/Icon'
 import Login from './components/Login'
-import { api, setAuthLostHandler, type Me } from './api'
+import { api, setAuthLostHandler, type Capabilities, type Me } from './api'
 import { layoutFor, useViewportWidth } from './layout'
 
 type Tab = 'templates' | 'examples' | 'settings'
@@ -15,20 +15,35 @@ export default function App() {
   const [selected, setSelected] = useState<string | null>(null)
   const [scratch, setScratch] = useState<ScratchDoc | null>(null)
   const [me, setMe] = useState<Me | null>(null)
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null)
   const [ready, setReady] = useState(false)
   const width = useViewportWidth()
   const layout = layoutFor(width)
   const [sidebarOpen, setSidebarOpen] = useState(!layout.collapseSidebar)
   const [narrowAck, setNarrowAck] = useState(false)
 
-  // Ask who we are once on load; a token that later stops working drops us
-  // back to the login screen instead of leaving a half-authed UI.
+  // Ask the instance what it offers, then who we are — in that order, because
+  // the second question only makes sense where there are accounts to answer it.
+  // A demo node has none: asking anyway would 404 and be read as an expired
+  // session, putting a sign-in card in front of a service nobody can sign in to.
   useEffect(() => {
     setAuthLostHandler(() => setMe((m) => (m ? { ...m, authenticated: false } : m)))
     api
-      .me()
-      .then(setMe)
-      .catch(() => setMe({ authenticated: false, auth_enabled: true, username: '', role: '' }))
+      .capabilities()
+      .catch(() => ({ role: 'all', tabs: ['templates', 'examples', 'settings'], accounts: true }))
+      .then(async (found) => {
+        setCapabilities(found)
+        setTab((found.tabs[0] as Tab) ?? 'examples')
+        if (!found.accounts) {
+          setMe({ authenticated: true, auth_enabled: false, username: '', role: '' })
+          return
+        }
+        try {
+          setMe(await api.me())
+        } catch {
+          setMe({ authenticated: false, auth_enabled: true, username: '', role: '' })
+        }
+      })
       .finally(() => setReady(true))
     return () => setAuthLostHandler(null)
   }, [])
@@ -77,6 +92,10 @@ export default function App() {
   }
 
   const showAccount = me?.auth_enabled && me?.authenticated
+  // Everything, until the service says otherwise — the fallback matters only
+  // when the capability call itself failed, and a full editor is the safer
+  // thing to fall back to than an empty rail.
+  const tabs = capabilities?.tabs ?? ['templates', 'examples', 'settings']
 
   async function logout() {
     await api.logout()
@@ -108,10 +127,13 @@ export default function App() {
         {sidebarOpen && (
           <>
             <h1 className="logo">Linform</h1>
+            {/* Only what this instance actually has. The list comes from the
+                service, so a demo shows the gallery and nothing else without
+                the browser having to know what a demo is. */}
             <nav className="nav">
-              {navItem('templates', 'templates', 'Templates')}
-              {navItem('examples', 'examples', 'Examples')}
-              {navItem('settings', 'settings', 'Settings')}
+              {tabs.includes('templates') && navItem('templates', 'templates', 'Templates')}
+              {tabs.includes('examples') && navItem('examples', 'examples', 'Examples')}
+              {tabs.includes('settings') && navItem('settings', 'settings', 'Settings')}
             </nav>
             {showAccount && (
               <div className="account-bar">

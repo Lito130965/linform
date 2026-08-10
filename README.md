@@ -382,17 +382,35 @@ exist is decided at startup — a render node does not *refuse* the management
 API, it does not have one, so there is nothing to misconfigure and nothing for a
 stolen credential to reach.
 
-| | `all` (default) | `editor` | `render` |
-|---|:---:|:---:|:---:|
-| `POST /api/render` (markup you send) | ✓ | ✓ | ✓ |
-| `POST /api/render/{code}` and version pinning | ✓ | — | ✓ |
-| Templates, assets, directories, accounts, assistant | ✓ | ✓ | — |
-| Editor UI | ✓ | ✓ | — |
-| `/health`, `/ready`, `/metrics` | ✓ | ✓ | ✓ |
+| | `all` (default) | `editor` | `render` | `demo` |
+|---|:---:|:---:|:---:|:---:|
+| `POST /api/render` (markup you send) | ✓ | ✓ | ✓ | ✓ |
+| `POST /api/render/{code}` and version pinning | ✓ | — | ✓ | — |
+| Templates, assets, directories, assistant | ✓ | ✓ | — | — |
+| Accounts and sign-in | ✓ | ✓ | — | — |
+| Examples gallery | ✓ | ✓ | — | ✓ |
+| Editor UI | ✓ | ✓ | — | gallery only |
+| `/health`, `/ready`, `/metrics`, `/api/capabilities` | ✓ | ✓ | ✓ | ✓ |
 
 The editor loses the consumer render endpoints deliberately: pointing a
 consuming application at the editor node works by accident, and quietly makes
 the one node nobody scales part of the render path.
+
+**`demo` is the public shop window** — the examples gallery and the editor
+behind it, rendering whatever markup it is handed, with nothing that stores
+anything and nobody to sign in as. It is safe to leave on the open internet
+because there is nothing on it to keep. The shell asks `/api/capabilities` what
+this instance offers and draws only that, so a demo shows one tab and no
+sign-in card rather than a login screen in front of a service with no accounts.
+
+```bash
+docker run -p 8100:8000 -e LINFORM_ROLE=demo ghcr.io/lito130965/linform:latest
+```
+
+On a serverless host that assigns a port — Cloud Run and its kind — the
+entrypoint follows `$PORT`, so nothing else needs configuring. Set
+`LINFORM_RENDER_MAX_WORKERS=1` and cap the instances: rendering is the only
+expensive thing on it, and the ceiling already sheds what it cannot take.
 
 ```bash
 docker compose -f docker-compose.roles.yml up -d --build --scale render=3

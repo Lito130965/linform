@@ -260,7 +260,17 @@ export async function* assistantChat(
   }
 }
 
+/** What this instance offers. A demo node has no templates and no accounts,
+ * and says so here rather than by failing the calls one at a time. */
+export interface Capabilities {
+  role: string
+  tabs: string[]
+  accounts: boolean
+}
+
 export const api = {
+  capabilities: () => request<Capabilities>('/api/capabilities'),
+
   me: () => request<Me>('/api/auth/me'),
 
   async login(username: string, password: string): Promise<Me> {

@@ -78,3 +78,12 @@ services:
 
 volumes:
   linform_pgdata:
+
+# A public demo, if you want one:
+#
+#   docker run -p 8100:8000 -e LINFORM_ROLE=demo ghcr.io/lito130965/linform:latest
+#
+# It serves the editor and the examples gallery, renders whatever markup it is
+# handed, and has no way to store anything and nobody to sign in as. On a
+# serverless host that assigns a port — Cloud Run and its kind — the entrypoint
+# follows $PORT, so nothing else needs configuring.

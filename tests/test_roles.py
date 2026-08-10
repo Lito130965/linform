@@ -134,6 +134,48 @@ def test_an_editor_serving_the_bundle_still_answers_404_under_api(tmp_path, monk
         assert client.post("/api/no/such/endpoint", json={}).status_code == 404
 
 
+# Everything a demo must not have. The gallery is deliberately not here: it is
+# the one management-side route a demo keeps, because it is what a demo is for.
+DEMO_ABSENT = [entry for entry in MANAGEMENT if entry != ("get", "/api/examples")] + [
+    ("post", "/api/render/anything"),
+    ("post", "/api/auth/login"),
+]
+
+
+@pytest.mark.parametrize("method,path", DEMO_ABSENT)
+def test_a_demo_node_stores_nothing_and_asks_for_nobody(client_for, method, path):
+    """A public shop window. There is no template to vandalise because there is
+    no way to save one, and no sign-in card in front of a service that has no
+    accounts to sign into."""
+    demo = client_for("demo")
+    assert getattr(demo, method)(path).status_code == 404, (
+        f"{method.upper()} {path} answered on a demo node"
+    )
+
+
+def test_a_demo_node_serves_the_gallery_and_renders_what_it_is_handed(client_for):
+    demo = client_for("demo")
+    assert demo.get("/api/examples").status_code == 200
+    rendered = demo.post("/api/render", json={"html": "<p>{{ who }}</p>", "data": {"who": "x"}})
+    assert rendered.status_code == 200, rendered.text
+
+
+def test_an_instance_says_which_tabs_it_has(client_for):
+    """The editor draws what the service offers rather than deciding for itself
+    what a role means — that mapping belongs where the routers are chosen."""
+    everything = client_for("all").get("/api/capabilities").json()
+    assert everything["tabs"] == ["templates", "examples", "settings"]
+    assert everything["accounts"] is True
+
+    demo = client_for("demo").get("/api/capabilities").json()
+    assert demo["tabs"] == ["examples"]
+    assert demo["accounts"] is False
+
+    # Even a render node answers: an orchestrator or a probe may ask, and a role
+    # that refuses to describe itself is a role nobody can diagnose.
+    assert client_for("render").get("/api/capabilities").json()["role"] == "render"
+
+
 def test_an_unknown_role_stops_the_process_instead_of_serving_everything(monkeypatch):
     from pydantic import ValidationError
 

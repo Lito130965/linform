@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **A demo role.** `LINFORM_ROLE=demo` serves the examples gallery and the
+  editor behind it and nothing else: no stored templates, no accounts, no
+  sign-in. `GET /api/capabilities` tells the interface what an instance offers,
+  so the shell draws one tab rather than a login screen in front of a service
+  nobody can sign into — the mapping from role to interface stays where the
+  routers are chosen.
+- **`$PORT` is honoured** by the container entrypoint, for serverless hosts that
+  assign one.
 
 ## [0.2.0] — 2026-08-09
 
