@@ -62,11 +62,18 @@ test('the preview still renders a PDF, which is the point of a demo', async ({ p
   expect(response.headers()['content-type']).toContain('application/pdf')
 })
 
-test('nothing that stores or authenticates is reachable', async ({ request }) => {
-  for (const path of ['/api/templates', '/api/assets', '/api/admin/users', '/api/auth/me']) {
+test('nothing that keeps anything or authenticates is reachable', async ({ request }) => {
+  for (const path of ['/api/templates', '/api/admin/users', '/api/auth/me']) {
     expect((await request.get(path)).status(), `${path} answered`).toBe(404)
   }
   expect((await request.post('/api/templates', { data: { code: 'x', name: 'x' } })).status()).toBe(
     404,
   )
+
+  // Assets are the one exception, and a different thing wearing the same path:
+  // a scratch store scoped to the caller's own browser and swept within the
+  // hour. Empty here because this request has never uploaded anything.
+  const assets = await request.get('/api/assets')
+  expect(assets.status()).toBe(200)
+  expect(await assets.json()).toEqual([])
 })
