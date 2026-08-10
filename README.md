@@ -6,6 +6,11 @@
 
 **Versioned print forms — HTML in, PDF out.**
 
+**[Try the editor →](https://linform.linitapp.com/)** — the examples gallery on a
+live instance. Open any template, edit it, watch the PDF change. Nothing is
+saved there and uploads are cleared within the hour; it is the same image this
+repository publishes, run with `LINFORM_ROLE=demo`.
+
 Self-hosted service for generating print documents (invoices, certificates,
 reports) from HTML templates. Analysts create and version templates in a web
 editor; your application gets a PDF with a single API call, passing JSON data.
@@ -415,6 +420,8 @@ sign-in card rather than a login screen in front of a service with no accounts.
 ```bash
 docker run -p 8100:8000 -e LINFORM_ROLE=demo ghcr.io/lito130965/linform:latest
 ```
+
+That is exactly what runs at [linform.linitapp.com](https://linform.linitapp.com/).
 
 On a serverless host that assigns a port — Cloud Run and its kind — the
 entrypoint follows `$PORT`, so nothing else needs configuring. Set
