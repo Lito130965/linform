@@ -45,6 +45,7 @@ docker run -d --name "$WITH_AUTH" -p 8102:8000 \
   -e LINFORM_SUPERUSER="$E2E_SUPERUSER" \
   -e LINFORM_SUPERUSER_PASSWORD="$E2E_PASSWORD" \
   "$IMAGE" >/dev/null
+docker run -d --name "$DEMO" -p 8103:8000 -e LINFORM_ROLE=demo "$IMAGE" >/dev/null
 
 wait_for() {
   url=$1
