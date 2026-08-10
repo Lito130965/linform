@@ -167,9 +167,15 @@ def test_an_instance_says_which_tabs_it_has(client_for):
     assert everything["tabs"] == ["templates", "examples", "settings"]
     assert everything["accounts"] is True
 
+    assert everything["assets"] is True
+
     demo = client_for("demo").get("/api/capabilities").json()
     assert demo["tabs"] == ["examples"]
     assert demo["accounts"] is False
+    # The editor's panels are a separate question from the tabs: a demo has the
+    # editor and no storage behind it, and an Assets panel that answers
+    # "Not Found" is a worse welcome than one that is not offered.
+    assert demo["assets"] is False
 
     # Even a render node answers: an orchestrator or a probe may ask, and a role
     # that refuses to describe itself is a role nobody can diagnose.

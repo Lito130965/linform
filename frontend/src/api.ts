@@ -266,6 +266,8 @@ export interface Capabilities {
   role: string
   tabs: string[]
   accounts: boolean
+  /** whether asset storage exists behind the editor */
+  assets: boolean
 }
 
 export const api = {

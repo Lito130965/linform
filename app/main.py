@@ -137,6 +137,10 @@ async def capabilities(request: Request) -> dict:
         # A demo is the examples gallery and the editor behind it. Nothing else
         # is reachable, so nothing else is offered.
         "tabs": ["examples"] if demo else ["templates", "examples", "settings"],
+        # The editor's own panels, which are a separate question from the tabs:
+        # a demo has the editor but no asset storage behind it, and an Assets
+        # panel that answers "Not Found" is worse than one that is not there.
+        "assets": not demo,
         # Whether there is any authentication here at all. Without this the
         # editor asks who it is talking to, gets a 404, and concludes the
         # session expired.

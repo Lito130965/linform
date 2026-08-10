@@ -49,6 +49,7 @@ export interface ScratchDoc {
 export default function Editor({
   code,
   overlayPanels = false,
+  assets = true,
   scratch = null,
   onExitScratch,
 }: {
@@ -56,6 +57,10 @@ export default function Editor({
   /** float the assistant and history over the preview instead of giving them a
    * column of their own — below ~1600px a fixed column starves the canvas */
   overlayPanels?: boolean
+  /** Whether this instance has asset storage behind it. A demo has the editor
+   * and no way to keep anything, and a panel that answers "Not Found" is worse
+   * than a panel that is not offered. */
+  assets?: boolean
   /** When set, the editor runs in scratch mode: no load from the API, no
    * Save/Publish/History — an example playground that never persists. */
   scratch?: ScratchDoc | null
@@ -82,6 +87,16 @@ export default function Editor({
     'placeholders',
   )
   const [panelHeight, setPanelHeight] = useState(220)
+
+  // Which panels this instance can actually serve. Assets need storage behind
+  // them; on a demo the panel would offer an upload button and answer
+  // "Not Found", which is a worse welcome than not offering it.
+  const panelTabs = (['placeholders', 'presets', 'assets', 'data'] as const).filter(
+    (t) => t !== 'assets' || assets,
+  )
+  useEffect(() => {
+    if (!assets && panelTab === 'assets') setPanelTab('placeholders')
+  }, [assets, panelTab])
 
   // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
   // editor or vanishing; the value is otherwise the user's to set.
@@ -586,7 +601,7 @@ export default function Editor({
               title="Drag to resize"
             />
             <div className="panel-tabs">
-              {(['placeholders', 'presets', 'assets', 'data'] as const).map((t) => (
+              {panelTabs.map((t) => (
                 <button
                   key={t}
                   className={panelTab === t ? 'panel-tab active' : 'panel-tab'}

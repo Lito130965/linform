@@ -25,7 +25,11 @@ export function layoutFor(width: number): LayoutMode {
   return {
     overlayPanels: width < OVERLAY_PANELS_BELOW,
     collapseSidebar: width < COLLAPSE_SIDEBAR_BELOW,
-    tooNarrow: width < TOO_NARROW_BELOW,
+    // A width of zero is not a narrow window, it is a window that has not been
+    // measured — a tab opened in the background, or a page the browser
+    // prerendered. Treating it as narrow puts "this window is 0px, open it
+    // anyway" in front of somebody with a perfectly ordinary screen.
+    tooNarrow: width > 0 && width < TOO_NARROW_BELOW,
   }
 }
 
@@ -45,6 +49,11 @@ export function useViewportWidth(): number {
   const [width, setWidth] = useState(() => window.innerWidth)
   useEffect(() => {
     const onResize = () => setWidth(window.innerWidth)
+    // Read it again after mounting. The first render can happen before the
+    // window has a size — a hidden tab, a prerendered page — and a resize
+    // event does not necessarily follow when it gains one, so the value taken
+    // at render could otherwise stay zero for the life of the page.
+    onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])

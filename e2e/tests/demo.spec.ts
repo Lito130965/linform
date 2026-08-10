@@ -34,6 +34,10 @@ test('an example opens in an editor that cannot save', async ({ page }) => {
   // The controls that would store something are absent, not merely refused.
   await expect(page.getByRole('button', { name: /Save (as )?draft/i })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Publish$/ })).toHaveCount(0)
+  // Including the panel behind them: assets need storage, and a panel that
+  // offers an upload and answers "Not Found" is a worse welcome than none.
+  await expect(page.getByRole('button', { name: 'Assets', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Placeholders', exact: true })).toBeVisible()
 })
 
 test('the preview still renders a PDF, which is the point of a demo', async ({ page }) => {

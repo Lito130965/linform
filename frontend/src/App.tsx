@@ -30,7 +30,12 @@ export default function App() {
     setAuthLostHandler(() => setMe((m) => (m ? { ...m, authenticated: false } : m)))
     api
       .capabilities()
-      .catch(() => ({ role: 'all', tabs: ['templates', 'examples', 'settings'], accounts: true }))
+      .catch(() => ({
+        role: 'all',
+        tabs: ['templates', 'examples', 'settings'],
+        accounts: true,
+        assets: true,
+      }))
       .then(async (found) => {
         setCapabilities(found)
         setTab((found.tabs[0] as Tab) ?? 'examples')
@@ -151,7 +156,12 @@ export default function App() {
       </aside>
       <main className="main">
         {selected ? (
-          <Editor key={selected} code={selected} overlayPanels={layout.overlayPanels} />
+          <Editor
+            key={selected}
+            code={selected}
+            overlayPanels={layout.overlayPanels}
+            assets={capabilities?.assets ?? true}
+          />
         ) : scratch ? (
           <Editor
             key={`scratch:${scratch.id}`}
@@ -159,6 +169,7 @@ export default function App() {
             scratch={scratch}
             onExitScratch={() => setScratch(null)}
             overlayPanels={layout.overlayPanels}
+            assets={capabilities?.assets ?? true}
           />
         ) : tab === 'templates' ? (
           <TemplateJournal onOpen={(code) => setSelected(code)} />
