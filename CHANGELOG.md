@@ -66,6 +66,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A click on a field left no caret, so typing near one was silently
+  discarded.** A chip is `contenteditable="false"`; clicking one selected it and
+  put the caret nowhere, and every keystroke after that went nowhere too. On a
+  document whose furniture is mostly fields this read as "this cannot be
+  edited": a running header of `{{ company }} — Quarterly report {{ period }}`
+  only took typing if the click happened to land between the two chips, and a
+  table cell holding a single field took none at all. The same silence explained
+  edits inside a repeating row never reaching the preview — there was no edit.
+  A click now leaves the caret beside the field, on the side it landed.
 - **Bold, italic or underline across a placeholder duplicated it.** A chip is
   one thing — the attribute carries the expression, the visible text is only a
   label — but a selection ending halfway into one split the element, and export

@@ -98,6 +98,32 @@ export function caretRangeIn(body: HTMLElement): Range | null {
   return body.contains(range.startContainer) ? range : null
 }
 
+/**
+ * Put the caret beside an atomic node, on the side the pointer landed.
+ *
+ * A chip is `contenteditable="false"`, so clicking one leaves the document with
+ * no caret at all and the next keystroke goes nowhere — silently. On a document
+ * whose furniture is mostly fields, that reads as "this cannot be edited": a
+ * running header of `{{ company }} — Quarterly report {{ period }}` only accepts
+ * typing if the click happens to land on the eighteen characters between the
+ * two chips, and a table cell holding one field accepts nothing at all.
+ *
+ * @param clientX pointer position in the same coordinates as the node's rect —
+ *   both come from inside the canvas document
+ */
+export function caretBeside(node: Element, clientX: number): void {
+  const doc = node.ownerDocument
+  const selection = doc.getSelection()
+  if (!selection) return
+  const box = node.getBoundingClientRect()
+  const range = doc.createRange()
+  if (clientX >= box.left + box.width / 2) range.setStartAfter(node)
+  else range.setStartBefore(node)
+  range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
 /** Put the caret immediately after `node`, so typing carries on from what was
  * just inserted rather than from wherever the mouse last was. */
 export function caretAfter(node: Node): void {

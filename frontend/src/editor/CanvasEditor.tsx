@@ -25,7 +25,14 @@ import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
 import { dropPlacement, place, placementFor, type Placement } from './placement'
 import { scopesAt, type FieldRow, type LoopScope } from './fields'
 import { rank, triggerAt, type Trigger } from './typeahead'
-import { allInline, caretAfter, caretRangeIn, clampOutOfAtomic } from './range-ops'
+import {
+  ATOMIC_SELECTOR,
+  allInline,
+  caretAfter,
+  caretBeside,
+  caretRangeIn,
+  clampOutOfAtomic,
+} from './range-ops'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
@@ -759,8 +766,15 @@ export default function CanvasEditor({
 
     // Selection: nearest structural node under the click; body click clears.
     const onClick = (e: MouseEvent) => {
-      select(findSelectable(e.target as Element, body))
+      const target = e.target as Element
+      select(findSelectable(target, body))
       closeTypeahead()
+      // A chip is contenteditable="false": clicking one leaves the document
+      // with no caret, and every keystroke after that is silently discarded.
+      // Give it one, on the side that was clicked, so the text around a field
+      // can be written by aiming anywhere near it.
+      const atomic = target.closest?.(ATOMIC_SELECTOR)
+      if (atomic && body.contains(atomic)) caretBeside(atomic, e.clientX)
     }
     doc.addEventListener('click', onClick)
 

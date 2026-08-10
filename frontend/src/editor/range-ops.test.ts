@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { allInline, caretRangeIn, clampOutOfAtomic, isInline } from './range-ops'
+import { allInline, caretBeside, caretRangeIn, clampOutOfAtomic, isInline } from './range-ops'
 
 function fixture(html: string): HTMLElement {
   const host = document.createElement('div')
@@ -140,5 +140,27 @@ describe('finding the caret', () => {
     selection.removeAllRanges()
     selection.addRange(outRange)
     expect(caretRangeIn(host)).toBeNull()
+  })
+})
+
+describe('clicking a chip', () => {
+  it('leaves a caret after it when the near half was clicked', () => {
+    const host = fixture(`<p>Bill to ${CHIP} on</p>`)
+    const chip = host.querySelector('[data-jinja-expr]') as HTMLElement
+    // jsdom has no layout, so the rect is zeros: any x lands in the right half,
+    // which is the "after" side.
+    caretBeside(chip, 10)
+    const range = document.getSelection()!.getRangeAt(0)
+    expect(range.collapsed).toBe(true)
+    expect(range.startContainer).toBe(chip.parentNode)
+    expect(range.startOffset).toBe(2) // text, chip, |
+  })
+
+  it('leaves it before the chip when the pointer was to the left of it', () => {
+    const host = fixture(`<p>Bill to ${CHIP} on</p>`)
+    const chip = host.querySelector('[data-jinja-expr]') as HTMLElement
+    caretBeside(chip, -10)
+    const range = document.getSelection()!.getRangeAt(0)
+    expect(range.startOffset).toBe(1) // text, |, chip
   })
 })

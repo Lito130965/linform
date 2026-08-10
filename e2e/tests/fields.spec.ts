@@ -201,3 +201,44 @@ test('the payload is generated from the template, not typed before it', async ({
   expect(filled.number, 'the value adjusted by hand was thrown away').toBe('REAL-42')
   expect(filled.signed_by, 'the new field was not added').toBeTruthy()
 })
+
+test('a field can be typed around: clicking one leaves a caret beside it', async ({
+  page,
+  request,
+}) => {
+  // Reported as "the header and footer cannot be edited", and as "changes to
+  // nested blocks do not reach the preview". One cause: a chip is
+  // contenteditable=false, so a click on one left no caret and every keystroke
+  // after it went nowhere. A running header of mostly fields, or a table cell
+  // holding a single field, then took no typing at all.
+  const code = uniqueCode('fields-around')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 15mm }</style>\n' +
+      '<p id="line"><span>{{ company }}</span></p>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  const chip = frame.locator('#line [data-jinja-expr]')
+  const box = (await chip.boundingBox())!
+
+  // Right half: the caret goes after the field.
+  await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2)
+  await page.keyboard.type(' — report')
+  await expect(frame.locator('#line')).toContainText('{{ company }} — report')
+
+  // Left half: before it. Measured again, and after a pause — two clicks in
+  // quick succession near the same spot are a double click, which means
+  // something else here (editing the expression).
+  await page.waitForTimeout(600)
+  const again = (await chip.boundingBox())!
+  await page.mouse.click(again.x + again.width * 0.15, again.y + again.height / 2)
+  await page.keyboard.type('For ')
+  await expect(frame.locator('#line')).toContainText('For {{ company }} — report')
+
+  // And the field itself survived being typed around, exactly once.
+  await expect(chip).toHaveCount(1)
+})
