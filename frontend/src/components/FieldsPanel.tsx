@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react'
-import { api } from '../api'
-import { fieldRows, type FieldRow, type LoopScope } from '../editor/fields'
+import type { FieldRow } from '../editor/fields'
 
 /**
  * The values this document can name — from the test data and from the template
@@ -10,44 +8,23 @@ import { fieldRows, type FieldRow, type LoopScope } from '../editor/fields'
  * Click puts the field where you are. That sentence is the whole point of the
  * panel and it was not true before: insertion landed after the selected block,
  * so a field could never go inside a line of text (see editor/range-ops.ts).
+ *
+ * Presentational on purpose. The rows are assembled in Editor.tsx because the
+ * canvas needs the same list for its `{{` typeahead, and two assemblies of one
+ * list is two lists that will one day disagree.
  */
 export default function FieldsPanel({
-  html,
-  testData,
-  scopes,
+  rows,
   onInsert,
 }: {
-  html: string
-  /** The editor's test JSON — the nearest thing to a schema this service has. */
-  testData: string
-  /** Loops in force where the caret is; empty in Code mode. */
-  scopes: LoopScope[]
+  rows: FieldRow[]
   onInsert: (expression: string) => void
 }) {
-  const [placeholders, setPlaceholders] = useState<string[]>([])
-
-  // Extracted server-side so the parsing matches the engine that will render.
-  useEffect(() => {
-    if (!html.trim()) {
-      setPlaceholders([])
-      return
-    }
-    const t = setTimeout(() => {
-      api
-        .placeholders(html)
-        .then((r) => setPlaceholders(r.placeholders))
-        .catch(() => setPlaceholders([]))
-    }, 1000)
-    return () => clearTimeout(t)
-  }, [html])
-
-  const rows = fieldRows(testData, placeholders, scopes)
-
   return (
     <div className="fields-panel">
       <h2 className="panel-heading">
         Fields
-        <span className="muted"> — click to place one where the caret is</span>
+        <span className="muted"> — click one, or type {'{{'} in the canvas</span>
       </h2>
       {rows.length === 0 ? (
         <p className="muted">

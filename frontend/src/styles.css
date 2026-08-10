@@ -1394,6 +1394,44 @@ label {
   font-size: 10px;
 }
 
+/* Typing `{{` in the canvas: the fields, at the caret, in the canvas's own
+   coordinates like every other overlay drawn over the sheet. */
+.field-typeahead {
+  position: absolute;
+  z-index: 40;
+  margin: 2px 0 0;
+  padding: 4px;
+  max-height: 240px;
+  overflow: auto;
+  list-style: none;
+  min-width: 190px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+}
+
+.field-typeahead button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.field-typeahead button.active {
+  background: var(--accent-soft, rgba(79, 140, 255, 0.16));
+  color: var(--accent);
+}
+
 /* ---- the structure panel ----
    Beside the canvas, never over it: a row points at the page by outlining what
    it names there, so the page has to stay visible while you read the list. */

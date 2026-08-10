@@ -23,7 +23,8 @@ import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { CANVAS_MODIFIERS, isDuplicating, keepRatio, lockAxis } from './modifiers'
 import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
 import { place, placementFor, type Placement } from './placement'
-import { scopesAt, type LoopScope } from './fields'
+import { scopesAt, type FieldRow, type LoopScope } from './fields'
+import { rank, triggerAt, type Trigger } from './typeahead'
 import { allInline, caretAfter, caretRangeIn, clampOutOfAtomic } from './range-ops'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
@@ -147,6 +148,7 @@ export default function CanvasEditor({
   onChange,
   onReady,
   arrayHints = [],
+  fields = [],
   onSanitized,
   onScopes,
   compact = false,
@@ -160,6 +162,8 @@ export default function CanvasEditor({
   onReady?: (api: CanvasEditorApi) => void
   /** array names from the editor's test data, to suggest in convert dialogs */
   arrayHints?: string[]
+  /** every value this document can name, for the `{{` typeahead */
+  fields?: FieldRow[]
   /** fires with a warning when executable markup was stripped on load, or null */
   onSanitized?: (warning: string | null) => void
   /** fires with the loops in force at the selection, so the field list can say
@@ -237,6 +241,15 @@ export default function CanvasEditor({
   const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
   const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
+  // Typing `{{` in the canvas offers the fields, at the caret. Held here as a
+  // position plus a shortlist; the text node it belongs to is in the ref, since
+  // the keyboard handler inside the iframe is mounted once and cannot see state.
+  const [typeahead, setTypeahead] = useState<
+    { left: number; top: number; rows: FieldRow[]; active: number } | null
+  >(null)
+  const typeaheadRef = useRef<{ node: Text; trigger: Trigger; rows: FieldRow[]; active: number } | null>(null)
+  const fieldsRef = useRef<FieldRow[]>(fields)
+  fieldsRef.current = fields
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -373,6 +386,69 @@ export default function CanvasEditor({
     return { list: crossingsAt(root, breakOffsets), boxes }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, zoom, breakOffsets.join(',')])
+
+  // ---- typing a field --------------------------------------------------
+
+  const closeTypeahead = (): void => {
+    typeaheadRef.current = null
+    setTypeahead(null)
+  }
+
+  /** Look behind the caret for `{{` and offer what could follow it. Called on
+   * every input, so it stays cheap and gives up early. */
+  const refreshTypeahead = (): void => {
+    const body = bodyRef.current
+    const doc = body?.ownerDocument
+    const selection = doc?.getSelection()
+    if (!body || !doc || !selection || selection.rangeCount === 0) return closeTypeahead()
+    const range = selection.getRangeAt(0)
+    if (!range.collapsed || range.startContainer.nodeType !== Node.TEXT_NODE) {
+      return closeTypeahead()
+    }
+    const node = range.startContainer as Text
+    if (!body.contains(node)) return closeTypeahead()
+    const trigger = triggerAt(node.data, range.startOffset)
+    if (!trigger) return closeTypeahead()
+    const rows = rank(fieldsRef.current, trigger.query)
+    if (rows.length === 0) return closeTypeahead()
+
+    // Measured over the braces rather than the caret: a collapsed range has no
+    // reliable rectangle, two characters always do.
+    const probe = doc.createRange()
+    probe.setStart(node, trigger.start)
+    probe.setEnd(node, trigger.end)
+    const box = probe.getBoundingClientRect()
+    typeaheadRef.current = { node, trigger, rows, active: 0 }
+    setTypeahead({ left: box.left, top: box.bottom, rows, active: 0 })
+  }
+
+  const moveTypeahead = (by: number): void => {
+    const open = typeaheadRef.current
+    if (!open) return
+    const active = (open.active + by + open.rows.length) % open.rows.length
+    open.active = active
+    setTypeahead((t) => (t ? { ...t, active } : t))
+  }
+
+  /** Replace the `{{ …` that was typed with the chip it stood for. */
+  const acceptTypeahead = (row?: FieldRow): void => {
+    const open = typeaheadRef.current
+    const body = bodyRef.current
+    const chosen = row ?? open?.rows[open.active]
+    if (!open || !body || !chosen?.expression) return
+    const doc = body.ownerDocument
+    const range = doc.createRange()
+    range.setStart(open.node, open.trigger.start)
+    range.setEnd(open.node, Math.min(open.trigger.end, open.node.data.length))
+    range.deleteContents()
+    const chip = doc.createElement('span')
+    chip.setAttribute('data-jinja-expr', chosen.expression)
+    chip.textContent = `{{ ${chosen.expression} }}`
+    prepareFragment(chip)
+    range.insertNode(chip)
+    caretAfter(chip)
+    closeTypeahead()
+  }
 
   // ---- the structure panel ------------------------------------------------
 
@@ -666,8 +742,14 @@ export default function CanvasEditor({
     // Selection: nearest structural node under the click; body click clears.
     const onClick = (e: MouseEvent) => {
       select(findSelectable(e.target as Element, body))
+      closeTypeahead()
     }
     doc.addEventListener('click', onClick)
+
+    // `{{` is what somebody writes when they mean a value. In a canvas those
+    // would otherwise be two characters that print.
+    const onInput = () => refreshTypeahead()
+    doc.addEventListener('input', onInput)
 
     // Double-click a chip / loop / conditional to edit its Jinja expression as
     // text. The attribute is the source of truth restore() reads; the visible
@@ -712,6 +794,25 @@ export default function CanvasEditor({
     // programmatic mutations, so ours replaces it entirely. Everything else is
     // structural navigation — see keyboard.ts for why it hides behind Alt.
     const onKeydown = (e: KeyboardEvent) => {
+      // While the field list is up it owns the arrows and Enter — everything
+      // else, including ordinary typing, carries on filtering it.
+      if (typeaheadRef.current) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault()
+          moveTypeahead(e.key === 'ArrowDown' ? 1 : -1)
+          return
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault()
+          acceptTypeahead()
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          closeTypeahead()
+          return
+        }
+      }
       if (e.ctrlKey || e.metaKey) {
         const key = e.key.toLowerCase()
         if (key === 'z' && !e.shiftKey) {
@@ -846,6 +947,7 @@ export default function CanvasEditor({
       clearTimeout(timer)
       observer.disconnect()
       doc.removeEventListener('click', onClick)
+      doc.removeEventListener('input', onInput)
       doc.removeEventListener('dblclick', onDblClick)
       doc.removeEventListener('mousemove', onPointerMove)
       doc.removeEventListener('mouseleave', forgetHover)
@@ -1689,7 +1791,33 @@ export default function CanvasEditor({
                   <span>{hover.label}</span>
                 </div>
               )}
-              {guides.map((guide, i) => (
+              {typeahead && (
+              <ul
+                className="field-typeahead"
+                style={{ left: typeahead.left * zoom, top: typeahead.top * zoom }}
+              >
+                {typeahead.rows.map((row, index) => (
+                  <li key={row.label}>
+                    <button
+                      className={index === typeahead.active ? 'active' : undefined}
+                      // The canvas keeps the caret: taking focus here would put
+                      // the chip back at wherever the selection collapsed to.
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        acceptTypeahead(row)
+                      }}
+                      onMouseEnter={() => moveTypeahead(index - typeahead.active)}
+                    >
+                      <span className="field-label">{row.label}</span>
+                      {row.sample !== undefined && (
+                        <span className="field-sample">{row.sample}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {guides.map((guide, i) => (
                 <div
                   key={i}
                   aria-hidden="true"

@@ -21,7 +21,7 @@ import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
-import type { LoopScope } from '../editor/fields'
+import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 
@@ -88,6 +88,9 @@ export default function Editor({
   // Loops in force where the caret is, reported by the canvas. They decide
   // whether `items[].price` can be written here, and under what name.
   const [scopes, setScopes] = useState<LoopScope[]>([])
+  // Names the template already uses. Extracted server-side so the parsing
+  // matches the engine that will render it.
+  const [placeholders, setPlaceholders] = useState<string[]>([])
   const [panelHeight, setPanelHeight] = useState(220)
 
   // Which panels this instance can actually serve. Assets need storage behind
@@ -335,6 +338,28 @@ export default function Editor({
     }
   }
 
+  // One assembly of the field list. The panel lists it and the canvas offers it
+  // behind `{{` — two assemblies would be two lists that one day disagree.
+  const fields = useMemo(() => fieldRows(testData, placeholders, scopes), [
+    testData,
+    placeholders,
+    scopes,
+  ])
+
+  useEffect(() => {
+    if (!html.trim()) {
+      setPlaceholders([])
+      return
+    }
+    const t = setTimeout(() => {
+      api
+        .placeholders(html)
+        .then((r) => setPlaceholders(r.placeholders))
+        .catch(() => setPlaceholders([]))
+    }, 1000)
+    return () => clearTimeout(t)
+  }, [html])
+
   const enterVisual = () => {
     setError(null)
     const detected = detect(html)
@@ -577,6 +602,7 @@ export default function Editor({
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onSanitized={setSanitizeWarning}
               compact={overlayPanels}
+              fields={fields}
               onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
@@ -624,12 +650,7 @@ export default function Editor({
             </div>
             <div className="panel-body">
               {panelTab === 'fields' && (
-                <FieldsPanel
-                  html={html}
-                  testData={testData}
-                  scopes={scopes}
-                  onInsert={insertPlaceholder}
-                />
+                <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
               )}
               {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
               {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
