@@ -173,7 +173,20 @@ export async function backToCode(page: Page): Promise<void> {
 /** Save the editor's current content as a draft. */
 export async function saveDraft(page: Page, comment = 'from e2e'): Promise<void> {
   await page.getByPlaceholder(/What changed/i).fill(comment)
+
+  // Wait for the write itself, not for the unsaved marker to clear. The marker
+  // appears when the canvas reports its edit, which is debounced — so a test
+  // fast enough to click Save first would find no marker, take that for "saved"
+  // and read the draft back before the request had landed. Armed before the
+  // click, because the response can arrive before the click call returns.
+  const written = page.waitForResponse(
+    (r) =>
+      /\/drafts(\/\d+)?$/.test(new URL(r.url()).pathname) &&
+      ['POST', 'PUT'].includes(r.request().method()),
+    { timeout: 20_000 },
+  )
   await page.getByRole('button', { name: /^Save (as )?draft$/i }).click()
-  // The version selector gains the new entry; wait for the save to land.
+  const resp = await written
+  expect(resp.ok(), `save answered ${resp.status()}`).toBeTruthy()
   await expect(page.locator('.dirty-badge')).toHaveCount(0, { timeout: 20_000 })
 }

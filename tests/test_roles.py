@@ -134,9 +134,12 @@ def test_an_editor_serving_the_bundle_still_answers_404_under_api(tmp_path, monk
         assert client.post("/api/no/such/endpoint", json={}).status_code == 404
 
 
-# Everything a demo must not have. The gallery is deliberately not here: it is
-# the one management-side route a demo keeps, because it is what a demo is for.
-DEMO_ABSENT = [entry for entry in MANAGEMENT if entry != ("get", "/api/examples")] + [
+# Everything a demo must not have. Two management-side routes are deliberately
+# absent from this list: the gallery, which is what a demo is FOR, and the asset
+# endpoints, which a demo does serve — from a scratch store of its own, scoped
+# to one browser and swept within the hour (tests/test_demo_assets.py).
+DEMO_KEEPS = {("get", "/api/examples"), ("get", "/api/assets")}
+DEMO_ABSENT = [entry for entry in MANAGEMENT if entry not in DEMO_KEEPS] + [
     ("post", "/api/render/anything"),
     ("post", "/api/auth/login"),
 ]
@@ -167,9 +170,15 @@ def test_an_instance_says_which_tabs_it_has(client_for):
     assert everything["tabs"] == ["templates", "examples", "settings"]
     assert everything["accounts"] is True
 
+    assert everything["assets"] is True
+
     demo = client_for("demo").get("/api/capabilities").json()
     assert demo["tabs"] == ["examples"]
     assert demo["accounts"] is False
+    # The editor's panels are a separate question from the tabs. A demo does
+    # have somewhere to put an upload — just not the permanent one.
+    assert demo["assets"] is True
+    assert client_for("render").get("/api/capabilities").json()["assets"] is False
 
     # Even a render node answers: an orchestrator or a probe may ask, and a role
     # that refuses to describe itself is a role nobody can diagnose.

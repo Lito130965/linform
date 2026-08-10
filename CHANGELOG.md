@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the shell draws one tab rather than a login screen in front of a service
   nobody can sign into — the mapping from role to interface stays where the
   routers are chosen.
+- **Scratch asset storage for the demo role.** A public instance accepts
+  uploads — dropping in a logo is what makes the editor feel like yours — into a
+  store of its own: keyed to an opaque cookie, visible only to the browser that
+  sent them, deleted within the hour, and capped per visitor. A separate table
+  from `assets`, so the permanent store keeps its guarantee (content-addressed,
+  deduplicated, outliving the versions that reference it) while this one can be
+  emptied at any moment with nothing lost.
+- **A link to the source** in the navigation rail.
 - **`$PORT` is honoured** by the container entrypoint, for serverless hosts that
   assign one.
 

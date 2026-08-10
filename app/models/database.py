@@ -113,6 +113,40 @@ class Asset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DemoAsset(Base):
+    """A file uploaded on a public demo: one visitor's, and temporary.
+
+    Deliberately not an Asset. An asset belongs to the installation, is
+    deduplicated by content and lasts as long as the versions referencing it
+    (decision 3) — none of which is safe where anybody may upload anything. A
+    demo upload is visible only to whoever sent it and stops existing an hour
+    later, so that unlawful or malicious content cannot be served to anyone
+    else and cannot be parked on the domain.
+
+    Separate tables keep both statements true at once: `assets` keeps its
+    guarantee, and this table can be emptied at any moment with nothing lost.
+    Content addressing is scoped to the owner here — two visitors uploading the
+    same bytes get a row each, because sharing one would let the first's expiry
+    delete what the second is using.
+    """
+
+    __tablename__ = "demo_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    # Opaque per-browser id from a cookie. Not an account: it identifies a
+    # scratch space, and it is all this table ever knows about a visitor.
+    owner: Mapped[str] = mapped_column(String(64), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(100))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (UniqueConstraint("sha256", "owner", name="uq_demo_asset_per_owner"),)
+
+
 class Directory(Base):
     """A flat organizational bucket for templates (e.g. one per consuming
     service). Purely for the editor's benefit today — the render API still

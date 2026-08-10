@@ -27,6 +27,15 @@ describe('layoutFor', () => {
     expect(layoutFor(900).tooNarrow).toBe(true)
     expect(layoutFor(1000).tooNarrow).toBe(false)
   })
+
+  it('does not call an unmeasured window narrow', () => {
+    // Zero is not a size, it is the absence of one: a browser can render a
+    // page before the window has dimensions — a background tab, a prerendered
+    // page — and calling that "too narrow" puts "this window is 0px, open it
+    // anyway" in front of somebody at an ordinary screen. Found on the
+    // deployed demo, which loaded exactly that way.
+    expect(layoutFor(0).tooNarrow).toBe(false)
+  })
 })
 
 describe('fitZoom', () => {

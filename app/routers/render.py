@@ -8,7 +8,8 @@ from app.core.auth import require_render
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.models.schemas import AdHocRenderRequest, PlaceholdersResponse
-from app.services import versioning
+from app.routers.demo_assets import visitor
+from app.services import demo_assets, versioning
 from app.services.assets import AssetError, inline_assets
 from app.services.renderer import PdfRenderer, RenderBusy, RenderError, RenderTimeout
 from app.services.template_engine import (
@@ -66,6 +67,8 @@ async def render_measured(
 @router.post("/render", dependencies=[Depends(require_render)])
 async def render_ad_hoc(
     body: AdHocRenderRequest,
+    request: Request,
+    response: Response,
     session: AsyncSession = Depends(get_session),
     renderer: PdfRenderer = Depends(get_renderer),
     settings: Settings = Depends(get_settings),
@@ -73,7 +76,13 @@ async def render_ad_hoc(
     strict = body.strict if body.strict is not None else settings.strict_placeholders
     try:
         html = render_html(body.html, body.data, strict=strict)
-        html = await inline_assets(session, html)
+        # On a demo, an asset:// reference resolves against that visitor's own
+        # scratch uploads and nobody else's — the same rule the asset endpoints
+        # enforce, applied where the bytes actually reach a document.
+        if getattr(request.app.state, "role", "all") == "demo":
+            html = await demo_assets.inline(session, visitor(request, response), html)
+        else:
+            html = await inline_assets(session, html)
     except (TemplateRenderError, AssetError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     try:

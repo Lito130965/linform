@@ -1399,6 +1399,22 @@ label {
 
 /* ---- table column/row resize handles ---- */
 
+/* Where this came from, at the foot of the rail. Quiet: useful to the curious,
+   invisible to somebody working. */
+.repo-link {
+  display: block;
+  margin-top: auto;
+  padding: 10px 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.repo-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
 /* What a page break passes through. Amber rather than red: this is not an
    error, it is the difference between the strip on screen and the pages that
    come out — and one of the two outcomes is perfectly ordinary. */

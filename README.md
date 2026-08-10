@@ -6,6 +6,11 @@
 
 **Versioned print forms — HTML in, PDF out.**
 
+**[Try the editor →](https://linform.linitapp.com/)** — the examples gallery on a
+live instance. Open any template, edit it, watch the PDF change. Nothing is
+saved there and uploads are cleared within the hour; it is the same image this
+repository publishes, run with `LINFORM_ROLE=demo`.
+
 Self-hosted service for generating print documents (invoices, certificates,
 reports) from HTML templates. Analysts create and version templates in a web
 editor; your application gets a PDF with a single API call, passing JSON data.
@@ -386,7 +391,8 @@ stolen credential to reach.
 |---|:---:|:---:|:---:|:---:|
 | `POST /api/render` (markup you send) | ✓ | ✓ | ✓ | ✓ |
 | `POST /api/render/{code}` and version pinning | ✓ | — | ✓ | — |
-| Templates, assets, directories, assistant | ✓ | ✓ | — | — |
+| Templates, directories, assistant | ✓ | ✓ | — | — |
+| Asset uploads | ✓ | ✓ | — | scratch |
 | Accounts and sign-in | ✓ | ✓ | — | — |
 | Examples gallery | ✓ | ✓ | — | ✓ |
 | Editor UI | ✓ | ✓ | — | gallery only |
@@ -397,15 +403,25 @@ consuming application at the editor node works by accident, and quietly makes
 the one node nobody scales part of the render path.
 
 **`demo` is the public shop window** — the examples gallery and the editor
-behind it, rendering whatever markup it is handed, with nothing that stores
-anything and nobody to sign in as. It is safe to leave on the open internet
-because there is nothing on it to keep. The shell asks `/api/capabilities` what
+behind it, rendering whatever markup it is handed, with nothing to sign in as
+and nothing kept. It is safe to leave on the open internet because
+nothing on it survives.
+
+Uploads are the exception that proves the rule: a demo does accept them —
+dropping in a logo is what makes the editor feel like yours — but they go to a
+store of their own, keyed to an opaque cookie, **visible only to the browser
+that sent them and deleted within the hour**, with a ceiling on how much one
+visitor may hold. Somebody will eventually upload something unlawful or
+malicious, and a public instance must be neither the place that serves it to
+others nor the place it sits. The shell asks `/api/capabilities` what
 this instance offers and draws only that, so a demo shows one tab and no
 sign-in card rather than a login screen in front of a service with no accounts.
 
 ```bash
 docker run -p 8100:8000 -e LINFORM_ROLE=demo ghcr.io/lito130965/linform:latest
 ```
+
+That is exactly what runs at [linform.linitapp.com](https://linform.linitapp.com/).
 
 On a serverless host that assigns a port — Cloud Run and its kind — the
 entrypoint follows `$PORT`, so nothing else needs configuring. Set

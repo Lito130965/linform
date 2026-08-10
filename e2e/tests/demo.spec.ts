@@ -34,6 +34,20 @@ test('an example opens in an editor that cannot save', async ({ page }) => {
   // The controls that would store something are absent, not merely refused.
   await expect(page.getByRole('button', { name: /Save (as )?draft/i })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Publish$/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Placeholders', exact: true })).toBeVisible()
+})
+
+test('the assets panel works, against a scratch store of its own', async ({ page }) => {
+  // It used to answer "Not Found" here, because a demo has the editor and no
+  // permanent storage. It now has storage that belongs to this browser and
+  // clears within the hour — see services/demo_assets.py for why that is a
+  // different thing rather than a smaller one.
+  await page.goto('/')
+  await page.locator('.example-card', { hasText: 'Invoice' }).click()
+  await page.getByRole('button', { name: 'Assets', exact: true }).click()
+
+  await expect(page.locator('.error-box')).toHaveCount(0)
+  await expect(page.locator('.panel-body')).toContainText('no assets uploaded')
 })
 
 test('the preview still renders a PDF, which is the point of a demo', async ({ page }) => {
@@ -48,11 +62,18 @@ test('the preview still renders a PDF, which is the point of a demo', async ({ p
   expect(response.headers()['content-type']).toContain('application/pdf')
 })
 
-test('nothing that stores or authenticates is reachable', async ({ request }) => {
-  for (const path of ['/api/templates', '/api/assets', '/api/admin/users', '/api/auth/me']) {
+test('nothing that keeps anything or authenticates is reachable', async ({ request }) => {
+  for (const path of ['/api/templates', '/api/admin/users', '/api/auth/me']) {
     expect((await request.get(path)).status(), `${path} answered`).toBe(404)
   }
   expect((await request.post('/api/templates', { data: { code: 'x', name: 'x' } })).status()).toBe(
     404,
   )
+
+  // Assets are the one exception, and a different thing wearing the same path:
+  // a scratch store scoped to the caller's own browser and swept within the
+  // hour. Empty here because this request has never uploaded anything.
+  const assets = await request.get('/api/assets')
+  expect(assets.status()).toBe(200)
+  expect(await assets.json()).toEqual([])
 })

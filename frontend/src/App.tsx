@@ -30,7 +30,12 @@ export default function App() {
     setAuthLostHandler(() => setMe((m) => (m ? { ...m, authenticated: false } : m)))
     api
       .capabilities()
-      .catch(() => ({ role: 'all', tabs: ['templates', 'examples', 'settings'], accounts: true }))
+      .catch(() => ({
+        role: 'all',
+        tabs: ['templates', 'examples', 'settings'],
+        accounts: true,
+        assets: true,
+      }))
       .then(async (found) => {
         setCapabilities(found)
         setTab((found.tabs[0] as Tab) ?? 'examples')
@@ -135,6 +140,17 @@ export default function App() {
               {tabs.includes('examples') && navItem('examples', 'examples', 'Examples')}
               {tabs.includes('settings') && navItem('settings', 'settings', 'Settings')}
             </nav>
+            {/* Where this came from. On the demo especially: somebody who
+                likes what they are looking at should not have to guess how to
+                run it themselves. */}
+            <a
+              className="repo-link"
+              href="https://github.com/Lito130965/linform"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Source on GitHub ↗
+            </a>
             {showAccount && (
               <div className="account-bar">
                 <div className="account-who">
@@ -151,7 +167,12 @@ export default function App() {
       </aside>
       <main className="main">
         {selected ? (
-          <Editor key={selected} code={selected} overlayPanels={layout.overlayPanels} />
+          <Editor
+            key={selected}
+            code={selected}
+            overlayPanels={layout.overlayPanels}
+            assets={capabilities?.assets ?? true}
+          />
         ) : scratch ? (
           <Editor
             key={`scratch:${scratch.id}`}
@@ -159,6 +180,7 @@ export default function App() {
             scratch={scratch}
             onExitScratch={() => setScratch(null)}
             overlayPanels={layout.overlayPanels}
+            assets={capabilities?.assets ?? true}
           />
         ) : tab === 'templates' ? (
           <TemplateJournal onOpen={(code) => setSelected(code)} />
