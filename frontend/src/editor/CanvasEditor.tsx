@@ -63,6 +63,8 @@ import {
   setTableBorders,
 } from './table-ops'
 import { type Layer, layerOf, setLayer } from './layer'
+import BorderControl from './BorderControl'
+import { canMergeDown, canMergeRight, isMerged, mergeDown, mergeRight, splitCell } from './cells'
 import { existingValue, isConditional, isRepeating, makeRepeating, wrapConditional } from './convert'
 import { protect } from '../jinja-bridge'
 import Icon from '../components/Icon'
@@ -1235,6 +1237,40 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
   }
 
+  /** A merge or a split removes cells and adds them back, so the selection has
+   * to be re-established rather than left pointing at something detached. */
+  const cellOp = (op: (el: Element) => void) => {
+    if (!selected) return
+    const cell = selected.el
+    op(cell)
+    select(cell.isConnected ? cell : null)
+    setTick((t) => t + 1)
+  }
+
+  /** Which tag a block is, for the style menu. */
+  const blockTag = (el: Element): string => el.tagName.toLowerCase()
+
+  /**
+   * Turn a paragraph into a heading, or back.
+   *
+   * A new element carrying the same children and attributes rather than an
+   * edit: a tag name is the one thing about an element that cannot be changed,
+   * and rebuilding it keeps the inline styles, the Jinja markers and the text
+   * — everything a person would be upset to lose by choosing from a menu.
+   */
+  const retag = (tag: string) => {
+    const body = bodyRef.current
+    if (!selected || !body || blockTag(selected.el) === tag) return
+    const el = selected.el
+    const fresh = body.ownerDocument.createElement(tag)
+    for (const attr of Array.from(el.attributes)) fresh.setAttribute(attr.name, attr.value)
+    while (el.firstChild) fresh.appendChild(el.firstChild)
+    el.replaceWith(fresh)
+    prepareFragment(fresh)
+    select(fresh)
+    setTick((t) => t + 1)
+  }
+
   const inTable = selected ? !!selected.el.closest('table') : false
 
   // Toolbar position in stage coordinates (iframe has no internal scroll).
@@ -1691,6 +1727,46 @@ export default function CanvasEditor({
               }}
             />
           )}
+          {canvasWindow && selected.kind !== 'chip' && selected.kind !== 'raw' && (
+            <BorderControl
+              el={selected.el as HTMLElement}
+              view={canvasWindow}
+              onChange={() => setTick((t) => t + 1)}
+            />
+          )}
+          {isCell && (
+            <label className="prop">
+              Align in cell
+              <select
+                aria-label="Align in cell"
+                defaultValue={styleValue('vertical-align') || 'top'}
+                onChange={(e) => applyStyle('vertical-align', e.target.value)}
+              >
+                <option value="top">top</option>
+                <option value="middle">middle</option>
+                <option value="bottom">bottom</option>
+              </select>
+            </label>
+          )}
+          {selected.kind === 'block' && (
+            <label className="prop">
+              Style
+              {/* Named explicitly: a <label> wrapping a <select> takes the
+                  chosen option into its accessible name, so "Style" alone would
+                  read as "Style Paragraph" and change under the user. */}
+              <select
+                aria-label="Block style"
+                value={blockTag(selected.el)}
+                onChange={(e) => retag(e.target.value)}
+              >
+                <option value="p">Paragraph</option>
+                <option value="h1">Heading 1</option>
+                <option value="h2">Heading 2</option>
+                <option value="h3">Heading 3</option>
+                <option value="div">Block</option>
+              </select>
+            </label>
+          )}
           {selected.kind === 'image' && (
             <label className="prop">
               Layer
@@ -2093,6 +2169,21 @@ export default function CanvasEditor({
                     <button title="Delete column" onClick={() => tableOp(deleteColumn)}>
                       −C
                     </button>
+                    {isCell && canMergeRight(selected.el) && (
+                      <button title="Merge with the cell to the right" onClick={() => cellOp(mergeRight)}>
+                        ⇥|
+                      </button>
+                    )}
+                    {isCell && canMergeDown(selected.el) && (
+                      <button title="Merge with the cell below" onClick={() => cellOp(mergeDown)}>
+                        ⤓|
+                      </button>
+                    )}
+                    {isCell && isMerged(selected.el) && (
+                      <button title="Split this merged cell" onClick={() => cellOp(splitCell)}>
+                        ⊞
+                      </button>
+                    )}
                     <select
                       className="el-borders"
                       title="Table borders"

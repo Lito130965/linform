@@ -2778,3 +2778,25 @@ label {
   color: var(--warn, #d0a02a);
   cursor: help;
 }
+
+/* ---- borders, per side ---- */
+
+.border-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.border-sides .tb {
+  min-width: 22px;
+  padding: 2px 5px;
+}
+
+.border-control select {
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.border-width {
+  width: 56px;
+}
