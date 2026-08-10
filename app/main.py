@@ -17,6 +17,7 @@ from app.routers import (
     assets,
     assistant,
     auth,
+    demo_assets,
     directories,
     examples,
     render,
@@ -137,10 +138,10 @@ async def capabilities(request: Request) -> dict:
         # A demo is the examples gallery and the editor behind it. Nothing else
         # is reachable, so nothing else is offered.
         "tabs": ["examples"] if demo else ["templates", "examples", "settings"],
-        # The editor's own panels, which are a separate question from the tabs:
-        # a demo has the editor but no asset storage behind it, and an Assets
-        # panel that answers "Not Found" is worse than one that is not there.
-        "assets": not demo,
+        # The editor's own panels, a separate question from the tabs. Assets
+        # exist everywhere but the render role — on a demo they are a scratch
+        # space of their own, one visitor's and gone within the hour.
+        "assets": role in ("all", "editor", "demo"),
         # Whether there is any authentication here at all. Without this the
         # editor asks who it is talking to, gets a 404, and concludes the
         # session expired.
@@ -197,6 +198,12 @@ def create_app(settings: Settings | None = None, static_dir: Path | None = None)
         app.include_router(admin.router)
     if settings.role in ("all", "editor"):
         app.include_router(auth.router)
+    if settings.role == "demo":
+        # Same paths as the permanent asset API and a different store behind
+        # them: scoped to one visitor and swept within the hour, because a
+        # public upload box that keeps things is somebody else's content on
+        # your domain. An instance never has both.
+        app.include_router(demo_assets.router)
     if settings.role in ("all", "editor", "demo"):
         app.include_router(examples.router)
     app.include_router(ops)

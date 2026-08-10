@@ -34,10 +34,20 @@ test('an example opens in an editor that cannot save', async ({ page }) => {
   // The controls that would store something are absent, not merely refused.
   await expect(page.getByRole('button', { name: /Save (as )?draft/i })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Publish$/ })).toHaveCount(0)
-  // Including the panel behind them: assets need storage, and a panel that
-  // offers an upload and answers "Not Found" is a worse welcome than none.
-  await expect(page.getByRole('button', { name: 'Assets', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Placeholders', exact: true })).toBeVisible()
+})
+
+test('the assets panel works, against a scratch store of its own', async ({ page }) => {
+  // It used to answer "Not Found" here, because a demo has the editor and no
+  // permanent storage. It now has storage that belongs to this browser and
+  // clears within the hour — see services/demo_assets.py for why that is a
+  // different thing rather than a smaller one.
+  await page.goto('/')
+  await page.locator('.example-card', { hasText: 'Invoice' }).click()
+  await page.getByRole('button', { name: 'Assets', exact: true }).click()
+
+  await expect(page.locator('.error-box')).toHaveCount(0)
+  await expect(page.locator('.panel-body')).toContainText('no assets uploaded')
 })
 
 test('the preview still renders a PDF, which is the point of a demo', async ({ page }) => {

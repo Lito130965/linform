@@ -140,6 +140,17 @@ export default function App() {
               {tabs.includes('examples') && navItem('examples', 'examples', 'Examples')}
               {tabs.includes('settings') && navItem('settings', 'settings', 'Settings')}
             </nav>
+            {/* Where this came from. On the demo especially: somebody who
+                likes what they are looking at should not have to guess how to
+                run it themselves. */}
+            <a
+              className="repo-link"
+              href="https://github.com/Lito130965/linform"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Source on GitHub ↗
+            </a>
             {showAccount && (
               <div className="account-bar">
                 <div className="account-who">
