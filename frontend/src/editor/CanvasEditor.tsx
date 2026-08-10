@@ -23,6 +23,8 @@ import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { CANVAS_MODIFIERS, isDuplicating, keepRatio, lockAxis } from './modifiers'
 import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
 import { place, placementFor, type Placement } from './placement'
+import { scopesAt, type LoopScope } from './fields'
+import { allInline, caretAfter, caretRangeIn, clampOutOfAtomic } from './range-ops'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
@@ -146,6 +148,7 @@ export default function CanvasEditor({
   onReady,
   arrayHints = [],
   onSanitized,
+  onScopes,
   compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
@@ -159,6 +162,9 @@ export default function CanvasEditor({
   arrayHints?: string[]
   /** fires with a warning when executable markup was stripped on load, or null */
   onSanitized?: (warning: string | null) => void
+  /** fires with the loops in force at the selection, so the field list can say
+   * which of them can be written here and under what name */
+  onScopes?: (scopes: LoopScope[]) => void
   /** the window is tight enough that panels cost more than they give */
   compact?: boolean
 }) {
@@ -176,8 +182,8 @@ export default function CanvasEditor({
   // Commit whatever is on the canvas now: the debounced path calls it, and so
   // does the end of a gesture.
   const commitRef = useRef<(() => void) | null>(null)
-  const callbacksRef = useRef({ onChange, onReady, onSanitized })
-  callbacksRef.current = { onChange, onReady, onSanitized }
+  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes })
+  callbacksRef.current = { onChange, onReady, onSanitized, onScopes }
 
   const [format, setFormat] = useState(() => formatFromStyles(canvasStyles))
   const [zoom, setZoom] = useState(1)
@@ -452,6 +458,14 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
   }
 
+  // Which loops surround the selection. The field list needs it to know that
+  // `items[].price` is writable here, and that this loop calls it `row`.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!body) return
+    callbacksRef.current.onScopes?.(scopesAt(selected?.el ?? null, body))
+  }, [selId, selected])
+
   // A selection made in the canvas has to be findable in the panel, which means
   // opening whatever it is buried inside. The panel scrolls to it itself.
   useEffect(() => {
@@ -529,6 +543,20 @@ export default function CanvasEditor({
    * panel asked, so the answer is the same from all of them. */
   const insertNodes = (nodes: Node[], body: HTMLElement): void => {
     const target = body.querySelector('[data-lf-selected]')
+    const caret = allInline(nodes) ? caretRangeIn(body) : null
+    // Only when the caret is in the thing that is selected: picking a table in
+    // the structure panel and inserting a field should not send it to wherever
+    // the mouse happened to leave the caret ten minutes ago.
+    if (caret && (!target || target.contains(caret.startContainer))) {
+      const at = clampOutOfAtomic(caret.cloneRange())
+      at.collapse(false)
+      const fragment = body.ownerDocument.createDocumentFragment()
+      for (const node of nodes) fragment.appendChild(node)
+      const last = fragment.lastChild
+      at.insertNode(fragment)
+      if (last) caretAfter(last)
+      return
+    }
     if (!target) {
       for (const node of nodes) body.appendChild(node)
       return
@@ -545,20 +573,6 @@ export default function CanvasEditor({
    * canvas document and the one on this document, so the two cannot drift. */
   const applyIntent = (intent: CanvasIntent, body: HTMLElement): void => {
     const doc = body.ownerDocument
-    const caret = allInline(nodes) ? caretRangeIn(body) : null
-    // Only when the caret is in the thing that is selected: picking a table in
-    // the structure panel and inserting a field should not send it to wherever
-    // the mouse happened to leave the caret ten minutes ago.
-    if (caret && (!target || target.contains(caret.startContainer))) {
-      const at = clampOutOfAtomic(caret.cloneRange())
-      at.collapse(false)
-      const fragment = body.ownerDocument.createDocumentFragment()
-      for (const node of nodes) fragment.appendChild(node)
-      const last = fragment.lastChild
-      at.insertNode(fragment)
-      if (last) caretAfter(last)
-      return
-    }
     switch (intent.action) {
       case 'select':
         select(intent.el)
@@ -823,6 +837,7 @@ export default function CanvasEditor({
         for (const node of nodes) {
           if (node.nodeType === Node.ELEMENT_NODE) prepareFragment(node as Element)
         }
+        if (nodes.length > 0) insertNodes(nodes, body)
       },
       getBody: () => exportBody(body),
     })
@@ -837,7 +852,6 @@ export default function CanvasEditor({
       doc.removeEventListener('keydown', onKeydown)
       doc.removeEventListener('paste', onPaste)
       // Flush the final state so mode switches never lose an edit.
-        if (nodes.length > 0) insertNodes(nodes, body)
       callbacksRef.current.onChange(exportBody(body))
       bodyRef.current = null
       historyRef.current = null

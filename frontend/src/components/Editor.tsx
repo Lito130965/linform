@@ -13,7 +13,7 @@ import {
   toCanvasAssets,
 } from '../jinja-bridge'
 import PreviewPane from './PreviewPane'
-import PlaceholderPanel from './PlaceholderPanel'
+import FieldsPanel from './FieldsPanel'
 import PresetPanel from './PresetPanel'
 import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
@@ -21,6 +21,7 @@ import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
+import type { LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 
@@ -83,19 +84,20 @@ export default function Editor({
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [presetFor, setPresetFor] = useState<Preset | null>(null)
-  const [panelTab, setPanelTab] = useState<'placeholders' | 'presets' | 'assets' | 'data'>(
-    'placeholders',
-  )
+  const [panelTab, setPanelTab] = useState<'fields' | 'presets' | 'assets' | 'data'>('fields')
+  // Loops in force where the caret is, reported by the canvas. They decide
+  // whether `items[].price` can be written here, and under what name.
+  const [scopes, setScopes] = useState<LoopScope[]>([])
   const [panelHeight, setPanelHeight] = useState(220)
 
   // Which panels this instance can actually serve. Assets need storage behind
   // them; on a demo the panel would offer an upload button and answer
   // "Not Found", which is a worse welcome than not offering it.
-  const panelTabs = (['placeholders', 'presets', 'assets', 'data'] as const).filter(
+  const panelTabs = (['fields', 'presets', 'assets', 'data'] as const).filter(
     (t) => t !== 'assets' || assets,
   )
   useEffect(() => {
-    if (!assets && panelTab === 'assets') setPanelTab('placeholders')
+    if (!assets && panelTab === 'assets') setPanelTab('fields')
   }, [assets, panelTab])
 
   // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
@@ -372,6 +374,7 @@ export default function Editor({
 
   const exitVisual = () => {
     canvasApiRef.current = null
+    setScopes([])
     setMode('code')
   }
 
@@ -574,6 +577,7 @@ export default function Editor({
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onSanitized={setSanitizeWarning}
               compact={overlayPanels}
+              onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
                 canvasApiRef.current = api
@@ -608,8 +612,8 @@ export default function Editor({
                   className={panelTab === t ? 'panel-tab active' : 'panel-tab'}
                   onClick={() => setPanelTab(t)}
                 >
-                  {t === 'placeholders'
-                    ? 'Placeholders'
+                  {t === 'fields'
+                    ? 'Fields'
                     : t === 'presets'
                       ? 'Presets'
                       : t === 'assets'
@@ -619,8 +623,13 @@ export default function Editor({
               ))}
             </div>
             <div className="panel-body">
-              {panelTab === 'placeholders' && (
-                <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
+              {panelTab === 'fields' && (
+                <FieldsPanel
+                  html={html}
+                  testData={testData}
+                  scopes={scopes}
+                  onInsert={insertPlaceholder}
+                />
               )}
               {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
               {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
