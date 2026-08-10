@@ -954,7 +954,10 @@ label {
 
 .canvas-scroll {
   flex: 1;
+  /* Both, because this is a child of a row now: min-width lets the canvas give
+     ground to the structure panel instead of pushing it off the edge. */
   min-height: 0;
+  min-width: 0;
   overflow: auto;
   padding: 12px;
 }
@@ -1322,6 +1325,170 @@ label {
 .add-preset-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* ---- the structure panel ----
+   Beside the canvas, never over it: a row points at the page by outlining what
+   it names there, so the page has to stay visible while you read the list. */
+
+.canvas-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.canvas-outline {
+  width: 244px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 12px;
+}
+
+.outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.outline-head h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.outline-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.outline-empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: var(--text-muted);
+}
+
+.linkish {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.outline-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+  border-radius: 4px;
+}
+
+.outline-item.current {
+  background: var(--accent-soft, rgba(79, 140, 255, 0.16));
+}
+
+.outline-item:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+.outline-twisty {
+  width: 16px;
+  height: 20px;
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.outline-twisty.empty {
+  cursor: default;
+}
+
+.outline-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 3px 2px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-label {
+  flex: none;
+  color: var(--text);
+}
+
+.outline-item.current .outline-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.outline-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+
+.outline-eye {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 2px;
+  color: var(--text-muted);
+  cursor: pointer;
+  /* Shown on demand so a column of eyes does not compete with the document,
+     and always shown once it is doing something. */
+  opacity: 0;
+}
+
+.outline-item:hover .outline-eye,
+.outline-item.current .outline-eye,
+.outline-eye:focus-visible,
+.outline-item.is-hidden .outline-eye {
+  opacity: 1;
+}
+
+.outline-item.is-hidden .outline-label,
+.outline-item.is-hidden .outline-detail {
+  opacity: 0.5;
+  text-decoration: line-through;
 }
 
 /* ---- canvas element properties bar ---- */

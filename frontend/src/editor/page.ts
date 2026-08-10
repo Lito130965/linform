@@ -62,6 +62,11 @@ export const CANVAS_AFFORDANCE_CSS = `
     outline: 2px solid #4f8cff !important;
     outline-offset: 1px;
   }
+  /* Taken out of sight from the structure panel. visibility, not display: the
+     box keeps its size, so hiding a background image to work under it does not
+     move everything below it and does not change where the pages break. The
+     attribute is canvas-only and stripped on export. */
+  [data-lf-hidden] { visibility: hidden !important; }
   /* A page-background image is exported with negative margin offsets so it
      bleeds to the sheet edge in print; in the margin-less canvas iframe that
      would shift it off-corner, so show it filling the iframe instead. */

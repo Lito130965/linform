@@ -573,6 +573,7 @@ export default function Editor({
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onSanitized={setSanitizeWarning}
+              compact={overlayPanels}
               onChange={handleVisualChange}
               onReady={(api) => {
                 canvasApiRef.current = api
