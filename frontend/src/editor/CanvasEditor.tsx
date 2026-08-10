@@ -22,7 +22,7 @@ import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { CANVAS_MODIFIERS, isDuplicating, keepRatio, lockAxis } from './modifiers'
 import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
-import { place, placementFor, type Placement } from './placement'
+import { dropPlacement, place, placementFor, type Placement } from './placement'
 import { scopesAt, type FieldRow, type LoopScope } from './fields'
 import { rank, triggerAt, type Trigger } from './typeahead'
 import { allInline, caretAfter, caretRangeIn, clampOutOfAtomic } from './range-ops'
@@ -40,7 +40,7 @@ import {
   usablePageHeight,
   type PageGeometry,
 } from './pagination'
-import OutlinePanel from './OutlinePanel'
+import OutlinePanel, { type SideTab } from './OutlinePanel'
 import { CROWDED, outlineOf, selectableChildren, type OutlineItem } from './outline'
 import { describeRemoved, sanitizeHtml } from './sanitize'
 import {
@@ -122,8 +122,10 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
-  /** Insert markup at the selection (after the selected node) or append. */
+  /** Insert markup where the caret is (inline) or beside the selected block. */
   insertHtml: (html: string) => void
+  /** Insert one of the palette's blocks, and select it so it can be edited. */
+  insertBlock: (id: string) => void
   /** Current canvas-form body (protected markup, canvas asset URLs). */
   getBody: () => string
 }
@@ -186,6 +188,9 @@ export default function CanvasEditor({
   // Commit whatever is on the canvas now: the debounced path calls it, and so
   // does the end of a gesture.
   const commitRef = useRef<(() => void) | null>(null)
+  // The palette lives in the shell, and the function it calls is declared
+  // below the mount effect that publishes the API.
+  const insertBlockRef = useRef<((id: string) => void) | null>(null)
   const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes })
   callbacksRef.current = { onChange, onReady, onSanitized, onScopes }
 
@@ -201,6 +206,7 @@ export default function CanvasEditor({
   // The structure panel. Open by default where there is room for it: a panel
   // nobody knows about answers nobody's question.
   const [outlineOpen, setOutlineOpen] = useState(!compact)
+  const [sideTab, setSideTab] = useState<SideTab>('structure')
   // Which containers the panel has been told to open or close. A WeakMap rather
   // than the document, because opening a twisty is not an edit: writing it into
   // the DOM would put a mutation burst — repaginate, re-measure, re-export —
@@ -386,6 +392,18 @@ export default function CanvasEditor({
     return { list: crossingsAt(root, breakOffsets), boxes }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, zoom, breakOffsets.join(',')])
+
+  /** Put a field where the caret is. One builder for the panel and the `{{`
+   * list, so the two cannot write different markup for the same field. */
+  const insertField = (expression: string): void => {
+    const body = bodyRef.current
+    if (!body) return
+    const chip = body.ownerDocument.createElement('span')
+    chip.setAttribute('data-jinja-expr', expression)
+    chip.textContent = `{{ ${expression} }}`
+    prepareFragment(chip)
+    insertNodes([chip], body)
+  }
 
   // ---- typing a field --------------------------------------------------
 
@@ -940,6 +958,7 @@ export default function CanvasEditor({
         }
         if (nodes.length > 0) insertNodes(nodes, body)
       },
+      insertBlock: (id: string) => insertBlockRef.current?.(id),
       getBody: () => exportBody(body),
     })
 
@@ -1121,6 +1140,7 @@ export default function CanvasEditor({
     // Select the last visible node so the author can edit it immediately.
     select(nodes[nodes.length - 1])
   }
+  insertBlockRef.current = insertBlock
 
   const moveSelected = (dir: -1 | 1) => {
     if (!selected) return
@@ -1377,7 +1397,10 @@ export default function CanvasEditor({
           return
         }
         const tr = (target as HTMLElement).getBoundingClientRect()
-        const at = placementFor(target, y < tr.top + tr.height / 2 ? 'before' : 'after')
+        // Near an edge means beside it; the middle of something that can hold
+        // blocks means inside it. Which is also how a block comes back out:
+        // aim at the edge of what it is in.
+        const at = dropPlacement(target, y, tr)
         dropRef.current = at
         setMoveDrop(at)
         // Read on every move rather than at the start: people press Ctrl once
@@ -1475,22 +1498,6 @@ export default function CanvasEditor({
             ))}
           </select>
         </label>
-        <label>
-          Insert
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) insertBlock(e.target.value)
-            }}
-          >
-            <option value="">block…</option>
-            {BLOCKS.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
-            ))}
-          </select>
-        </label>
         <span className="topbar-group">
           <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
             <b>B</b>
@@ -1538,12 +1545,13 @@ export default function CanvasEditor({
           </button>
           <button
             className={outlineOpen ? 'tb active' : 'tb'}
-            title="List every part of the document, and take the one a click keeps missing"
+            title="The structure of the document, and the fields it can name"
+            aria-label="Structure and fields panel"
             aria-pressed={outlineOpen}
             onClick={() => setOutlineOpen((on) => !on)}
           >
             <Icon name="structure" size={14} />
-            Structure
+            Panel
           </button>
         </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
@@ -2038,6 +2046,10 @@ export default function CanvasEditor({
         </div>
         {outlineOpen && (
           <OutlinePanel
+            tab={sideTab}
+            onTab={setSideTab}
+            fields={fields}
+            onInsertField={insertField}
             items={outline.items}
             selected={selected?.el ?? null}
             hiddenCount={outline.hidden}
