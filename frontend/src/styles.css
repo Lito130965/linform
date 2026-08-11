@@ -2800,3 +2800,74 @@ label {
 .border-width {
   width: 56px;
 }
+
+/* ---- the Jinja expression dialog ---- */
+
+.expr-dialog .expr-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.expr-dialog .expr-input input {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+}
+
+.expr-braces {
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+}
+
+.expr-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.expr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* Drag handle for a header or footer: beside its band, never over it. */
+.running-grip {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg-panel);
+  cursor: move;
+  z-index: 30;
+}
+
+/* One row, always, whether or not anything is selected.
+
+   Appearing is moving, and so is growing: this bar used to appear with the
+   first selection and to wrap to a second row on a wide selection, and either
+   way the canvas dropped under the pointer. The second click of a double click
+   then landed somewhere else entirely — which is why editing a field by
+   double-clicking it never worked on the first try. Crowded controls scroll
+   sideways instead. */
+.canvas-props {
+  /* The height of the bar with something selected — the box-model editor is
+     the tall part of it. Held whether or not anything is: a bar that appears
+     and grows moves the canvas under the pointer, and the number is guarded by
+     a browser test that clicks and checks the page did not move. */
+  min-height: 150px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+}

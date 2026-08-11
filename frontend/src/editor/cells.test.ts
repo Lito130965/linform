@@ -24,7 +24,7 @@ beforeEach(() => {
 
 const el = (id: string) => document.getElementById(id)!
 const rowText = (n: number) =>
-  Array.from(table.rows[n].cells).map((c) => c.textContent!.trim().replace(/ /g, '·'))
+  Array.from(table.rows[n].cells).map((c) => c.textContent!.trim())
 
 describe('merging across', () => {
   it('takes the next cell in, keeping what it said', () => {

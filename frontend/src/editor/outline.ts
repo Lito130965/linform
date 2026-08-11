@@ -62,8 +62,12 @@ export function labelFor(el: HTMLElement): string {
   // A page break is an empty div; without this it reads as "Block", which is
   // the one thing it is not.
   if (el.hasAttribute('data-lf-pagebreak')) return 'Page break'
+  // The canvas tags a running element with the corner it prints in
+  // (running.ts); the blocks write header/footer until it does.
   const running = el.getAttribute('data-lf-running')
-  if (running) return running === 'header' ? 'Page header' : 'Page footer'
+  if (running === 'unplaced') return 'Repeats — but nothing takes it'
+  if (running === 'header' || running?.startsWith('top-')) return 'Page header'
+  if (running === 'footer' || running?.startsWith('bottom-')) return 'Page footer'
   // Templates that were not built from the blocks carry the running position in
   // their own style; which margin box pulls them is the @page rule's business,
   // so this says what is certain about them.
