@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   back in the columns the merge covered.
 - **Vertical alignment in a cell**, and **a style menu** that turns a paragraph
   into a heading and back, keeping its fields, styles and text.
+- **Headers and footers are drawn in the margin band they print in** — a footer
+  pulled by `@bottom-left` sits at the bottom left of the page, selectable,
+  editable and named in the structure, instead of at the top of the document
+  where the markup happens to put it. They can be nudged from the edge by a
+  grip, in millimetres written as the element's own margins, which is what moves
+  them in print too.
+- **Jinja expressions are edited in a dialog** rather than a browser prompt,
+  with the document's fields offered beside the box. Reachable from the
+  properties bar as well as by double-clicking.
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
   table and the block around it can each be taken directly instead of hoping a
@@ -83,6 +92,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an A5 sheet and went on printing A4, with nothing anywhere saying so. The
   canvas now follows the document, and the menu that could disagree with it is
   gone.
+- **Selecting anything moved the page under the pointer.** The properties bar
+  appeared with the first selection and pushed the canvas down 116px, so the
+  second click of a double click landed somewhere else — which is why editing a
+  field by double-clicking it never worked on the first try. The bar keeps its
+  height whether or not something is selected, and a browser test clicks and
+  checks the page did not move.
+- **A footer placed at the foot of the page grew a second, empty page.** The
+  document's height was measured with `scrollHeight`, which counts what hangs
+  outside the box.
 - **A click on a field left no caret, so typing near one was silently
   discarded.** A chip is `contenteditable="false"`; clicking one selected it and
   put the caret nowhere, and every keystroke after that went nowhere too. On a
