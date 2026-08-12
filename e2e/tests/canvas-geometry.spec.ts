@@ -106,7 +106,9 @@ test('a resize handle sits on the edge it resizes', async ({ page, request }) =>
   await openTemplate(page, code)
   await enterVisual(page)
 
-  const cell = page.frameLocator(CANVAS).locator('td').first()
+  // A cell of the document, not of the footer: the invoice's footer is a table
+  // too now, and it sits in the bottom margin band rather than in the flow.
+  const cell = page.frameLocator(CANVAS).locator('.parties td').first()
   await cell.click()
 
   const row = page.locator('.row-resize')

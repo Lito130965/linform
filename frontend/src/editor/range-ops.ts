@@ -27,7 +27,8 @@
  * Pure DOM, no layout, no React: testable in jsdom.
  */
 
-export const ATOMIC_SELECTOR = '[data-jinja-expr], [data-jinja-raw]'
+export const ATOMIC_SELECTOR =
+  '[data-jinja-expr], [data-jinja-raw], .lf-page-no, .lf-page-count'
 
 /** Elements that can legally sit inside a line of text. */
 const INLINE_TAGS = new Set([

@@ -216,7 +216,11 @@ export const PRESETS: Preset[] = [
     ],
     generate: (raw) => {
       const p = withDefaults(PRESETS[8], raw)
-      return `<span>${patternToMarkup(p.pattern)}</span>`
+      // A block, not a run of text: it can then be selected, moved and
+      // deleted whole, and the counters inside it are atoms of their own — so
+      // "Всего {pages}, страница {page}" is a matter of typing the words and
+      // dragging the two, in whatever order the language wants them.
+      return `<div>${patternToMarkup(p.pattern)}</div>`
     },
   },
 ]

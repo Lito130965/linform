@@ -70,11 +70,15 @@ describe('generated Jinja is what we expect', () => {
     // styled like anything else. The counters themselves are empty spans a
     // stylesheet fills — the rules travel with the template (page-css.ts).
     const s = gen('page-numbers', { pattern: 'Page {page} of {pages}' })
-    expect(s).toBe('<span>Page <span class="lf-page-no"></span> of <span class="lf-page-count"></span></span>')
+    expect(s).toBe(
+      '<div>Page <span class="lf-page-no"></span> of <span class="lf-page-count"></span></div>',
+    )
     // The count is unknowable to the consumer, so it must not be a placeholder.
     expect(s).not.toContain('{{')
     // Reducible to just the bare number.
-    expect(gen('page-numbers', { pattern: '{page}' })).toBe('<span><span class="lf-page-no"></span></span>')
+    expect(gen('page-numbers', { pattern: '{page}' })).toBe(
+      '<div><span class="lf-page-no"></span></div>',
+    )
   })
 })
 

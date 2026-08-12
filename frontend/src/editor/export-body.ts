@@ -26,7 +26,7 @@ const CANVAS_ONLY_ATTRS = [
 
 // Placeholder chips and inert raw chips are both atomic: the caret must never
 // enter one and split the expression or the preserved source.
-const CHIP_SELECTOR = '[data-jinja-expr], [data-jinja-raw]'
+const CHIP_SELECTOR = '[data-jinja-expr], [data-jinja-raw], .lf-page-no, .lf-page-count'
 
 /** A dedicated page-break: an empty element whose only job is the break. It is
  * invisible in print, so the canvas badges it (via data-lf-pagebreak) to make

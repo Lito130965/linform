@@ -55,15 +55,31 @@ test('a header and a footer sit in the bands they print in', async ({ page, requ
 })
 
 test('the strip no longer shows a copy of what is drawn in the page', async ({ page, request }) => {
+  // A margin box holding TEXT is still previewed above the sheet — there is no
+  // element to draw for it. One holding an element is not: the element itself
+  // is in the page now, and a grey copy of it beside the real thing is worse
+  // than nothing.
   const code = uniqueCode('furniture-strip')
-  await createTemplate(request, code, exampleHtml('report'))
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 20mm; margin-bottom: 26mm;\n' +
+      '  @bottom-left { content: element(lf-footer) }\n' +
+      '  @top-right { content: \"DRAFT\" } }</style>\n' +
+      '<div id=\"foot\" style=\"position: running(lf-footer)\">Confidential</div>\n' +
+      '<h1>Report</h1>\n',
+  )
   await openTemplate(page, code)
   await enterVisual(page)
 
   const strips = (await page.locator('.furniture-strip').allInnerTexts()).join(' ')
+  expect(strips).toContain('DRAFT')
   expect(strips).not.toContain('element')
-  // The page number is not an element, so it is still previewed there.
-  expect(strips).toContain('Page')
+  // …and the element is in the page, where it can be clicked.
+  await expect(page.frameLocator(CANVAS).locator('#foot')).toHaveAttribute(
+    'data-lf-running',
+    'bottom-left',
+  )
 })
 
 test('a footer can be typed into, and is in the structure', async ({ page, request }) => {
