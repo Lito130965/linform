@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { laterOverrides, readPageSetup, writePageSetup } from './page-css'
+import {
+  ensurePageCounterRules,
+  laterOverrides,
+  readPageSetup,
+  writePageSetup,
+} from './page-css'
 
 const SIMPLE = '<style>\n  @page { size: A4; margin: 20mm 15mm; }\n  body { font-size: 11pt; }\n</style>\n<h1>x</h1>'
 
@@ -119,5 +124,24 @@ describe('writing it back', () => {
     const once = writePageSetup(SIMPLE, setup)
     const twice = writePageSetup(once, setup)
     expect(twice).toBe(once)
+  })
+})
+
+describe('the rules a page number needs', () => {
+  it('adds them to the first stylesheet, once', () => {
+    const out = ensurePageCounterRules(SIMPLE)
+    expect(out).toContain('.lf-page-no::after')
+    expect(out).toContain('counter(pages)')
+    expect(ensurePageCounterRules(out)).toBe(out)
+  })
+
+  it('adds a stylesheet to a template that has none', () => {
+    const out = ensurePageCounterRules('<p>bare</p>')
+    expect(out).toContain('.lf-page-count::after')
+    expect(out).toContain('<p>bare</p>')
+  })
+
+  it('leaves everything else where it was', () => {
+    expect(ensurePageCounterRules(SIMPLE)).toContain('body { font-size: 11pt; }')
   })
 })

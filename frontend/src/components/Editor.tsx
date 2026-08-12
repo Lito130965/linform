@@ -22,7 +22,7 @@ import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import { BLOCKS } from '../editor/blocks'
 import { fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
-import { writePageSetup, type PageSetup } from '../editor/page-css'
+import { ensurePageCounterRules, writePageSetup, type PageSetup } from '../editor/page-css'
 import { setFurnitureBox, type Edge } from '../editor/furniture-setup'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
@@ -338,7 +338,21 @@ export default function Editor({
   // inserts it raw; Visual inserts its protected form, so the two modes stay
   // provably identical (protect/restore inverse). detect() already guarded the
   // dialog's Insert button, so this cannot corrupt the canvas silently.
+  /** A page number is an empty span plus a rule that fills it. The span goes
+   * where the caret is; the rule has to be in the stylesheet, so it is written
+   * the same way the page setup is — to the source, once. */
+  const ensureCounterRules = () => {
+    const current = currentHtml()
+    const next = ensurePageCounterRules(current)
+    if (next === current) return
+    const split = splitForVisual(next)
+    if (split.ok) splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    htmlRef.current = next
+    setHtml(next)
+  }
+
   const insertPresetSource = (source: string) => {
+    if (source.includes('lf-page-no') || source.includes('lf-page-count')) ensureCounterRules()
     if (mode !== 'visual') {
       insertText(source)
       return

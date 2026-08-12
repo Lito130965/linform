@@ -192,6 +192,39 @@ export function laterOverrides(html: string): { side: string; value: string }[] 
   return [...seen].map(([side, value]) => ({ side, value }))
 }
 
+/** Classes the page-number preset writes, and the rules that make them print.
+ *
+ * A counter can only be printed by a pseudo-element, and a pseudo-element can
+ * only be given content by a stylesheet — so the two halves of a page number
+ * are an empty span in the document and a rule beside it. Measured rather than
+ * assumed: inside a running element the counter follows the page it is drawn
+ * on, so a number placed in a footer counts up as the pages do
+ * (tests/test_engine_capabilities.py).
+ */
+export const PAGE_NO_CLASS = 'lf-page-no'
+export const PAGE_COUNT_CLASS = 'lf-page-count'
+
+const COUNTER_RULES =
+  `.${PAGE_NO_CLASS}::after { content: counter(page); }\n` +
+  `.${PAGE_COUNT_CLASS}::after { content: counter(pages); }`
+
+/** Make sure a template carries those rules, once. */
+export function ensurePageCounterRules(html: string): string {
+  if (html.includes(`.${PAGE_NO_CLASS}::after`)) return html
+  const styles = styleTexts(html)
+  if (styles.length > 0) {
+    const style = styles[0]
+    return html.slice(0, style.end) + `\n${COUNTER_RULES}\n` + html.slice(style.end)
+  }
+  const block = `<style>\n${COUNTER_RULES}\n</style>\n`
+  const head = /<head\b[^>]*>/i.exec(html)
+  if (head) {
+    const at = head.index + head[0].length
+    return html.slice(0, at) + `\n${block}` + html.slice(at)
+  }
+  return block + html
+}
+
 // ------------------------------------------------------------------ writing
 
 const OWNED_PROPS = new Set([

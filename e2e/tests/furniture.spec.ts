@@ -250,3 +250,48 @@ test('switching a header off takes both halves with it', async ({ page, request 
   // The footer is not this switch's business.
   expect(saved).toContain('lf-footer')
 })
+
+test('a page number is a block, and it goes in the footer', async ({ page, request }) => {
+  // It used to be a string inside an @page margin box: it printed, and nothing
+  // in the editor could touch it. As content it goes wherever it is wanted —
+  // here, into the footer — and can be selected, styled and moved.
+  const code = uniqueCode('page-no')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  // Put the caret in the footer, then take the preset.
+  await frame.locator('#foot').click()
+  await page.keyboard.press('End')
+  await page.locator('.panel-tab', { hasText: 'Presets' }).click()
+  await page.locator('.preset-card', { hasText: 'Page number' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('.btn.primary').click()
+
+  // In the footer, not beside it.
+  await expect(frame.locator('#foot .lf-page-no')).toHaveCount(1)
+  await expect(frame.locator('#foot .lf-page-count')).toHaveCount(1)
+
+  await saveDraft(page, 'a page number in the footer')
+  const saved = await latestDraftHtml(request, code)
+  // The span and the rule that fills it both travel with the template.
+  expect(saved).toContain('lf-page-no')
+  expect(saved).toContain('counter(page)')
+  expect(saved).toContain('counter(pages)')
+})
+
+test('the palette no longer offers a header or a footer', async ({ page, request }) => {
+  // They are a property of the page — a switch in the page panel — and offering
+  // them here as well would be two ways to make one thing, one of which writes
+  // only half of it.
+  const code = uniqueCode('no-furniture-tiles')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const tiles = page.locator('.insert-tile')
+  await expect(tiles.filter({ hasText: 'Page header' })).toHaveCount(0)
+  await expect(tiles.filter({ hasText: 'Page footer' })).toHaveCount(0)
+  await expect(tiles.filter({ hasText: 'Table' })).toHaveCount(1)
+})
