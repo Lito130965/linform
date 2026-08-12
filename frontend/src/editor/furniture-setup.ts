@@ -126,6 +126,22 @@ export function setFurnitureBox(html: string, edge: Edge, on: boolean): string {
   return `<style>\n${fresh}</style>\n` + out
 }
 
+/**
+ * Take the margin box out of one stylesheet's text.
+ *
+ * Separate from the template-level writer because the two halves of a document
+ * do not live in the same place: `@page` rules written by the old blocks sit in
+ * `<style>` elements INSIDE the body, and the body belongs to the canvas. The
+ * shell rewriting the template text left those untouched — the canvas kept
+ * rendering the rule it still held, and the box came back the moment the canvas
+ * reported its next change. Removal therefore happens on both sides, and this
+ * is the piece the canvas uses on its own stylesheets.
+ */
+export function removeFurnitureBoxFromCss(css: string, edge: Edge): string {
+  const boxRe = new RegExp(`@${edge}-(?:left|center|right)\\s*\\{[^}]*element\\([^}]*\\}\\s*`, 'gi')
+  return css.replace(boxRe, '').replace(/@page\b[^{]*\{\s*\}\s*/gi, '')
+}
+
 /** An `@page { }` left holding nothing is litter. */
 function dropEmptyPageRules(html: string): string {
   let out = html

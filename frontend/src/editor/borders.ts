@@ -15,6 +15,8 @@
  * Pure style-object work, no layout: testable without a browser.
  */
 
+import { setDeclarations } from './style-attr'
+
 export type Side = 'top' | 'right' | 'bottom' | 'left'
 export const SIDES: Side[] = ['top', 'right', 'bottom', 'left']
 
@@ -76,34 +78,34 @@ export function sameOnEverySide(borders: Record<Side, Border>): boolean {
 /**
  * Write the four sides onto an element's inline style.
  *
- * Clearing first, then writing, because `border-top` left over from a previous
- * edit would otherwise survive under a shorthand written after it — the
- * shorthand comes first in the declaration and the longhand wins.
+ * Every property this function owns is cleared in the same rewrite, because a
+ * `border-top` left over from a previous edit would otherwise survive under a
+ * shorthand written after it — the shorthand comes first in the declaration and
+ * the longhand wins.
  */
 export function applyBorders(el: HTMLElement, borders: Record<Side, Border>): void {
-  el.style.removeProperty('border')
-  el.style.removeProperty('border-style')
+  const patch: Record<string, string | null> = {
+    border: null,
+    'border-style': null,
+  }
   for (const side of SIDES) {
-    el.style.removeProperty(`border-${side}`)
-    el.style.removeProperty(`border-${side}-style`)
+    patch[`border-${side}`] = null
+    patch[`border-${side}-style`] = null
   }
 
   // Removing a border is written as a style rather than as `border: none`.
-  // Both mean the same to a renderer, and only one of them survives every
-  // CSSOM: the shorthand with no width or colour to carry is dropped by some,
-  // which would leave a border the stylesheet put there still on the page.
-  if (sameOnEverySide(borders)) {
-    if (borders.top.style === 'none') el.style.borderStyle = 'none'
-    else el.style.border = borderToCss(borders.top)
-    return
-  }
-  // Through the named properties rather than setProperty: the hyphenated
-  // longhands are the corner of the CSSOM least evenly implemented, and a
+  // Both mean the same to a renderer and only one survives every CSSOM, and a
   // declaration that quietly fails to land is a border that quietly stays.
-  const style = el.style as CSSStyleDeclaration & Record<string, string>
-  for (const side of SIDES) {
-    const camel = side[0].toUpperCase() + side.slice(1)
-    if (borders[side].style === 'none') style[`border${camel}Style`] = 'none'
-    else style[`border${camel}`] = borderToCss(borders[side])
+  if (sameOnEverySide(borders)) {
+    if (borders.top.style === 'none') patch['border-style'] = 'none'
+    else patch.border = borderToCss(borders.top)
+  } else {
+    for (const side of SIDES) {
+      if (borders[side].style === 'none') patch[`border-${side}-style`] = 'none'
+      else patch[`border-${side}`] = borderToCss(borders[side])
+    }
   }
+  // Through the attribute: a CSSOM write would rebuild it from what the parser
+  // kept, and take `position: running(…)` off a header with it (style-attr.ts).
+  setDeclarations(el, patch)
 }

@@ -105,6 +105,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Aligning a footer, or changing its font, quietly stopped it being a
+  footer.** `position: running(lf-footer)` is what puts an element in the page
+  band, and no browser implements it — so it is never in the CSSOM, and it
+  survives only as text in the style attribute. Every style control wrote
+  through `el.style`, which rebuilds that attribute from the declarations the
+  parser kept and drops everything else: the footer became an ordinary block in
+  the flow, visible only once the PDF came back without one. Style edits are now
+  made on the attribute as text, so engine-specific CSS a template carries is
+  left exactly as it was written.
+- **Both bands could not be switched off at once.** Unchecking the second one
+  put the tick back on the first, however many times it was cleared. The
+  examples keep the `@page` rule that pulls a header beside the header itself,
+  in a `<style>` inside the body — which is the canvas's document, not the
+  shell's copy of the template — so the rewrite never reached it and the canvas
+  handed the rule straight back. The switch now clears both.
 - **The page-size menu changed the canvas and nothing else.** Choosing A5 drew
   an A5 sheet and went on printing A4, with nothing anywhere saying so. The
   canvas now follows the document, and the menu that could disagree with it is

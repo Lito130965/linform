@@ -13,6 +13,7 @@
  */
 
 import type { PageBox } from './furniture'
+import { setDeclaration } from './style-attr'
 
 export type Layer = 'normal' | 'behind' | 'cell' | 'page'
 
@@ -28,7 +29,7 @@ const LAYER_PROPS = [
 
 function clearAnchor(el: HTMLElement | null): void {
   if (el?.dataset.lfAnchor) {
-    el.style.removeProperty('position')
+    setDeclaration(el, 'position', null)
     delete el.dataset.lfAnchor
   }
 }
@@ -52,7 +53,10 @@ export function layerOf(img: HTMLElement): Layer {
 function anchor(el: HTMLElement | null): void {
   const positioned = ['relative', 'absolute', 'fixed', 'sticky']
   if (el && !positioned.includes(getComputedStyle(el).position)) {
-    el.style.position = 'relative'
+    // Through the attribute: the parent being anchored may be a running header,
+    // whose own `position` the browser cannot parse and would drop on any CSSOM
+    // write (style-attr.ts).
+    setDeclaration(el, 'position', 'relative')
     el.dataset.lfAnchor = '1'
   }
 }
