@@ -49,6 +49,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Jinja expressions are edited in a dialog** rather than a browser prompt,
   with the document's fields offered beside the box. Reachable from the
   properties bar as well as by double-clicking.
+- **A header or footer is a switch in the page panel**, which writes both halves
+  — the `@page` margin box and the element it pulls — and sets the band's height,
+  which is the page margin on that edge. The band is an ordinary container: a
+  name on the left, a page number in the middle and a code on the right is a
+  three-column block inside it. They are gone from the Insert palette, where
+  they could only ever write half of the thing.
+- **A page number is content.** The preset inserts a block holding two atoms —
+  the page and the total — which can be selected, moved, deleted and typed
+  around, so a language that puts the total first is a matter of dragging them.
+  It works in a header, in a footer, or in a line of text; measured against the
+  engine, a counter inside a running element follows the page it is drawn on.
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
   table and the block around it can each be taken directly instead of hoping a
