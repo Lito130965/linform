@@ -55,6 +55,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name on the left, a page number in the middle and a code on the right is a
   three-column block inside it. They are gone from the Insert palette, where
   they could only ever write half of the thing.
+- **The space between two sheets is real space.** Each page occupies a whole
+  sheet in the canvas, and the gap between two of them holds what it holds in
+  print: the footer band of the page above, the paper edge, and the header band
+  of the page below — so what the furniture costs is visible on every page and
+  not only on the first. A block that would run past its page is moved to the
+  next page's content band rather than drawn across the boundary.
 - **A page number is content.** The preset inserts a block holding two atoms —
   the page and the total — which can be selected, moved, deleted and typed
   around, so a language that puts the total first is a matter of dragging them.
