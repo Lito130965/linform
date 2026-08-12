@@ -182,3 +182,71 @@ test('selecting something does not move the page under the pointer', async ({ pa
   await frame.locator('#line [data-jinja-expr]').click()
   expect(await where()).toBe(before)
 })
+
+test('a header is switched on from the page panel and filled like any block', async ({
+  page,
+  request,
+}) => {
+  // The shape somebody actually asks for: a name on the left, a page number in
+  // the middle, a code on the right. That is a three-column block inside the
+  // header — made of the same parts as the rest of the document, which is why
+  // the header is a container rather than a special kind of thing.
+  const code = uniqueCode('furniture-on')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 20mm; }</style>\n<h1 id="title">Report</h1>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  await page.locator('.canvas-topbar button', { hasText: 'Page:' }).click()
+  await page.locator('.page-setup .furniture-row', { hasText: 'Header' }).getByRole('checkbox').check()
+
+  const frame = page.frameLocator(CANVAS)
+  const header = frame.locator('div[style*="running(lf-header)"]')
+  await expect(header).toHaveAttribute('data-lf-running', 'top-center')
+
+  // Its height is the top margin, set where the band is switched on.
+  await page.locator('.canvas-topbar button', { hasText: 'Page:' }).click()
+  await page.getByLabel('Header height in millimetres').fill('30')
+  await page.keyboard.press('Enter')
+  await expect.poll(async () => (await header.boundingBox())!.height).toBeGreaterThan(
+    (await frame.locator('#title').boundingBox())!.height,
+  )
+  await page.keyboard.press('Escape')
+
+  // Three columns inside it, from the palette.
+  await page.locator('.canvas-outline .outline-row', { hasText: 'Page header' }).click()
+  await page.locator('.insert-tile', { hasText: '3 columns' }).click()
+  await expect(header.locator('table td')).toHaveCount(3)
+
+  await saveDraft(page, 'a header with three columns')
+  const saved = await latestDraftHtml(request, code)
+  expect(saved).toContain('@top-center')
+  expect(saved).toContain('running(lf-header)')
+  expect(saved).toMatch(/margin[^;]*30mm/)
+})
+
+test('switching a header off takes both halves with it', async ({ page, request }) => {
+  const code = uniqueCode('furniture-off')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+  await expect(frame.locator('#head')).toHaveCount(1)
+
+  await page.locator('.canvas-topbar button', { hasText: 'Page:' }).click()
+  await page
+    .locator('.page-setup .furniture-row', { hasText: 'Header' })
+    .getByRole('checkbox')
+    .uncheck()
+
+  await expect(frame.locator('#head')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await saveDraft(page, 'no header')
+  const saved = await latestDraftHtml(request, code)
+  expect(saved).not.toContain('lf-head')
+  // The footer is not this switch's business.
+  expect(saved).toContain('lf-footer')
+})

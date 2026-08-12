@@ -23,6 +23,7 @@ import { parseHints } from '../presets/hints'
 import { BLOCKS } from '../editor/blocks'
 import { fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
 import { writePageSetup, type PageSetup } from '../editor/page-css'
+import { setFurnitureBox, type Edge } from '../editor/furniture-setup'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import { fieldRows, type LoopScope } from '../editor/fields'
@@ -399,6 +400,23 @@ export default function Editor({
     setDirty(true)
   }
 
+  /** A header or footer switched on or off.
+   *
+   * Only the stylesheet half — the margin box that pulls the element. The
+   * canvas has already put the element in the body, or taken it out, because
+   * that half is a document edit and the canvas is where the document lives:
+   * rewriting the body from here would rebuild the canvas and shut the panel
+   * the switch is in. See furniture-setup.ts for why both halves are needed.
+   */
+  const applyFurniture = (edge: Edge, on: boolean) => {
+    const next = setFurnitureBox(currentHtml(), edge, on)
+    const split = splitForVisual(next)
+    if (split.ok) splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    htmlRef.current = next
+    setHtml(next)
+    setDirty(true)
+  }
+
   const insertBlock = (id: string) => {
     if (mode === 'visual') {
       canvasApiRef.current?.insertBlock(id)
@@ -653,6 +671,7 @@ export default function Editor({
               compact={overlayPanels}
               fields={fields}
               onPageSetup={applyPageSetup}
+              onFurniture={applyFurniture}
               onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {

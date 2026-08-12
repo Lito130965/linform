@@ -39,8 +39,9 @@ import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
 import { getFilterArg, setFilterArg } from './filter-args'
 import { parseMarginBoxes, parsePageBox, type PageBox } from './furniture'
-import { RUNNING_ATTR, markRunning, runningBoxCss } from './running'
+import { RUNNING_ATTR, markRunning, runningBoxCss, slotsByName } from './running'
 import PageSetupPanel from './PageSetupPanel'
+import { RUNNING_NAME, hasFurniture, runningElementHtml, type Edge } from './furniture-setup'
 import ExpressionDialog from './ExpressionDialog'
 import { laterOverrides, readPageSetup, type PageSetup } from './page-css'
 import {
@@ -185,6 +186,7 @@ export default function CanvasEditor({
   onSanitized,
   onScopes,
   onPageSetup,
+  onFurniture,
   compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
@@ -206,6 +208,9 @@ export default function CanvasEditor({
   /** fires when the page itself is changed; the shell writes it into the
    * template's @page rule and hands the new stylesheet back */
   onPageSetup?: (setup: PageSetup) => void
+  /** fires when a header or footer is switched on or off; the shell writes both
+   * halves — the margin box and the element it pulls */
+  onFurniture?: (edge: Edge, on: boolean) => void
   /** the window is tight enough that panels cost more than they give */
   compact?: boolean
 }) {
@@ -226,8 +231,8 @@ export default function CanvasEditor({
   // The palette lives in the shell, and the function it calls is declared
   // below the mount effect that publishes the API.
   const insertBlockRef = useRef<((id: string) => void) | null>(null)
-  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes, onPageSetup })
-  callbacksRef.current = { onChange, onReady, onSanitized, onScopes, onPageSetup }
+  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes, onPageSetup, onFurniture })
+  callbacksRef.current = { onChange, onReady, onSanitized, onScopes, onPageSetup, onFurniture }
   // The stylesheet element the canvas injects, kept so a change to the page
   // can be applied without tearing the document down and losing its history.
   const styleElRef = useRef<HTMLStyleElement | null>(null)
@@ -238,6 +243,15 @@ export default function CanvasEditor({
   const pageSetup = useMemo(() => readPageSetup(`<style>${canvasStyles}</style>`), [canvasStyles])
   const pageOverrides = useMemo(
     () => laterOverrides(`<style>${canvasStyles}</style>`),
+    [canvasStyles],
+  )
+  // Which edges carry a header or a footer. Named apart from `furniture`, which
+  // is the margin boxes the strips preview.
+  const bands = useMemo(
+    () => ({
+      top: hasFurniture(`<style>${canvasStyles}</style>`, 'top'),
+      bottom: hasFurniture(`<style>${canvasStyles}</style>`, 'bottom'),
+    }),
     [canvasStyles],
   )
   const [pageSetupOpen, setPageSetupOpen] = useState(false)
@@ -453,6 +467,41 @@ export default function CanvasEditor({
     chip.textContent = `{{ ${expression} }}`
     prepareFragment(chip)
     insertNodes([chip], body)
+  }
+
+  /** Switch a header or footer on or off.
+   *
+   * The element half happens here, in the live document — so it is one undo
+   * step like any other edit, and the canvas is not torn down and rebuilt
+   * (which would shut the panel the switch is in). The shell writes the
+   * stylesheet half.
+   */
+  const toggleFurniture = (edge: Edge, on: boolean): void => {
+    const body = bodyRef.current
+    if (!body) return
+    const doc = body.ownerDocument
+    // The name the margin box on this edge actually pulls, not the one this
+    // editor would have chosen: a template written by hand calls its header
+    // whatever it likes, and the switch turns off THAT header.
+    const named = [...slotsByName(canvasStyles)].find(([, slot]) => slot.edge === edge)?.[0]
+    const name = named ?? RUNNING_NAME[edge]
+    const existing = body.querySelector(`[style*="running(${name})"]`)
+    if (on && !existing) {
+      const holder = doc.createElement('div')
+      holder.innerHTML = runningElementHtml(edge)
+      const node = holder.firstElementChild
+      if (node) {
+        prepareFragment(node)
+        if (edge === 'top') body.prepend(node)
+        else body.append(node)
+        select(node)
+      }
+    } else if (!on && existing) {
+      existing.remove()
+      select(null)
+    }
+    callbacksRef.current.onFurniture?.(edge, on)
+    setTick((t) => t + 1)
   }
 
   // ---- typing a field --------------------------------------------------
@@ -1692,6 +1741,8 @@ export default function CanvasEditor({
             <PageSetupPanel
               setup={pageSetup}
               overrides={pageOverrides}
+              furniture={bands}
+              onFurniture={toggleFurniture}
               onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
               onClose={() => setPageSetupOpen(false)}
             />
@@ -2139,7 +2190,17 @@ export default function CanvasEditor({
                   className="page-boundary"
                   style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
                 >
-                  <span>page {i + 2}</span>
+                  {/* What the next page spends before its content starts. The
+                      canvas is one strip — it does not draw the gap between
+                      sheets — so the line says what the gap holds. */}
+                  <span>
+                    page {i + 2}
+                    {bands.bottom || bands.top
+                      ? ` · ${[bands.bottom && 'footer', bands.top && 'header']
+                          .filter(Boolean)
+                          .join(' + ')} repeat here`
+                      : ''}
+                  </span>
                 </div>
               ))}
               {cellRect && (

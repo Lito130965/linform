@@ -35,12 +35,17 @@ const SIDES: (keyof PageMargins)[] = ['top', 'right', 'bottom', 'left']
 export default function PageSetupPanel({
   setup,
   overrides,
+  furniture,
+  onFurniture,
   onChange,
   onClose,
 }: {
   setup: PageSetup
   /** Sides a later @page rule wins, and what set them. */
   overrides: { side: string; value: string }[]
+  /** Which edges currently carry a header or a footer. */
+  furniture: { top: boolean; bottom: boolean }
+  onFurniture: (edge: 'top' | 'bottom', on: boolean) => void
   onChange: (next: PageSetup) => void
   onClose: () => void
 }) {
@@ -113,6 +118,39 @@ export default function PageSetupPanel({
         </button>
       </span>
 
+      {/* A header is the top margin: a margin box occupies exactly the strip
+          between the paper edge and the content, which is what Word calls the
+          top margin and puts the header inside. One number, so the height of
+          the band is set where the band is switched on. */}
+      <div className="page-furniture">
+        {(['top', 'bottom'] as const).map((edge) => (
+          <div key={edge} className="furniture-row">
+            <label className="prop">
+              <input
+                type="checkbox"
+                checked={furniture[edge]}
+                onChange={(e) => onFurniture(edge, e.target.checked)}
+              />
+              {edge === 'top' ? 'Header' : 'Footer'}
+            </label>
+            {furniture[edge] && (
+              <label className="prop">
+                height
+                <input
+                  aria-label={`${edge === 'top' ? 'Header' : 'Footer'} height in millimetres`}
+                  defaultValue={toMm(setup.margin[edge])}
+                  onBlur={(e) => setMargin(edge, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                />
+                mm
+              </label>
+            )}
+          </div>
+        ))}
+      </div>
+
       <div className="page-margins">
         <span className="cc-label">Margins, mm</span>
         {SIDES.map((side) => (
@@ -125,6 +163,12 @@ export default function PageSetupPanel({
             )}
             <input
               aria-label={`${side} margin in millimetres`}
+              disabled={(side === 'top' || side === 'bottom') && furniture[side]}
+              title={
+                (side === 'top' || side === 'bottom') && furniture[side]
+                  ? `Set by the ${side === 'top' ? 'header' : 'footer'} height above`
+                  : undefined
+              }
               defaultValue={toMm(setup.margin[side])}
               onBlur={(e) => setMargin(side, e.target.value)}
               onKeyDown={(e) => {

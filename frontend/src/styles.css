@@ -2871,3 +2871,22 @@ label {
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+.page-furniture {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.furniture-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.furniture-row .prop input:not([type='checkbox']) {
+  width: 52px;
+}
