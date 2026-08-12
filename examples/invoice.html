@@ -7,12 +7,22 @@
 <head>
 <meta charset="utf-8">
 <style>
+  /* The footer is an element pulled into the bottom margin, not a string in a
+     margin box: everything in it — the invoice number, the page counter — is
+     ordinary content the editor can select, move and edit. */
   @page {
     size: A4;
     margin: 20mm 15mm 22mm 15mm;
-    @bottom-left  { content: "Invoice {{ number }}"; font-size: 8pt; color: #666; }
-    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; }
+    /* width: 100% — a margin box is shrink-to-fit otherwise, and a footer
+       that shrinks to its text is not a footer. */
+    @bottom-center { content: element(lf-footer); width: 100%; }
   }
+  .lf-page-no::after { content: counter(page); }
+  .lf-page-count::after { content: counter(pages); }
+  .foot { font-size: 8pt; color: #666; }
+  .foot table { width: 100%; border-collapse: collapse; }
+  .foot td { width: 50%; }
+  .foot .right { text-align: right; }
   body { font-family: 'Liberation Serif', serif; font-size: 11pt; line-height: 1.35; }
   h1 { font-size: 20pt; margin-bottom: 2mm; }
   .meta { color: #444; margin-bottom: 8mm; }
@@ -31,6 +41,16 @@
 </style>
 </head>
 <body>
+  <!-- Page footer: repeats on every printed page, and is edited in place. The
+       page counter is two spans the stylesheet above fills — counter(page) is
+       evaluated on the page the footer is drawn on, so it counts up. -->
+  <div style="position: running(lf-footer);" class="foot">
+    <table><tr>
+      <td>Invoice {{ number }}</td>
+      <td class="right">Page <span class="lf-page-no"></span> of <span class="lf-page-count"></span></td>
+    </tr></table>
+  </div>
+
   <h1>Invoice {{ number }}</h1>
   <div class="meta">{{ date }}</div>
 

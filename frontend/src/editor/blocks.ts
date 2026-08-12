@@ -3,6 +3,12 @@
  * Ported from the GrapesJS block manager; every entry is plain markup now —
  * the "image" block inserts a placeholder img the user then points at an
  * asset (the old editor used a GrapesJS asset-picker type here).
+ *
+ * Headers and footers are not here. They are a property of the page rather
+ * than something to drop into the flow — two halves that have to agree, a
+ * margin box and the element it pulls — so they are a switch in the page panel
+ * (furniture-setup.ts). Offering them here as well would be two ways to make
+ * one thing, one of which writes only half of it.
  */
 
 export interface BlockDef {
@@ -49,25 +55,5 @@ export const BLOCKS: BlockDef[] = [
     id: 'page-break',
     label: 'Page break',
     content: '<div style="page-break-after: always;"></div>',
-  },
-  // Header/footer repeat on every printed page via the running-element pattern
-  // (as in ai_test). The @page rule lives in a <style> carried in the body —
-  // WeasyPrint honours it there, so nothing touches the read-only author CSS.
-  // data-lf-running is a canvas-only badge marker, stripped on export.
-  {
-    id: 'header',
-    label: 'Page header',
-    content:
-      '<style>@page { margin-top: 22mm; @top-center { content: element(lf-header); } }</style>' +
-      '<div data-lf-running="header" style="position: running(lf-header); font-size: 9pt; ' +
-      'text-align: center; color: #555;">Header text — edit me</div>',
-  },
-  {
-    id: 'footer',
-    label: 'Page footer',
-    content:
-      '<style>@page { margin-bottom: 22mm; @bottom-center { content: element(lf-footer); } }</style>' +
-      '<div data-lf-running="footer" style="position: running(lf-footer); font-size: 9pt; ' +
-      'text-align: center; color: #555;">Footer text — edit me</div>',
   },
 ]

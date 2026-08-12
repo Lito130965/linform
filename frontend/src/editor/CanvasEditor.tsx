@@ -22,22 +22,39 @@ import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
 import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { CANVAS_MODIFIERS, isDuplicating, keepRatio, lockAxis } from './modifiers'
 import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
-import { place, placementFor, type Placement } from './placement'
+import { dropPlacement, place, placementFor, type Placement } from './placement'
+import { scopesAt, type FieldRow, type LoopScope } from './fields'
+import { rank, triggerAt, type Trigger } from './typeahead'
+import {
+  ATOMIC_SELECTOR,
+  allInline,
+  caretAfter,
+  caretBeside,
+  caretRangeIn,
+  clampOutOfAtomic,
+} from './range-ops'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
 import { type Colour, parse as parseColour, toCss, toHex } from './color'
 import { getFilterArg, setFilterArg } from './filter-args'
-import { parseMarginBoxes, parsePageBox, runningAffordanceCss } from './furniture'
+import { parseMarginBoxes, parsePageBox, type PageBox } from './furniture'
+import { RUNNING_ATTR, markRunning, runningBoxCss, slotsByName } from './running'
+import PageSetupPanel from './PageSetupPanel'
+import { RUNNING_NAME, hasFurniture, runningElementHtml, type Edge } from './furniture-setup'
+import ExpressionDialog from './ExpressionDialog'
+import { laterOverrides, readPageSetup, type PageSetup } from './page-css'
 import {
   canPaginate,
   gapToNextPage,
+  overflowsItsPage,
   pageBreakOffsets,
   pageCountFor,
+  sheetEdges,
   usablePageHeight,
   type PageGeometry,
 } from './pagination'
-import OutlinePanel from './OutlinePanel'
+import OutlinePanel, { type SideTab } from './OutlinePanel'
 import { CROWDED, outlineOf, selectableChildren, type OutlineItem } from './outline'
 import { describeRemoved, sanitizeHtml } from './sanitize'
 import {
@@ -51,6 +68,8 @@ import {
   setTableBorders,
 } from './table-ops'
 import { type Layer, layerOf, setLayer } from './layer'
+import BorderControl from './BorderControl'
+import { canMergeDown, canMergeRight, isMerged, mergeDown, mergeRight, splitCell } from './cells'
 import { existingValue, isConditional, isRepeating, makeRepeating, wrapConditional } from './convert'
 import { protect } from '../jinja-bridge'
 import Icon from '../components/Icon'
@@ -63,19 +82,18 @@ import { setAlign, toggleInline } from './text-commands'
  * kept in sync for placeholders. Shared by the double-click and the keyboard
  * path, because "the mouse can do one more thing than the keyboard" is how an
  * editor stops being usable without one. */
-function editExpression(el: Element, doc: Document): void {
-  const attr = el.hasAttribute('data-jinja-expr')
-    ? 'data-jinja-expr'
-    : el.hasAttribute('data-jinja-for')
-      ? 'data-jinja-for'
-      : el.hasAttribute('data-jinja-if')
-        ? 'data-jinja-if'
-        : null
-  if (!attr) return
-  const current = el.getAttribute(attr) ?? ''
-  const next = doc.defaultView?.prompt('Jinja expression', current)
-  if (next === null || next === undefined) return
-  const expr = next.trim()
+const EXPR_ATTRS = ['data-jinja-expr', 'data-jinja-for', 'data-jinja-if'] as const
+type ExprAttr = (typeof EXPR_ATTRS)[number]
+
+/** Which kind of Jinja an element carries, if any. */
+function expressionAttr(el: Element): ExprAttr | null {
+  return EXPR_ATTRS.find((attr) => el.hasAttribute(attr)) ?? null
+}
+
+/** Write an edited expression back. The attribute is what restore() reads on
+ * the way out; a placeholder's visible label is kept in step with it. */
+function writeExpression(el: Element, attr: ExprAttr, expression: string): void {
+  const expr = expression.trim()
   if (!expr) return
   el.setAttribute(attr, expr)
   if (attr === 'data-jinja-expr') el.textContent = `{{ ${expr} }}`
@@ -89,6 +107,25 @@ function breakSide(el: HTMLElement): 'after' | 'before' | null {
   return null
 }
 
+/** Make the canvas body the page area: inset by the @page margins exactly as
+ * the printed body is. Applied at mount and again whenever the page changes,
+ * so the two can never say different things. */
+function insetBody(body: HTMLElement, pageBox: PageBox | null): void {
+  body.style.margin = '0'
+  if (!pageBox) {
+    body.style.removeProperty('position')
+    for (const side of ['top', 'left', 'right'] as const) body.style.removeProperty(side)
+    body.style.removeProperty('padding-bottom')
+    return
+  }
+  const m = pageBox.margin
+  body.style.position = 'absolute'
+  body.style.top = m.top
+  body.style.left = m.left
+  body.style.right = m.right
+  body.style.paddingBottom = m.bottom
+}
+
 /** Push content past a page break onto the next sheet, so the canvas shows the
  * following content on a new page as it will print. The pushes are canvas-only
  * spacer divs (data-lf-spacer), stripped on export; the caller detaches the
@@ -97,30 +134,53 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
   for (const s of Array.from(body.querySelectorAll('[data-lf-spacer]'))) s.remove()
   if (!canPaginate(geom)) return
   const doc = body.ownerDocument
+
+  const spacerOf = (height: number): HTMLElement => {
+    const spacer = doc.createElement('div')
+    spacer.setAttribute('data-lf-spacer', '1')
+    spacer.style.height = `${Math.round(height)}px`
+    return spacer
+  }
+
+  // Explicit breaks first, and by their own element rather than by the top-level
+  // block that holds them: `page-break-after` on a row inside a table is a
+  // thing people write, and the spacer goes beside the element that asked.
   for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
     const side = breakSide(el)
     if (!side) continue
-    // Sheet coordinates, which is what the page geometry is expressed in. A
-    // rect inside the iframe is already measured from the sheet corner; the
-    // body starts one top margin below it.
     const rect = el.getBoundingClientRect()
-    const edge = side === 'after' ? rect.bottom : rect.top
-    // Land on the next page's CONTENT band, not the next sheet edge: every page
-    // spends its top and bottom margins, so the two are not the same place.
-    const gap = gapToNextPage(edge, geom)
-    if (gap <= 2 || gap >= usablePageHeight(geom)) continue
-    const spacer = doc.createElement('div')
-    spacer.setAttribute('data-lf-spacer', '1')
-    spacer.style.height = `${Math.round(gap)}px`
-    if (side === 'after') el.after(spacer)
-    else el.before(spacer)
+    const gap = gapToNextPage(side === 'after' ? rect.bottom : rect.top, geom)
+    if (gap <= 2 || gap >= geom.pageHeight) continue
+    if (side === 'after') el.after(spacerOf(gap))
+    else el.before(spacerOf(gap))
+  }
+
+  // Then the natural ones. Each sheet occupies a whole page height in the strip,
+  // so a block that would run past its page is moved to the next page's content
+  // band and the space between the two sheets — one footer band, the paper edge,
+  // one header band — is left standing where it belongs.
+  //
+  // In document order, measuring as it goes: a spacer shifts everything after
+  // it, and every rect read here is read after the shifts above it have already
+  // happened. That is what keeps this from needing to know how much it has
+  // inserted, and from feeding its own output back into the next pass.
+  for (const child of Array.from(body.children)) {
+    if (child.hasAttribute('data-lf-spacer')) continue
+    const rect = child.getBoundingClientRect()
+    if (rect.height === 0) continue
+    if (!overflowsItsPage(rect.top, rect.height, geom)) continue
+    const gap = gapToNextPage(rect.top, geom)
+    if (gap <= 2) continue
+    child.before(spacerOf(gap))
   }
 }
 
 /** What the shell (Editor.tsx) may ask of the canvas. */
 export interface CanvasEditorApi {
-  /** Insert markup at the selection (after the selected node) or append. */
+  /** Insert markup where the caret is (inline) or beside the selected block. */
   insertHtml: (html: string) => void
+  /** Insert one of the palette's blocks, and select it so it can be edited. */
+  insertBlock: (id: string) => void
   /** Current canvas-form body (protected markup, canvas asset URLs). */
   getBody: () => string
 }
@@ -145,7 +205,11 @@ export default function CanvasEditor({
   onChange,
   onReady,
   arrayHints = [],
+  fields = [],
   onSanitized,
+  onScopes,
+  onPageSetup,
+  onFurniture,
   compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
@@ -157,8 +221,19 @@ export default function CanvasEditor({
   onReady?: (api: CanvasEditorApi) => void
   /** array names from the editor's test data, to suggest in convert dialogs */
   arrayHints?: string[]
+  /** every value this document can name, for the `{{` typeahead */
+  fields?: FieldRow[]
   /** fires with a warning when executable markup was stripped on load, or null */
   onSanitized?: (warning: string | null) => void
+  /** fires with the loops in force at the selection, so the field list can say
+   * which of them can be written here and under what name */
+  onScopes?: (scopes: LoopScope[]) => void
+  /** fires when the page itself is changed; the shell writes it into the
+   * template's @page rule and hands the new stylesheet back */
+  onPageSetup?: (setup: PageSetup) => void
+  /** fires when a header or footer is switched on or off; the shell writes both
+   * halves — the margin box and the element it pulls */
+  onFurniture?: (edge: Edge, on: boolean) => void
   /** the window is tight enough that panels cost more than they give */
   compact?: boolean
 }) {
@@ -176,10 +251,37 @@ export default function CanvasEditor({
   // Commit whatever is on the canvas now: the debounced path calls it, and so
   // does the end of a gesture.
   const commitRef = useRef<(() => void) | null>(null)
-  const callbacksRef = useRef({ onChange, onReady, onSanitized })
-  callbacksRef.current = { onChange, onReady, onSanitized }
+  // The palette lives in the shell, and the function it calls is declared
+  // below the mount effect that publishes the API.
+  const insertBlockRef = useRef<((id: string) => void) | null>(null)
+  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes, onPageSetup, onFurniture })
+  callbacksRef.current = { onChange, onReady, onSanitized, onScopes, onPageSetup, onFurniture }
+  // The stylesheet element the canvas injects, kept so a change to the page
+  // can be applied without tearing the document down and losing its history.
+  const styleElRef = useRef<HTMLStyleElement | null>(null)
+  const bandsElRef = useRef<HTMLStyleElement | null>(null)
+  const measureRef = useRef<(() => void) | null>(null)
 
-  const [format, setFormat] = useState(() => formatFromStyles(canvasStyles))
+  const format = useMemo(() => formatFromStyles(canvasStyles), [canvasStyles])
+  const pageSetup = useMemo(() => readPageSetup(`<style>${canvasStyles}</style>`), [canvasStyles])
+  const pageOverrides = useMemo(
+    () => laterOverrides(`<style>${canvasStyles}</style>`),
+    [canvasStyles],
+  )
+  // Which edges carry a header or a footer. Named apart from `furniture`, which
+  // is the margin boxes the strips preview.
+  const bands = useMemo(
+    () => ({
+      top: hasFurniture(`<style>${canvasStyles}</style>`, 'top'),
+      bottom: hasFurniture(`<style>${canvasStyles}</style>`, 'bottom'),
+    }),
+    [canvasStyles],
+  )
+  const [pageSetupOpen, setPageSetupOpen] = useState(false)
+  // The expression being edited, in a dialog rather than a window prompt: a
+  // prompt cannot be styled, cannot show what the expression is for, and on a
+  // second monitor opens somewhere the user is not looking.
+  const [editingExpr, setEditingExpr] = useState<{ el: Element; attr: ExprAttr } | null>(null)
   const [zoom, setZoom] = useState(1)
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
@@ -191,6 +293,7 @@ export default function CanvasEditor({
   // The structure panel. Open by default where there is room for it: a panel
   // nobody knows about answers nobody's question.
   const [outlineOpen, setOutlineOpen] = useState(!compact)
+  const [sideTab, setSideTab] = useState<SideTab>('structure')
   // Which containers the panel has been told to open or close. A WeakMap rather
   // than the document, because opening a twisty is not an edit: writing it into
   // the DOM would put a mutation burst — repaginate, re-measure, re-export —
@@ -231,6 +334,15 @@ export default function CanvasEditor({
   const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
   const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
+  // Typing `{{` in the canvas offers the fields, at the caret. Held here as a
+  // position plus a shortlist; the text node it belongs to is in the ref, since
+  // the keyboard handler inside the iframe is mounted once and cannot see state.
+  const [typeahead, setTypeahead] = useState<
+    { left: number; top: number; rows: FieldRow[]; active: number } | null
+  >(null)
+  const typeaheadRef = useRef<{ node: Text; trigger: Trigger; rows: FieldRow[]; active: number } | null>(null)
+  const fieldsRef = useRef<FieldRow[]>(fields)
+  fieldsRef.current = fields
 
   const pageWidth = useMemo(
     () => PAGE_FORMATS.find((f) => f.id === format)?.width ?? null,
@@ -257,9 +369,10 @@ export default function CanvasEditor({
   const pageCount = geometry ? pageCountFor(frameHeight, geometry) : 1
   const breakOffsets = geometry ? pageBreakOffsets(frameHeight, geometry) : []
   // The sheet shown always reaches the bottom edge of the last printed page.
-  const sheetHeight = geometry
-    ? Math.max(frameHeight, margins.top + pageCount * usablePageHeight(geometry) + margins.bottom)
-    : frameHeight
+  // Whole sheets: the strip is as tall as the pages it holds, so the space
+  // between two of them is on screen rather than only in the arithmetic.
+  const sheetHeight = geometry ? Math.max(frameHeight, pageCount * geometry.pageHeight) : frameHeight
+  const edges = geometry ? sheetEdges(frameHeight, geometry) : []
   // The observer closure (mounted once) reads the live geometry from here.
   const geometryRef = useRef(geometry)
   geometryRef.current = geometry
@@ -368,6 +481,116 @@ export default function CanvasEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick, zoom, breakOffsets.join(',')])
 
+  /** Put a field where the caret is. One builder for the panel and the `{{`
+   * list, so the two cannot write different markup for the same field. */
+  const insertField = (expression: string): void => {
+    const body = bodyRef.current
+    if (!body) return
+    const chip = body.ownerDocument.createElement('span')
+    chip.setAttribute('data-jinja-expr', expression)
+    chip.textContent = `{{ ${expression} }}`
+    prepareFragment(chip)
+    insertNodes([chip], body)
+  }
+
+  /** Switch a header or footer on or off.
+   *
+   * The element half happens here, in the live document — so it is one undo
+   * step like any other edit, and the canvas is not torn down and rebuilt
+   * (which would shut the panel the switch is in). The shell writes the
+   * stylesheet half.
+   */
+  const toggleFurniture = (edge: Edge, on: boolean): void => {
+    const body = bodyRef.current
+    if (!body) return
+    const doc = body.ownerDocument
+    // The name the margin box on this edge actually pulls, not the one this
+    // editor would have chosen: a template written by hand calls its header
+    // whatever it likes, and the switch turns off THAT header.
+    const named = [...slotsByName(canvasStyles)].find(([, slot]) => slot.edge === edge)?.[0]
+    const name = named ?? RUNNING_NAME[edge]
+    const existing = body.querySelector(`[style*="running(${name})"]`)
+    if (on && !existing) {
+      const holder = doc.createElement('div')
+      holder.innerHTML = runningElementHtml(edge)
+      const node = holder.firstElementChild
+      if (node) {
+        prepareFragment(node)
+        if (edge === 'top') body.prepend(node)
+        else body.append(node)
+        select(node)
+      }
+    } else if (!on && existing) {
+      existing.remove()
+      select(null)
+    }
+    callbacksRef.current.onFurniture?.(edge, on)
+    setTick((t) => t + 1)
+  }
+
+  // ---- typing a field --------------------------------------------------
+
+  const closeTypeahead = (): void => {
+    typeaheadRef.current = null
+    setTypeahead(null)
+  }
+
+  /** Look behind the caret for `{{` and offer what could follow it. Called on
+   * every input, so it stays cheap and gives up early. */
+  const refreshTypeahead = (): void => {
+    const body = bodyRef.current
+    const doc = body?.ownerDocument
+    const selection = doc?.getSelection()
+    if (!body || !doc || !selection || selection.rangeCount === 0) return closeTypeahead()
+    const range = selection.getRangeAt(0)
+    if (!range.collapsed || range.startContainer.nodeType !== Node.TEXT_NODE) {
+      return closeTypeahead()
+    }
+    const node = range.startContainer as Text
+    if (!body.contains(node)) return closeTypeahead()
+    const trigger = triggerAt(node.data, range.startOffset)
+    if (!trigger) return closeTypeahead()
+    const rows = rank(fieldsRef.current, trigger.query)
+    if (rows.length === 0) return closeTypeahead()
+
+    // Measured over the braces rather than the caret: a collapsed range has no
+    // reliable rectangle, two characters always do.
+    const probe = doc.createRange()
+    probe.setStart(node, trigger.start)
+    probe.setEnd(node, trigger.end)
+    const box = probe.getBoundingClientRect()
+    typeaheadRef.current = { node, trigger, rows, active: 0 }
+    setTypeahead({ left: box.left, top: box.bottom, rows, active: 0 })
+  }
+
+  const moveTypeahead = (by: number): void => {
+    const open = typeaheadRef.current
+    if (!open) return
+    const active = (open.active + by + open.rows.length) % open.rows.length
+    open.active = active
+    setTypeahead((t) => (t ? { ...t, active } : t))
+  }
+
+  /** Replace the `{{ …` that was typed with the chip it stood for. */
+  const acceptTypeahead = (row?: FieldRow): void => {
+    const open = typeaheadRef.current
+    const body = bodyRef.current
+    const chosen = row ?? open?.rows[open.active]
+    if (!open || !body || !chosen?.expression) return
+    const doc = body.ownerDocument
+    const range = doc.createRange()
+    range.setStart(open.node, open.trigger.start)
+    range.setEnd(open.node, Math.min(open.trigger.end, open.node.data.length))
+    range.deleteContents()
+    const chip = doc.createElement('span')
+    chip.setAttribute('data-jinja-expr', chosen.expression)
+    chip.textContent = `{{ ${chosen.expression} }}`
+    prepareFragment(chip)
+    range.insertNode(chip)
+    caretAfter(chip)
+    closeTypeahead()
+  }
+
   // ---- the structure panel ------------------------------------------------
 
   /** Whether a container shows its parts. Told, if it has been told; otherwise
@@ -452,6 +675,14 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
   }
 
+  // Which loops surround the selection. The field list needs it to know that
+  // `items[].price` is writable here, and that this loop calls it `row`.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!body) return
+    callbacksRef.current.onScopes?.(scopesAt(selected?.el ?? null, body))
+  }, [selId, selected])
+
   // A selection made in the canvas has to be findable in the panel, which means
   // opening whatever it is buried inside. The panel scrolls to it itself.
   useEffect(() => {
@@ -511,21 +742,48 @@ export default function CanvasEditor({
     return trail
   }
 
-  /** Put prepared nodes where they can legally go, relative to the selection.
+  /** Put prepared nodes where they can legally go.
    *
    * One function on purpose: this decision existed in two copies — the shell's
    * insert API and the canvas's own Insert menu — and fixing cells in one of
-   * them left presets landing beside the table from the other. */
-  const insertNodes = (nodes: Element[], body: HTMLElement): void => {
+   * them left presets landing beside the table from the other.
+   *
+   * Inline content goes to the CARET. A field, a QR code, a run of character
+   * cells belong in the sentence somebody is writing, and putting them after
+   * the paragraph instead — which is what everything used to do, under a panel
+   * that said "insert at cursor" — makes the commonest act in the editor
+   * impossible: naming a value inside a line of text.
+   *
+   * Block content still lands beside the selected block. A table dropped into a
+   * paragraph is not what anyone meant, and the parser would lift it out again
+   * anyway. The choice is made by what is being inserted rather than by which
+   * panel asked, so the answer is the same from all of them. */
+  const insertNodes = (nodes: Node[], body: HTMLElement): void => {
     const target = body.querySelector('[data-lf-selected]')
+    const caret = allInline(nodes) ? caretRangeIn(body) : null
+    // Only when the caret is in the thing that is selected: picking a table in
+    // the structure panel and inserting a field should not send it to wherever
+    // the mouse happened to leave the caret ten minutes ago.
+    if (caret && (!target || target.contains(caret.startContainer))) {
+      const at = clampOutOfAtomic(caret.cloneRange())
+      at.collapse(false)
+      const fragment = body.ownerDocument.createDocumentFragment()
+      for (const node of nodes) fragment.appendChild(node)
+      const last = fragment.lastChild
+      at.insertNode(fragment)
+      if (last) caretAfter(last)
+      return
+    }
     if (!target) {
       for (const node of nodes) body.appendChild(node)
       return
     }
-    const at = placementFor(target, 'after')
+    const placement = placementFor(target, 'after')
     // Inside appends in order; after inserts each one directly behind the
     // target, so the last one written has to go first.
-    for (const node of at.where === 'inside' ? nodes : [...nodes].reverse()) place(node, at)
+    for (const node of placement.where === 'inside' ? nodes : [...nodes].reverse()) {
+      place(node, placement)
+    }
   }
 
   /** Carry out what a key press asked for. Shared by the listener inside the
@@ -542,9 +800,11 @@ export default function CanvasEditor({
         select(parent)
         break
       }
-      case 'editExpression':
-        editExpression(intent.el, doc)
+      case 'editExpression': {
+        const attr = expressionAttr(intent.el)
+        if (attr) setEditingExpr({ el: intent.el, attr })
         break
+      }
       case 'placeCaret': {
         // Hand the node to text editing: the caret goes to the end of it, the
         // same place a click inside would have left it. Focus first, since the
@@ -572,11 +832,18 @@ export default function CanvasEditor({
     doc.close()
 
     const style = doc.createElement('style')
+    styleElRef.current = style
     // Author CSS first, affordances second, so selection outlines win. The
     // running-element badges come from the author's own @page rules: a footer
     // parked at the top of <body> must read as a footer, not as stray text.
-    style.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS + runningAffordanceCss(canvasStyles)
+    style.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS
     doc.head.appendChild(style)
+    // A second sheet for the header/footer bands: it depends on measurements
+    // this one is written before, and changes with the page rather than with
+    // the document.
+    const bands = doc.createElement('style')
+    bandsElRef.current = bands
+    doc.head.appendChild(bands)
 
     const body = doc.body
     // The iframe is same-origin by necessity (the editor reads contentDocument),
@@ -602,15 +869,7 @@ export default function CanvasEditor({
     // and as padding it keeps the body's own height honest for the measurement
     // below. body.style is canvas-only — export is body.innerHTML, never the
     // body element itself.
-    body.style.margin = '0'
-    if (pageBox) {
-      const m = pageBox.margin
-      body.style.position = 'absolute'
-      body.style.top = m.top
-      body.style.left = m.left
-      body.style.right = m.right
-      body.style.paddingBottom = m.bottom
-    }
+    insetBody(body, pageBox)
     // Read the margins back in px rather than converting mm/cm/in by hand: the
     // browser already did the conversion when it laid the body out.
     const shown = doc.defaultView?.getComputedStyle(body)
@@ -624,19 +883,42 @@ export default function CanvasEditor({
 
     // Selection: nearest structural node under the click; body click clears.
     const onClick = (e: MouseEvent) => {
-      select(findSelectable(e.target as Element, body))
+      const target = e.target as Element
+      select(findSelectable(target, body))
+      closeTypeahead()
+      // A chip is contenteditable="false": clicking one leaves the document
+      // with no caret, and every keystroke after that is silently discarded.
+      // Give it one, on the side that was clicked, so the text around a field
+      // can be written by aiming anywhere near it.
+      // Not on the second click of a double click: that one means "edit the
+      // expression", and moving the caret under it stops the pair being read
+      // as a double click at all.
+      const atomic = e.detail < 2 ? target.closest?.(ATOMIC_SELECTOR) : null
+      if (atomic && body.contains(atomic)) caretBeside(atomic, e.clientX)
     }
     doc.addEventListener('click', onClick)
+
+    // `{{` is what somebody writes when they mean a value. In a canvas those
+    // would otherwise be two characters that print.
+    const onInput = () => refreshTypeahead()
+    doc.addEventListener('input', onInput)
 
     // Double-click a chip / loop / conditional to edit its Jinja expression as
     // text. The attribute is the source of truth restore() reads; the visible
     // chip label is kept in sync for placeholders.
     const onDblClick = (e: MouseEvent) => {
-      const el = findSelectable(e.target as Element, body)
+      // By coordinates, not by the event's target. A chip is
+      // contenteditable="false" inside a contenteditable body, and a double
+      // click on one of those islands is retargeted to the editing host — so
+      // the target here is the body, and the chip under the pointer is the one
+      // thing the event does not name.
+      const under = doc.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element)
+      const el = findSelectable(under, body)
       if (!el) return
-      if (!el.matches('[data-jinja-expr], [data-jinja-for], [data-jinja-if]')) return
+      const attr = expressionAttr(el)
+      if (!attr) return
       e.preventDefault()
-      editExpression(el, doc)
+      setEditingExpr({ el, attr })
     }
     doc.addEventListener('dblclick', onDblClick)
 
@@ -671,6 +953,25 @@ export default function CanvasEditor({
     // programmatic mutations, so ours replaces it entirely. Everything else is
     // structural navigation — see keyboard.ts for why it hides behind Alt.
     const onKeydown = (e: KeyboardEvent) => {
+      // While the field list is up it owns the arrows and Enter — everything
+      // else, including ordinary typing, carries on filtering it.
+      if (typeaheadRef.current) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault()
+          moveTypeahead(e.key === 'ArrowDown' ? 1 : -1)
+          return
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault()
+          acceptTypeahead()
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          closeTypeahead()
+          return
+        }
+      }
       if (e.ctrlKey || e.metaKey) {
         const key = e.key.toLowerCase()
         if (key === 'z' && !e.shiftKey) {
@@ -739,10 +1040,18 @@ export default function CanvasEditor({
       )
       // The sheet is the top margin plus what the body holds. The body no longer
       // carries the top margin as padding — it is inset by it — so that band is
-      // added back here rather than read out of scrollHeight.
-      setFrameHeight(Math.max(insetTop + body.scrollHeight - (padBottom || 0), 200))
+      // added back here rather than read out of the measurement.
+      //
+      // The BOX, not scrollHeight: a header or footer is placed in its margin
+      // band with an absolute offset, and scrollHeight counts anything hanging
+      // outside the box. A footer parked at the foot of page one therefore made
+      // the document look a page and a bit long, and the canvas grew a second,
+      // empty page to hold it. Out-of-flow children do not add to the box.
+      const flow = body.getBoundingClientRect().height
+      setFrameHeight(Math.max(insetTop + flow - (padBottom || 0), 200))
     }
     measure()
+    measureRef.current = measure
 
     const observeOpts = { subtree: true, childList: true, characterData: true, attributes: true }
     // Any settled burst of DOM changes: repaginate, re-measure, reposition the
@@ -790,14 +1099,15 @@ export default function CanvasEditor({
       insertHtml: (html: string) => {
         const holder = doc.createElement('div')
         holder.innerHTML = html
-        const nodes = Array.from(holder.children)
-        for (const node of nodes) prepareFragment(node)
-        insertNodes(nodes, body)
-        // Plain text (no element) — append as text at the end.
-        if (nodes.length === 0 && holder.textContent) {
-          body.appendChild(doc.createTextNode(holder.textContent))
+        // childNodes, not children: bare text is content too, and it used to be
+        // dropped on the floor unless the markup held no elements at all.
+        const nodes = Array.from(holder.childNodes)
+        for (const node of nodes) {
+          if (node.nodeType === Node.ELEMENT_NODE) prepareFragment(node as Element)
         }
+        if (nodes.length > 0) insertNodes(nodes, body)
       },
+      insertBlock: (id: string) => insertBlockRef.current?.(id),
       getBody: () => exportBody(body),
     })
 
@@ -805,6 +1115,7 @@ export default function CanvasEditor({
       clearTimeout(timer)
       observer.disconnect()
       doc.removeEventListener('click', onClick)
+      doc.removeEventListener('input', onInput)
       doc.removeEventListener('dblclick', onDblClick)
       doc.removeEventListener('mousemove', onPointerMove)
       doc.removeEventListener('mouseleave', forgetHover)
@@ -818,6 +1129,55 @@ export default function CanvasEditor({
     // Mounted once per template/version — the parent remounts via key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A change to the page arrives as new CSS. Re-injecting it and re-applying
+  // the inset keeps the canvas honest without remounting — which would be a
+  // remount per margin nudge, and an undo history thrown away with it.
+  useEffect(() => {
+    const style = styleElRef.current
+    const body = bodyRef.current
+    const doc = body?.ownerDocument
+    if (!style || !body || !doc) return
+    style.textContent = canvasStyles + CANVAS_AFFORDANCE_CSS
+    insetBody(body, pageBox)
+    const shown = doc.defaultView?.getComputedStyle(body)
+    setMargins({
+      top: parseFloat(shown?.top ?? '0') || 0,
+      bottom: parseFloat(shown?.paddingBottom ?? '0') || 0,
+    })
+    measureRef.current?.()
+    setTick((t) => t + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasStyles])
+
+  // Paginate again once the page is known. At mount the margins have not been
+  // measured yet — they are read off the laid-out body, which happens in the
+  // same pass — so the first pagination runs against a page with no margins and
+  // finds nothing to move. Without this, a document only ever paginated if
+  // something else edited it afterwards.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!body) return
+    paginate(body, geometryRef.current)
+    measureRef.current?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [margins.top, margins.bottom, pageHeight])
+
+  // Headers and footers, put in the band they print in. Re-run whenever the
+  // document or the page changes: which box pulls which element comes from the
+  // stylesheet, and how deep the band is comes from the margins.
+  useEffect(() => {
+    const body = bodyRef.current
+    const bands = bandsElRef.current
+    if (!body || !bands) return
+    markRunning(body, canvasStyles)
+    bands.textContent = runningBoxCss({
+      top: margins.top,
+      bottom: margins.bottom,
+      usable: geometry && canPaginate(geometry) ? usablePageHeight(geometry) : null,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasStyles, margins.top, margins.bottom, pageHeight, tick])
 
   // The same shortcuts, for when focus is in the editor but not in the canvas
   // document — after using the toolbar, say.
@@ -978,6 +1338,7 @@ export default function CanvasEditor({
     // Select the last visible node so the author can edit it immediately.
     select(nodes[nodes.length - 1])
   }
+  insertBlockRef.current = insertBlock
 
   const moveSelected = (dir: -1 | 1) => {
     if (!selected) return
@@ -1006,6 +1367,40 @@ export default function CanvasEditor({
   const tableOp = (op: (el: Element) => unknown) => {
     if (!selected) return
     op(selected.el)
+    setTick((t) => t + 1)
+  }
+
+  /** A merge or a split removes cells and adds them back, so the selection has
+   * to be re-established rather than left pointing at something detached. */
+  const cellOp = (op: (el: Element) => void) => {
+    if (!selected) return
+    const cell = selected.el
+    op(cell)
+    select(cell.isConnected ? cell : null)
+    setTick((t) => t + 1)
+  }
+
+  /** Which tag a block is, for the style menu. */
+  const blockTag = (el: Element): string => el.tagName.toLowerCase()
+
+  /**
+   * Turn a paragraph into a heading, or back.
+   *
+   * A new element carrying the same children and attributes rather than an
+   * edit: a tag name is the one thing about an element that cannot be changed,
+   * and rebuilding it keeps the inline styles, the Jinja markers and the text
+   * — everything a person would be upset to lose by choosing from a menu.
+   */
+  const retag = (tag: string) => {
+    const body = bodyRef.current
+    if (!selected || !body || blockTag(selected.el) === tag) return
+    const el = selected.el
+    const fresh = body.ownerDocument.createElement(tag)
+    for (const attr of Array.from(el.attributes)) fresh.setAttribute(attr.name, attr.value)
+    while (el.firstChild) fresh.appendChild(el.firstChild)
+    el.replaceWith(fresh)
+    prepareFragment(fresh)
+    select(fresh)
     setTick((t) => t + 1)
   }
 
@@ -1234,7 +1629,10 @@ export default function CanvasEditor({
           return
         }
         const tr = (target as HTMLElement).getBoundingClientRect()
-        const at = placementFor(target, y < tr.top + tr.height / 2 ? 'before' : 'after')
+        // Near an edge means beside it; the middle of something that can hold
+        // blocks means inside it. Which is also how a block comes back out:
+        // aim at the edge of what it is in.
+        const at = dropPlacement(target, y, tr)
         dropRef.current = at
         setMoveDrop(at)
         // Read on every move rather than at the start: people press Ctrl once
@@ -1322,32 +1720,30 @@ export default function CanvasEditor({
   return (
     <div className="canvas-editor">
       <div className="canvas-topbar">
-        <label>
-          Page
-          <select value={format} onChange={(e) => setFormat(e.target.value)}>
-            {PAGE_FORMATS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Insert
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) insertBlock(e.target.value)
-            }}
+        {/* The page, from the document's own @page rule — not a view setting.
+            The menu that used to be here changed the canvas and left the PDF
+            printing something else. */}
+        <span className="page-setup-host">
+          <button
+            className={pageSetupOpen ? 'tb active' : 'tb'}
+            aria-expanded={pageSetupOpen}
+            title="Size, orientation, margins and background of the printed page"
+            onClick={() => setPageSetupOpen((on) => !on)}
           >
-            <option value="">block…</option>
-            {BLOCKS.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Page: {pageSetup.size || 'A4'}
+            {pageSetup.landscape ? ' landscape' : ''}
+          </button>
+          {pageSetupOpen && (
+            <PageSetupPanel
+              setup={pageSetup}
+              overrides={pageOverrides}
+              furniture={bands}
+              onFurniture={toggleFurniture}
+              onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
+              onClose={() => setPageSetupOpen(false)}
+            />
+          )}
+        </span>
         <span className="topbar-group">
           <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
             <b>B</b>
@@ -1395,18 +1791,30 @@ export default function CanvasEditor({
           </button>
           <button
             className={outlineOpen ? 'tb active' : 'tb'}
-            title="List every part of the document, and take the one a click keeps missing"
+            title="The structure of the document, and the fields it can name"
+            aria-label="Structure and fields panel"
             aria-pressed={outlineOpen}
             onClick={() => setOutlineOpen((on) => !on)}
           >
             <Icon name="structure" size={14} />
-            Structure
+            Panel
           </button>
         </span>
         <span className="muted">{Math.round(zoom * 100)}%</span>
       </div>
-      {selected && (
-        <div className="canvas-props" key={selId}>
+      {/* Always present, even with nothing selected. It used to appear with the
+          first selection, and appearing is moving: the whole canvas dropped a
+          row under the pointer, so the second click of a double click landed
+          somewhere else and the document never saw it. Editing a field by
+          double-clicking it was impossible for that reason alone. */}
+      <div className="canvas-props" key={selId}>
+        {!selected && (
+          <span className="muted">
+            Nothing selected — click something on the page, or take it from the panel
+          </span>
+        )}
+        {selected && (
+          <>
           {/* Where the selection sits in the document, and a way to move
               through it. A single label said what was selected; this says what
               it is INSIDE, which is the question somebody actually has when a
@@ -1446,7 +1854,13 @@ export default function CanvasEditor({
               onChange={(e) => applyStyle('font-size', e.target.value)}
             />
           </label>
-          {canvasWindow && (
+          {selected.el.hasAttribute(RUNNING_ATTR) && (
+            <span className="muted">
+              The band is as tall as the page margin — set it in Page. What is
+              inside it is edited like anything else.
+            </span>
+          )}
+          {canvasWindow && !selected.el.hasAttribute(RUNNING_ATTR) && (
             <BoxModel
               el={selected.el as HTMLElement}
               view={canvasWindow}
@@ -1464,6 +1878,46 @@ export default function CanvasEditor({
                 else applyStyle(prop, value ?? '')
               }}
             />
+          )}
+          {canvasWindow && selected.kind !== 'chip' && selected.kind !== 'raw' && (
+            <BorderControl
+              el={selected.el as HTMLElement}
+              view={canvasWindow}
+              onChange={() => setTick((t) => t + 1)}
+            />
+          )}
+          {isCell && (
+            <label className="prop">
+              Align in cell
+              <select
+                aria-label="Align in cell"
+                defaultValue={styleValue('vertical-align') || 'top'}
+                onChange={(e) => applyStyle('vertical-align', e.target.value)}
+              >
+                <option value="top">top</option>
+                <option value="middle">middle</option>
+                <option value="bottom">bottom</option>
+              </select>
+            </label>
+          )}
+          {selected.kind === 'block' && (
+            <label className="prop">
+              Style
+              {/* Named explicitly: a <label> wrapping a <select> takes the
+                  chosen option into its accessible name, so "Style" alone would
+                  read as "Style Paragraph" and change under the user. */}
+              <select
+                aria-label="Block style"
+                value={blockTag(selected.el)}
+                onChange={(e) => retag(e.target.value)}
+              >
+                <option value="p">Paragraph</option>
+                <option value="h1">Heading 1</option>
+                <option value="h2">Heading 2</option>
+                <option value="h3">Heading 3</option>
+                <option value="div">Block</option>
+              </select>
+            </label>
           )}
           {selected.kind === 'image' && (
             <label className="prop">
@@ -1505,6 +1959,15 @@ export default function CanvasEditor({
                 onChange={(c) => applyStyle('background-color', toCss(c))}
               />
             </>
+          )}
+          {expressionAttr(selected.el) && (
+            <button
+              className="tb"
+              title="Edit the Jinja this element carries"
+              onClick={() => setEditingExpr({ el: selected.el, attr: expressionAttr(selected.el)! })}
+            >
+              Expression…
+            </button>
           )}
           {(canRepeat || canCondition || canSplit) && !convert && (
             <span className="topbar-group convert-actions">
@@ -1584,8 +2047,9 @@ export default function CanvasEditor({
               </button>
             </span>
           )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
       {/* A structural selection has no focus ring of its own — the caret stays
           with the text — so what is selected is announced instead. */}
       <p className="sr-only" aria-live="polite">
@@ -1648,7 +2112,33 @@ export default function CanvasEditor({
                   <span>{hover.label}</span>
                 </div>
               )}
-              {guides.map((guide, i) => (
+              {typeahead && (
+              <ul
+                className="field-typeahead"
+                style={{ left: typeahead.left * zoom, top: typeahead.top * zoom }}
+              >
+                {typeahead.rows.map((row, index) => (
+                  <li key={row.label}>
+                    <button
+                      className={index === typeahead.active ? 'active' : undefined}
+                      // The canvas keeps the caret: taking focus here would put
+                      // the chip back at wherever the selection collapsed to.
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        acceptTypeahead(row)
+                      }}
+                      onMouseEnter={() => moveTypeahead(index - typeahead.active)}
+                    >
+                      <span className="field-label">{row.label}</span>
+                      {row.sample !== undefined && (
+                        <span className="field-sample">{row.sample}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {guides.map((guide, i) => (
                 <div
                   key={i}
                   aria-hidden="true"
@@ -1695,14 +2185,27 @@ export default function CanvasEditor({
                   </div>
                 )
               })}
-              {/* Physical page boundaries: a line where each printed page ends. */}
-              {breakOffsets.map((offset, i) => (
+              {/* Between two sheets: the footer band of the page above, the
+                  paper edge, and the header band of the page below. Real space
+                  in the strip rather than a line, so what a header or footer
+                  costs on every page is visible on every page. */}
+              {edges.map((edge, i) => (
                 <div
                   key={i}
-                  className="page-boundary"
-                  style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
+                  className="sheet-gap"
+                  style={{
+                    top: (edge - margins.bottom) * zoom,
+                    height: (margins.bottom + margins.top) * zoom,
+                    width: (pageWidth ?? 0) * zoom,
+                  }}
                 >
-                  <span>page {i + 2}</span>
+                  <span className="sheet-band foot" style={{ height: margins.bottom * zoom }}>
+                    {bands.bottom ? 'footer' : ''}
+                  </span>
+                  <span className="sheet-edge">page {i + 2}</span>
+                  <span className="sheet-band head" style={{ height: margins.top * zoom }}>
+                    {bands.top ? 'header' : ''}
+                  </span>
                 </div>
               ))}
               {cellRect && (
@@ -1841,6 +2344,21 @@ export default function CanvasEditor({
                     <button title="Delete column" onClick={() => tableOp(deleteColumn)}>
                       −C
                     </button>
+                    {isCell && canMergeRight(selected.el) && (
+                      <button title="Merge with the cell to the right" onClick={() => cellOp(mergeRight)}>
+                        ⇥|
+                      </button>
+                    )}
+                    {isCell && canMergeDown(selected.el) && (
+                      <button title="Merge with the cell below" onClick={() => cellOp(mergeDown)}>
+                        ⤓|
+                      </button>
+                    )}
+                    {isCell && isMerged(selected.el) && (
+                      <button title="Split this merged cell" onClick={() => cellOp(splitCell)}>
+                        ⊞
+                      </button>
+                    )}
                     <select
                       className="el-borders"
                       title="Table borders"
@@ -1869,6 +2387,10 @@ export default function CanvasEditor({
         </div>
         {outlineOpen && (
           <OutlinePanel
+            tab={sideTab}
+            onTab={setSideTab}
+            fields={fields}
+            onInsertField={insertField}
             items={outline.items}
             selected={selected?.el ?? null}
             hiddenCount={outline.hidden}
@@ -1893,6 +2415,18 @@ export default function CanvasEditor({
           rather than the sheet. It says what the drag has reached and, when
           something stopped it, what it landed on — a measurement without a
           reason is only half of what the person needs. */}
+      {editingExpr && (
+        <ExpressionDialog
+          attr={editingExpr.attr}
+          value={editingExpr.el.getAttribute(editingExpr.attr) ?? ''}
+          fields={fields}
+          onSave={(expression) => {
+            writeExpression(editingExpr.el, editingExpr.attr, expression)
+            setTick((t) => t + 1)
+          }}
+          onClose={() => setEditingExpr(null)}
+        />
+      )}
       {readout && (
         <div className="drag-readout" style={{ left: readout.left, top: readout.top }}>
           {readout.text}
@@ -1921,7 +2455,11 @@ function FurnitureStrip({
   boxes: ReturnType<typeof parseMarginBoxes>
   zoom: number
 }) {
-  const own = boxes.filter((b) => b.edge === edge)
+  // Boxes that pull a running element are not previewed here any more: the
+  // element itself is drawn in its band, in the page, where it can be clicked
+  // and edited. A grey "⟨element lf-footer⟩" beside the real thing would be a
+  // second, worse copy of it.
+  const own = boxes.filter((b) => b.edge === edge && !b.runningName)
   if (own.length === 0) return null
   const slot = (name: 'left' | 'center' | 'right') =>
     own

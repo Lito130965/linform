@@ -58,6 +58,21 @@ export const CANVAS_AFFORDANCE_CSS = `
     cursor: default;
     user-select: none;
   }
+  /* A page counter prints a number the browser cannot know: counter(page) has
+     no value outside paged media, so the span the template fills is empty here
+     and would read as nothing at all. Named instead, and drawn as the atom it
+     is — the same shape as a placeholder chip. */
+  .lf-page-no::after { content: "⟨page⟩" !important; }
+  .lf-page-count::after { content: "⟨pages⟩" !important; }
+  .lf-page-no,
+  .lf-page-count {
+    background: rgba(63, 178, 111, 0.14);
+    border: 1px solid rgba(63, 178, 111, 0.5);
+    border-radius: 3px;
+    padding: 0 2px;
+    white-space: nowrap;
+    cursor: default;
+  }
   [data-lf-selected] {
     outline: 2px solid #4f8cff !important;
     outline-offset: 1px;

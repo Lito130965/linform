@@ -9,7 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest'
-import { place, placementFor } from './placement'
+import { dropPlacement, isContainer, place, placementFor } from './placement'
 
 let root: HTMLElement
 
@@ -17,6 +17,7 @@ beforeEach(() => {
   document.body.innerHTML = `
     <div id="root">
       <p id="intro">Intro</p>
+      <div id="card"><p id="inner">In the card</p></div>
       <table id="table">
         <tbody id="tbody">
           <tr id="row"><td id="cell">a</td><th id="head">b</th></tr>
@@ -74,5 +75,48 @@ describe('putting it there', () => {
 
     expect(el('table').nextElementSibling).toBe(node)
     expect(el('table').contains(node)).toBe(false)
+  })
+})
+
+describe('into a block, and back out of it', () => {
+  const box = { top: 100, height: 200 }
+
+  it('drops into a container when the pointer is in its middle', () => {
+    // Aiming at the middle of a section is how a block gets INTO it, which is
+    // the difference between a document with structure and a flat list.
+    expect(dropPlacement(el('card'), 200, box)).toEqual({ el: el('card'), where: 'inside' })
+  })
+
+  it('drops beside a container when the pointer is near an edge', () => {
+    // And this is how it comes back out: aim at the edge of what it is in.
+    expect(dropPlacement(el('card'), 110, box)).toEqual({ el: el('card'), where: 'before' })
+    expect(dropPlacement(el('card'), 290, box)).toEqual({ el: el('card'), where: 'after' })
+  })
+
+  it('never drops into something that holds text rather than blocks', () => {
+    expect(dropPlacement(el('intro'), 200, box)).toEqual({ el: el('intro'), where: 'after' })
+    expect(dropPlacement(el('intro'), 120, box)).toEqual({ el: el('intro'), where: 'before' })
+  })
+
+  it('still sends a drop aimed at a row outside the table, from any band', () => {
+    expect(dropPlacement(el('row'), 200, box)).toEqual({ el: el('table'), where: 'after' })
+  })
+
+  it('always drops into a cell, edge or middle — between two cells is not a place', () => {
+    expect(dropPlacement(el('cell'), 200, box)).toEqual({ el: el('cell'), where: 'inside' })
+    expect(dropPlacement(el('cell'), 110, box)).toEqual({ el: el('cell'), where: 'inside' })
+  })
+
+  it('knows which elements hold blocks', () => {
+    expect(isContainer(el('card'))).toBe(true)
+    expect(isContainer(el('cell'))).toBe(true)
+    expect(isContainer(el('intro'))).toBe(false)
+    expect(isContainer(el('table'))).toBe(false)
+  })
+
+  it('puts a block inside the container it was selected from', () => {
+    const node = document.createElement('p')
+    place(node, placementFor(el('card'), 'after'))
+    expect(el('card').lastElementChild).toBe(node)
   })
 })

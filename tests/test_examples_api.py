@@ -69,8 +69,16 @@ def test_examples_use_the_exact_preset_and_block_markup():
     assert "{{ '☑' if agree else '☐' }}" in govform
 
     report = examples.get_example("report")["html"]
-    # page-numbers preset content
-    assert 'content: "Page " counter(page) " of " counter(pages);' in report
+    # page-numbers preset: the counters are empty spans a stylesheet fills, so
+    # both halves have to be in the example — the spans it inserts at the caret,
+    # and the rules that travel with the template.
+    assert 'Page <span class="lf-page-no"></span> of <span class="lf-page-count"></span>' in report
+    assert ".lf-page-no::after { content: counter(page); }" in report
+    assert ".lf-page-count::after { content: counter(pages); }" in report
+    # A margin box is shrink-to-fit unless told otherwise, and a header that
+    # shrinks to its text is not a header (tests/test_engine_capabilities.py).
+    assert "content: element(lf-header); width: 100%;" in report
+    assert "content: element(lf-footer); width: 100%;" in report
     # code presets
     assert "{{ report_url | qr }}" in report
     assert "barcode('code128', text=True)" in report

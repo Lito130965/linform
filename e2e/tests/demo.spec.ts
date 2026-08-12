@@ -34,7 +34,7 @@ test('an example opens in an editor that cannot save', async ({ page }) => {
   // The controls that would store something are absent, not merely refused.
   await expect(page.getByRole('button', { name: /Save (as )?draft/i })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /^Publish$/ })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Placeholders', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Fields', exact: true })).toBeVisible()
 })
 
 test('the assets panel works, against a scratch store of its own', async ({ page }) => {

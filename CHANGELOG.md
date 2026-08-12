@@ -9,6 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A field list built from the test data**, replacing the panel that could only
+  show placeholders the template already used — which meant a fresh template
+  offered nothing and the first field of every document had to be typed in Code
+  mode. Nested objects become paths, and an array's fields say which repeat
+  would put them in reach; inside one, they are offered under that loop's own
+  variable name (`items[].price` → `row.price`).
+- **Typing `{{` in the canvas** offers the same list at the caret, filters as
+  the name is typed, and writes the field on Enter.
+- **Test data generated from the template.** Two buttons: build a fresh sample
+  payload from every value the template names — loops become arrays of objects
+  carrying the fields their bodies use — or keep what is there and fill in only
+  what the template has since grown. Sample values are guessed from the field's
+  name, so the preview shows a form rather than a page of the word "Sample".
+- **A block can be put inside another block, and taken back out.** A drag says
+  which it means by where it hovers: near an edge is beside, the middle of
+  something that holds blocks is inside it.
+- **The blocks are a palette of tiles** instead of a dropdown, in the drawer
+  below the canvas, and they work in Code mode too.
+- **Page setup.** Size, orientation, margins in millimetres and the page
+  background, written into the template's own `@page` rule — so what the canvas
+  draws and what the renderer prints come from one sentence. Reading takes every
+  `@page` rule in cascade order, as a browser would, and where a later one wins
+  — a header or footer block reserving its strip of margin — the panel says
+  which side and what set it.
+- **Borders per side** on any element: the rule under a signature, the box round
+  a note, one cell ruled differently from its neighbours.
+- **Merging and splitting table cells**, including a block already several
+  columns wide. A merge keeps what the cells it swallows said; a split puts them
+  back in the columns the merge covered.
+- **Vertical alignment in a cell**, and **a style menu** that turns a paragraph
+  into a heading and back, keeping its fields, styles and text.
+- **Headers and footers are drawn in the margin band they print in** — a footer
+  pulled by `@bottom-left` sits at the bottom left of the page, selectable,
+  editable and named in the structure, instead of at the top of the document
+  where the markup happens to put it. They can be nudged from the edge by a
+  grip, in millimetres written as the element's own margins, which is what moves
+  them in print too.
+- **Jinja expressions are edited in a dialog** rather than a browser prompt,
+  with the document's fields offered beside the box. Reachable from the
+  properties bar as well as by double-clicking.
+- **A header or footer is a switch in the page panel**, which writes both halves
+  — the `@page` margin box and the element it pulls — and sets the band's height,
+  which is the page margin on that edge. The band is an ordinary container: a
+  name on the left, a page number in the middle and a code on the right is a
+  three-column block inside it. They are gone from the Insert palette, where
+  they could only ever write half of the thing.
+- **The space between two sheets is real space.** Each page occupies a whole
+  sheet in the canvas, and the gap between two of them holds what it holds in
+  print: the footer band of the page above, the paper edge, and the header band
+  of the page below — so what the furniture costs is visible on every page and
+  not only on the first. A block that would run past its page is moved to the
+  next page's content band rather than drawn across the boundary.
+- **A page number is content.** The preset inserts a block holding two atoms —
+  the page and the total — which can be selected, moved, deleted and typed
+  around, so a language that puts the total first is a matter of dragging them.
+  It works in a header, in a footer, or in a line of text; measured against the
+  engine, a counter inside a running element follows the page it is drawn on.
 - **A structure panel beside the canvas.** Every part of the document as a list,
   from the same notion of "selectable" a click uses — so the cell, its row, the
   table and the block around it can each be taken directly instead of hoping a
@@ -35,8 +92,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`$PORT` is honoured** by the container entrypoint, for serverless hosts that
   assign one.
 
+### Changed
+
+- **The structure list and the field list share one column**, as two tabs beside
+  the canvas: they answer the same question about the document and read as one
+  thing said twice when drawn in opposite corners.
+- **Inline content is inserted where the caret is** — a field, an image, a QR
+  code, a run of character cells. Everything used to land after the selected
+  block, under panels that said "insert at cursor", so a value could never be
+  named inside a line of text. Block content still lands beside the selected
+  block, since a table dropped into a paragraph is not what anyone meant.
+
 ### Fixed
 
+- **The page-size menu changed the canvas and nothing else.** Choosing A5 drew
+  an A5 sheet and went on printing A4, with nothing anywhere saying so. The
+  canvas now follows the document, and the menu that could disagree with it is
+  gone.
+- **Selecting anything moved the page under the pointer.** The properties bar
+  appeared with the first selection and pushed the canvas down 116px, so the
+  second click of a double click landed somewhere else — which is why editing a
+  field by double-clicking it never worked on the first try. The bar keeps its
+  height whether or not something is selected, and a browser test clicks and
+  checks the page did not move.
+- **A footer placed at the foot of the page grew a second, empty page.** The
+  document's height was measured with `scrollHeight`, which counts what hangs
+  outside the box.
+- **A click on a field left no caret, so typing near one was silently
+  discarded.** A chip is `contenteditable="false"`; clicking one selected it and
+  put the caret nowhere, and every keystroke after that went nowhere too. On a
+  document whose furniture is mostly fields this read as "this cannot be
+  edited": a running header of `{{ company }} — Quarterly report {{ period }}`
+  only took typing if the click happened to land between the two chips, and a
+  table cell holding a single field took none at all. The same silence explained
+  edits inside a repeating row never reaching the preview — there was no edit.
+  A click now leaves the caret beside the field, on the side it landed.
+- **Bold, italic or underline across a placeholder duplicated it.** A chip is
+  one thing — the attribute carries the expression, the visible text is only a
+  label — but a selection ending halfway into one split the element, and export
+  reads the attribute of each half. Nothing on screen showed it; the second
+  `{{ … }}` appeared in the saved template. Selections now take a chip whole or
+  not at all.
 - **Anything positioned against the page printed one margin away from where the
   canvas drew it.** A logo dragged into the top-right corner came out 18mm
   further right and 26mm further down, half of it over the edge of the paper.

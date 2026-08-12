@@ -1,6 +1,7 @@
 <!-- Report: a full-bleed page background, a header and footer that repeat on
      every page (the running-element pattern the header/footer blocks insert),
-     page numbers from the page-numbers preset, and a server-drawn QR + barcode
+     a page number that is content rather than a margin-box string, and a
+     server-drawn QR + barcode
      from the code presets. Every furniture/code snippet below is byte-identical
      to what the corresponding block or preset inserts.
      (Note: Jinja parses HTML comments too, so no literal tag syntax here.) -->
@@ -21,20 +22,28 @@
   .data .num { text-align: right; white-space: nowrap; }
   .codes { margin-top: 8mm; display: flex; gap: 12mm; align-items: flex-end; }
   .codes .cap { font-size: 8pt; color: #888; margin-top: 1.5mm; }
+  .lf-page-no::after { content: counter(page); }
+  .lf-page-count::after { content: counter(pages); }
   p { text-align: justify; }
 </style>
 </head>
 <body>
-  <!-- Page header (running-element block) -->
-  <style>@page { margin-top: 24mm; @top-center { content: element(lf-header); } }</style>
+  <!-- Page header: an element pulled into the top margin, edited in place. -->
+  <style>@page { margin-top: 24mm; @top-center { content: element(lf-header); width: 100%; } }</style>
   <div style="position: running(lf-header); font-size: 9pt; text-align: center; color: #555;">{{ company }} — Quarterly report {{ period }}</div>
 
-  <!-- Page footer (running-element block), kept to the left so the page number can sit centre -->
-  <style>@page { margin-bottom: 24mm; @bottom-left { content: element(lf-footer); } }</style>
-  <div style="position: running(lf-footer); font-size: 8pt; color: #888;">Confidential · {{ company }}</div>
-
-  <!-- Page numbers (page-numbers preset) -->
-  <style>@page { margin-bottom: 16mm; @bottom-center { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #555; } }</style>
+  <!-- Page footer. Three columns across the page: what it is on the left, the
+       page number in the middle, the period on the right. Every part of it is
+       ordinary content — the counters are two spans the stylesheet fills, and
+       counter(page) is evaluated on the page the footer is drawn on. -->
+  <style>@page { margin-bottom: 24mm; @bottom-center { content: element(lf-footer); width: 100%; } }</style>
+  <div style="position: running(lf-footer); font-size: 8pt; color: #888;">
+    <table style="width: 100%; border-collapse: collapse;"><tr>
+      <td>Confidential · {{ company }}</td>
+      <td style="text-align: center;">Page <span class="lf-page-no"></span> of <span class="lf-page-count"></span></td>
+      <td style="text-align: right;">{{ period }}</td>
+    </tr></table>
+  </div>
 
   <h1>Quarterly report</h1>
   <div class="lede">{{ company }} · {{ period }} · prepared {{ date }}</div>

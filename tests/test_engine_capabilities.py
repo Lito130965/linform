@@ -141,6 +141,81 @@ def test_a_page_background_reaches_the_sheet_edge_by_going_negative():
     assert (x, y) == pytest.approx((0.0, 0.0), abs=0.5)
 
 
+def test_a_page_counter_inside_a_running_element_follows_the_page():
+    """A page number is ordinary content in this editor: an empty span that a
+    `::after` rule fills with `counter(page)`, placed in a header or a footer
+    like anything else. That only works if the counter is evaluated where the
+    element is DRAWN — once per page it appears on — rather than where it is
+    written. Everything the page-number preset does rests on this.
+    """
+    css = (
+        "@page { size: A4; margin: 20mm; @bottom-center { content: element(foot) } }"
+        " .no::after { content: counter(page); } .of::after { content: counter(pages); }"
+        " .tall { height: 200mm }"
+    )
+    rendered = lines(
+        f"<style>{css}</style>"
+        '<div style="position: running(foot)">RUN <span class="no"></span>'
+        ' OF <span class="of"></span></div>'
+        '<p class="tall">one</p><p class="tall">two</p>'
+    )
+    joined = " ".join(rendered)
+    assert "RUN 1 OF 2" in joined, f"the footer did not count up: {rendered}"
+    assert "RUN 2 OF 2" in joined, f"the footer did not count up: {rendered}"
+
+
+def test_a_page_counter_in_ordinary_flow_reports_the_page_it_lands_on():
+    """The same span outside any running element: it prints once, on whichever
+    page the content reached. Worth knowing, because it is what somebody gets
+    by putting a page number in a paragraph rather than in a footer."""
+    css = ".no::after { content: counter(page); } .tall { height: 200mm }"
+    rendered = lines(
+        f"<style>{PAGE} {css}</style>"
+        '<p class="tall">one</p><p class="tall">two</p>'
+        '<p>FLOW <span class="no"></span></p>'
+    )
+    assert any("FLOW 2" in line for line in rendered), rendered
+
+
+MARGIN_BOX = """<style>
+@page { size: A4; margin: 20mm; @bottom-center { content: element(f); %(box)s } }
+.f table { width: 100%%; border-collapse: collapse; }
+</style>
+<div style="position: running(f)" class="f"><table><tr>
+  <td id="L">LEFT</td><td id="R" style="text-align:right">RIGHT</td>
+</tr></table></div><p>body</p>"""
+
+
+def _span(box_css: str) -> float:
+    """Millimetres between the left and right edges of the footer's content."""
+    page = weasyprint.HTML(string=MARGIN_BOX % {"box": box_css}).render().pages[0]
+    return (page.anchors["R"][2] - page.anchors["L"][0]) / MM
+
+
+def test_a_margin_box_shrinks_to_its_content_unless_given_a_width():
+    """The default nobody expects, and the reason the header switch writes
+    `width: 100%`. The canvas draws the band across the page — that is what a
+    band is — so a footer that prints 37mm wide and centred is the editor and
+    the renderer disagreeing about the one thing a header is for.
+    """
+    # As a property rather than a number: how narrow shrink-to-fit comes out
+    # depends on the font, and what matters is that it is nothing like the page.
+    narrow = _span("")
+    assert narrow < 100, f"the default stopped being shrink-to-fit ({narrow:.0f}mm)"
+    assert _span("width: 100%;") == pytest.approx(170, abs=1), "width: 100% no longer spans"
+
+
+def test_a_width_on_the_running_element_does_not_widen_its_box():
+    """Worth pinning because it is the obvious thing to try and it does nothing:
+    a percentage on the element resolves against the box, which is the thing
+    that needed widening."""
+    page = weasyprint.HTML(
+        string=(MARGIN_BOX % {"box": ""}).replace(".f table {", ".f { width: 100% } .f table {")
+    ).render().pages[0]
+    span = (page.anchors["R"][2] - page.anchors["L"][0]) / MM
+    assert span < 100, f"a width on the element widened its box after all ({span:.0f}mm)"
+
+
 def test_javascript_in_a_template_does_not_run():
     """The security model rests on this: the engine draws documents and does not
     execute them. If a WeasyPrint release ever grew a script engine, everything

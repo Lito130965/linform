@@ -7,6 +7,7 @@
 
 export type NodeKind =
   | 'chip'
+  | 'counter'
   | 'raw'
   | 'loop'
   | 'conditional'
@@ -43,9 +44,18 @@ const BLOCK_TAGS = new Set([
 // "Block" between the table and its rows, adding a level to walk through on the
 // way to something real.
 
+/** Classes the page-number preset writes. Recognised by class rather than by a
+ * marker attribute: the class is already in the template — the stylesheet rule
+ * that fills the span needs it — so nothing editor-shaped has to be added and
+ * stripped, and the atom survives a round trip through Code mode untouched. */
+export const COUNTER_SELECTOR = '.lf-page-no, .lf-page-count'
+
 export function kindOf(el: Element): NodeKind | null {
   // Canvas-only pagination spacers are never selectable.
   if (el.hasAttribute('data-lf-spacer')) return null
+  // A page counter is one thing: it prints a number nobody types, and there is
+  // nothing inside it to put a caret in.
+  if (el.matches(COUNTER_SELECTOR)) return 'counter'
   // Jinja marks outrank the tag: a repeating <tr> is first of all a loop.
   if (el.hasAttribute('data-jinja-expr')) return 'chip'
   if (el.hasAttribute('data-jinja-raw')) return 'raw'
@@ -83,6 +93,7 @@ export function parentSelectable(el: Element, root: Element): Element | null {
 
 export const KIND_LABEL: Record<NodeKind, string> = {
   chip: 'Placeholder',
+  counter: 'Page counter',
   raw: 'Jinja (locked)',
   loop: 'Repeating',
   conditional: 'Conditional',

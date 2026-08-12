@@ -13,6 +13,7 @@
  */
 
 import type { NodeKind } from '../editor/selection'
+import { PAGE_COUNT_CLASS, PAGE_NO_CLASS } from '../editor/page-css'
 
 export type PresetGroup = 'Tables' | 'Fields' | 'Sections' | 'Codes' | 'Custom'
 
@@ -53,23 +54,22 @@ const CELL_STYLE =
   'display:inline-block;width:5mm;height:6mm;line-height:6mm;' +
   'border:1px solid #000;text-align:center;font-family:monospace;'
 
-/** Turn a human pattern like `Page {page} of {pages}` into a CSS margin-box
- * `content` value: `"Page " counter(page) " of " counter(pages)`. Page numbers
- * MUST come from CSS counters, not a data field — the total page count is only
- * known after the layout runs, so the consumer cannot supply it. */
-function patternToCounterContent(pattern: string): string {
-  const parts: string[] = []
-  const re = /\{(page|pages)\}/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(pattern)) !== null) {
-    if (m.index > last) parts.push(JSON.stringify(pattern.slice(last, m.index)))
-    parts.push(m[1] === 'pages' ? 'counter(pages)' : 'counter(page)')
-    last = m.index + m[0].length
-  }
-  if (last < pattern.length) parts.push(JSON.stringify(pattern.slice(last)))
-  // A pattern with no token at all still yields a bare page number.
-  return parts.length ? parts.join(' ') : 'counter(page)'
+/** Turn a human pattern like `Page {page} of {pages}` into markup.
+ *
+ * The counters are empty spans that a stylesheet fills — the rules ride along
+ * in the template (page-css.ts) — which makes a page number ordinary content:
+ * it goes in a header, in a footer, or in the middle of a sentence, and it can
+ * be selected, styled and moved like anything else. It used to be a string
+ * inside an @page margin box, which prints and cannot be touched.
+ *
+ * Page numbers MUST come from counters rather than from a data field: the total
+ * is only known once the layout has run, so the consumer cannot supply it.
+ */
+function patternToMarkup(pattern: string): string {
+  const span = (cls: string) => `<span class="${cls}"></span>`
+  return pattern.replace(/\{(page|pages)\}/g, (_, which) =>
+    span(which === 'pages' ? PAGE_COUNT_CLASS : PAGE_NO_CLASS),
+  )
 }
 
 export const PRESETS: Preset[] = [
@@ -200,11 +200,11 @@ export const PRESETS: Preset[] = [
   {
     id: 'page-numbers',
     group: 'Sections',
-    label: 'Page numbers',
+    label: 'Page number',
     description:
-      'A page number in the bottom margin of every printed page. Uses CSS ' +
-      'counters, not a data field — the total is only known once the pages are ' +
-      'laid out. Edit the wording, or reduce it to just {page}.',
+      'A page number you can put anywhere — in a header, in a footer, or in a ' +
+      'line of text. Built on CSS counters, not a data field: the total is only ' +
+      'known once the pages are laid out, so the consumer cannot send it.',
     convertsFrom: [],
     params: [
       {
@@ -216,13 +216,11 @@ export const PRESETS: Preset[] = [
     ],
     generate: (raw) => {
       const p = withDefaults(PRESETS[8], raw)
-      const content = patternToCounterContent(p.pattern)
-      // Same mechanism as the header/footer blocks: an @page rule in a body
-      // <style> WeasyPrint honours, leaving the read-only author CSS untouched.
-      return (
-        '<style>@page { margin-bottom: 16mm; @bottom-center { ' +
-        `content: ${content}; font-size: 9pt; color: #555; } }</style>`
-      )
+      // A block, not a run of text: it can then be selected, moved and
+      // deleted whole, and the counters inside it are atoms of their own — so
+      // "Всего {pages}, страница {page}" is a matter of typing the words and
+      // dragging the two, in whatever order the language wants them.
+      return `<div>${patternToMarkup(p.pattern)}</div>`
     },
   },
 ]

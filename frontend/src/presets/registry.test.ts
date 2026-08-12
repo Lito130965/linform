@@ -65,13 +65,20 @@ describe('generated Jinja is what we expect', () => {
   })
 
   it('page numbers come from live CSS counters, never a data field', () => {
+    // Ordinary content now, rather than a string inside a margin box: it goes
+    // in a header, in a footer or in a sentence, and it can be selected and
+    // styled like anything else. The counters themselves are empty spans a
+    // stylesheet fills — the rules travel with the template (page-css.ts).
     const s = gen('page-numbers', { pattern: 'Page {page} of {pages}' })
-    expect(s).toContain('@bottom-center')
-    expect(s).toContain('content: "Page " counter(page) " of " counter(pages);')
+    expect(s).toBe(
+      '<div>Page <span class="lf-page-no"></span> of <span class="lf-page-count"></span></div>',
+    )
     // The count is unknowable to the consumer, so it must not be a placeholder.
     expect(s).not.toContain('{{')
     // Reducible to just the bare number.
-    expect(gen('page-numbers', { pattern: '{page}' })).toContain('content: counter(page);')
+    expect(gen('page-numbers', { pattern: '{page}' })).toBe(
+      '<div><span class="lf-page-no"></span></div>',
+    )
   })
 })
 

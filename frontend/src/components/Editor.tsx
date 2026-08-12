@@ -13,14 +13,20 @@ import {
   toCanvasAssets,
 } from '../jinja-bridge'
 import PreviewPane from './PreviewPane'
-import PlaceholderPanel from './PlaceholderPanel'
+import FieldsPanel from './FieldsPanel'
+import InsertPanel from './InsertPanel'
 import PresetPanel from './PresetPanel'
 import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
 import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
+import { BLOCKS } from '../editor/blocks'
+import { fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
+import { ensurePageCounterRules, writePageSetup, type PageSetup } from '../editor/page-css'
+import { setFurnitureBox, type Edge } from '../editor/furniture-setup'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
+import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 
@@ -83,20 +89,16 @@ export default function Editor({
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [presetFor, setPresetFor] = useState<Preset | null>(null)
-  const [panelTab, setPanelTab] = useState<'placeholders' | 'presets' | 'assets' | 'data'>(
-    'placeholders',
+  const [panelTab, setPanelTab] = useState<'insert' | 'fields' | 'presets' | 'assets' | 'data'>(
+    'insert',
   )
+  // Loops in force where the caret is, reported by the canvas. They decide
+  // whether `items[].price` can be written here, and under what name.
+  const [scopes, setScopes] = useState<LoopScope[]>([])
+  // Names the template already uses. Extracted server-side so the parsing
+  // matches the engine that will render it.
+  const [placeholders, setPlaceholders] = useState<string[]>([])
   const [panelHeight, setPanelHeight] = useState(220)
-
-  // Which panels this instance can actually serve. Assets need storage behind
-  // them; on a demo the panel would offer an upload button and answer
-  // "Not Found", which is a worse welcome than not offering it.
-  const panelTabs = (['placeholders', 'presets', 'assets', 'data'] as const).filter(
-    (t) => t !== 'assets' || assets,
-  )
-  useEffect(() => {
-    if (!assets && panelTab === 'assets') setPanelTab('placeholders')
-  }, [assets, panelTab])
 
   // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
   // editor or vanishing; the value is otherwise the user's to set.
@@ -118,6 +120,22 @@ export default function Editor({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [sanitizeWarning, setSanitizeWarning] = useState<string | null>(null)
   const [mode, setMode] = useState<'code' | 'visual'>('code')
+
+  // Which panels this instance can actually serve. Assets need storage behind
+  // them; on a demo the panel would offer an upload button and answer "Not
+  // Found", which is a worse welcome than not offering it.
+  //
+  // Fields live beside the canvas in Visual mode, where they belong next to the
+  // structure. Code mode has no such column, so they get a tab here instead —
+  // present exactly where they are not a second copy of something.
+  const panelTabs = (['insert', 'fields', 'presets', 'assets', 'data'] as const).filter(
+    (t) => (t !== 'assets' || assets) && (t !== 'fields' || mode === 'code'),
+  )
+  useEffect(() => {
+    if (!assets && panelTab === 'assets') setPanelTab('insert')
+    // Leaving Code mode takes the Fields tab with it.
+    if (mode !== 'code' && panelTab === 'fields') setPanelTab('insert')
+  }, [assets, panelTab, mode])
   const viewRef = useRef<EditorView | null>(null)
   const canvasApiRef = useRef<CanvasEditorApi | null>(null)
   const htmlRef = useRef('')
@@ -320,7 +338,21 @@ export default function Editor({
   // inserts it raw; Visual inserts its protected form, so the two modes stay
   // provably identical (protect/restore inverse). detect() already guarded the
   // dialog's Insert button, so this cannot corrupt the canvas silently.
+  /** A page number is an empty span plus a rule that fills it. The span goes
+   * where the caret is; the rule has to be in the stylesheet, so it is written
+   * the same way the page setup is — to the source, once. */
+  const ensureCounterRules = () => {
+    const current = currentHtml()
+    const next = ensurePageCounterRules(current)
+    if (next === current) return
+    const split = splitForVisual(next)
+    if (split.ok) splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    htmlRef.current = next
+    setHtml(next)
+  }
+
   const insertPresetSource = (source: string) => {
+    if (source.includes('lf-page-no') || source.includes('lf-page-count')) ensureCounterRules()
     if (mode !== 'visual') {
       insertText(source)
       return
@@ -331,6 +363,82 @@ export default function Editor({
     } catch (e) {
       setError((e as Error).message)
     }
+  }
+
+  // One assembly of the field list. The panel lists it and the canvas offers it
+  // behind `{{` — two assemblies would be two lists that one day disagree.
+  const fields = useMemo(() => fieldRows(testData, placeholders, scopes), [
+    testData,
+    placeholders,
+    scopes,
+  ])
+
+  useEffect(() => {
+    if (!html.trim()) {
+      setPlaceholders([])
+      return
+    }
+    const t = setTimeout(() => {
+      api
+        .placeholders(html)
+        .then((r) => setPlaceholders(r.placeholders))
+        .catch(() => setPlaceholders([]))
+    }, 1000)
+    return () => clearTimeout(t)
+  }, [html])
+
+  // What the last generate did, so the panel can say it rather than leaving
+  // somebody to diff two blobs of JSON by eye.
+  const [sampleNote, setSampleNote] = useState<string | null>(null)
+
+  const applySample = (result: SampleResult) => {
+    setTestData(result.json)
+    setSampleNote(
+      result.added.length === 0
+        ? 'Nothing missing — the payload already covers every value the template names.'
+        : `Added ${result.added.length}: ${result.added.slice(0, 6).join(', ')}${
+            result.added.length > 6 ? '…' : ''
+          }`,
+    )
+  }
+
+  /** The page changed. It lives in the template's own stylesheet, so this is a
+   * source edit like any other — and the canvas is told about it by handing it
+   * the new CSS, not by being rebuilt. */
+  const applyPageSetup = (setup: PageSetup) => {
+    const next = writePageSetup(currentHtml(), setup)
+    const split = splitForVisual(next)
+    if (split.ok) splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    htmlRef.current = next
+    setHtml(next)
+    setDirty(true)
+  }
+
+  /** A header or footer switched on or off.
+   *
+   * Only the stylesheet half — the margin box that pulls the element. The
+   * canvas has already put the element in the body, or taken it out, because
+   * that half is a document edit and the canvas is where the document lives:
+   * rewriting the body from here would rebuild the canvas and shut the panel
+   * the switch is in. See furniture-setup.ts for why both halves are needed.
+   */
+  const applyFurniture = (edge: Edge, on: boolean) => {
+    const next = setFurnitureBox(currentHtml(), edge, on)
+    const split = splitForVisual(next)
+    if (split.ok) splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
+    htmlRef.current = next
+    setHtml(next)
+    setDirty(true)
+  }
+
+  const insertBlock = (id: string) => {
+    if (mode === 'visual') {
+      canvasApiRef.current?.insertBlock(id)
+      setDirty(true)
+      return
+    }
+    const block = BLOCKS.find((b) => b.id === id)
+    if (block) insertText(block.content)
   }
 
   const enterVisual = () => {
@@ -372,6 +480,7 @@ export default function Editor({
 
   const exitVisual = () => {
     canvasApiRef.current = null
+    setScopes([])
     setMode('code')
   }
 
@@ -574,6 +683,10 @@ export default function Editor({
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onSanitized={setSanitizeWarning}
               compact={overlayPanels}
+              fields={fields}
+              onPageSetup={applyPageSetup}
+              onFurniture={applyFurniture}
+              onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
                 canvasApiRef.current = api
@@ -608,8 +721,10 @@ export default function Editor({
                   className={panelTab === t ? 'panel-tab active' : 'panel-tab'}
                   onClick={() => setPanelTab(t)}
                 >
-                  {t === 'placeholders'
-                    ? 'Placeholders'
+                  {t === 'insert'
+                    ? 'Insert'
+                    : t === 'fields'
+                      ? 'Fields'
                     : t === 'presets'
                       ? 'Presets'
                       : t === 'assets'
@@ -619,20 +734,46 @@ export default function Editor({
               ))}
             </div>
             <div className="panel-body">
-              {panelTab === 'placeholders' && (
-                <PlaceholderPanel html={html} onInsert={insertPlaceholder} />
+              {panelTab === 'insert' && <InsertPanel onInsert={insertBlock} />}
+              {panelTab === 'fields' && (
+                <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
               )}
               {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
               {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
               {panelTab === 'data' && (
                 <div className="test-data">
-                  <label htmlFor="test-data-json">Test data (JSON) — preview renders with it</label>
+                  <div className="test-data-head">
+                    <label htmlFor="test-data-json">
+                      Test data (JSON) — preview renders with it
+                    </label>
+                    {/* Made from the template, not the other way round: the
+                        fields go on the page first and the payload follows. Two
+                        buttons because they answer different questions — start
+                        again, or keep what has been adjusted and catch up. */}
+                    <span className="test-data-actions">
+                      <button
+                        className="btn small"
+                        title="Replace this with a fresh sample built from every value the template names"
+                        onClick={() => applySample(generateSample(currentHtml()))}
+                      >
+                        Generate
+                      </button>
+                      <button
+                        className="btn small"
+                        title="Keep what is here and add the values the template names that are missing"
+                        onClick={() => applySample(fillMissing(currentHtml(), testData))}
+                      >
+                        Fill in missing
+                      </button>
+                    </span>
+                  </div>
                   <textarea
                     id="test-data-json"
                     spellCheck={false}
                     value={testData}
                     onChange={(e) => setTestData(e.target.value)}
                   />
+                  {sampleNote && <p className="muted small">{sampleNote}</p>}
                   {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
                 </div>
               )}

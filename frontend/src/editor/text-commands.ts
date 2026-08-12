@@ -8,6 +8,8 @@
  * that is what every editor does.
  */
 
+import { clampOutOfAtomic } from './range-ops'
+
 const TAGS = { bold: 'B', italic: 'I', underline: 'U' } as const
 export type InlineFormat = keyof typeof TAGS
 
@@ -22,7 +24,12 @@ function unwrap(el: Element): void {
 export function toggleInline(doc: Document, format: InlineFormat): void {
   const sel = doc.getSelection()
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
-  const range = sel.getRangeAt(0)
+  // A placeholder chip is one thing. Extracting a range that ends halfway into
+  // one splits the element, and export reads the ATTRIBUTE of each half — so
+  // bolding a sentence that mentions a field used to put a second copy of that
+  // field in the template. See range-ops.ts.
+  const range = clampOutOfAtomic(sel.getRangeAt(0))
+  if (range.collapsed) return
   const tag = TAGS[format]
 
   // Already formatted? The nearest same-tag ancestor of the selection.
