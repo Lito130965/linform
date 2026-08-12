@@ -106,30 +106,26 @@ test('a footer can be typed into, and is in the structure', async ({ page, reque
   expect(saved).not.toContain('data-lf-running')
 })
 
-test('a footer can be nudged from the edge, in millimetres the renderer obeys', async ({
-  page,
-  request,
-}) => {
-  const code = uniqueCode('furniture-move')
+test('the band itself cannot be nudged, but what is in it can', async ({ page, request }) => {
+  // The band is as tall and as wide as the page margin it occupies; a margin on
+  // the element would move the whole thing off the corner it is anchored to.
+  // Everything inside it is edited like any other content.
+  const code = uniqueCode('furniture-locked')
   await createTemplate(request, code, DOC)
   await openTemplate(page, code)
   await enterVisual(page)
   const frame = page.frameLocator(CANVAS)
 
   await frame.locator('#foot').click()
-  const grip = page.locator('.running-grip')
-  await expect(grip).toBeVisible()
+  await expect(page.locator('.canvas-props')).toContainText('as tall as the page margin')
+  await expect(page.locator('.canvas-props .box-model')).toHaveCount(0)
+  await expect(page.locator('.running-grip')).toHaveCount(0)
 
-  await grip.hover()
-  const box = (await grip.boundingBox())!
-  await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 8 })
-  await page.mouse.up()
-
-  // Written as the element's own margin, which is what moves it in print too.
-  await expect(frame.locator('#foot')).toHaveAttribute('style', /margin-left:\s*\d+(\.\d+)?mm/)
-  await saveDraft(page, 'nudged the footer')
-  expect(await latestDraftHtml(request, code)).toMatch(/margin-left:\s*\d/)
+  // A paragraph inside it keeps its own box.
+  await page.locator('.canvas-outline .outline-row', { hasText: 'Page footer' }).click()
+  await page.locator('.insert-tile', { hasText: 'Text' }).click()
+  await frame.locator('#foot p').click()
+  await expect(page.locator('.canvas-props .box-model')).toHaveCount(1)
 })
 
 test('a Jinja expression is edited in a dialog, not a browser prompt', async ({ page, request }) => {

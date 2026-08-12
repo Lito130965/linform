@@ -13,11 +13,14 @@
   @page {
     size: A4;
     margin: 20mm 15mm 22mm 15mm;
-    @bottom-center { content: element(lf-footer); }
+    /* width: 100% — a margin box is shrink-to-fit otherwise, and a footer
+       that shrinks to its text is not a footer. */
+    @bottom-center { content: element(lf-footer); width: 100%; }
   }
   .lf-page-no::after { content: counter(page); }
   .lf-page-count::after { content: counter(pages); }
   .foot { font-size: 8pt; color: #666; }
+  .foot table { width: 100%; border-collapse: collapse; }
   .foot td { width: 50%; }
   .foot .right { text-align: right; }
   body { font-family: 'Liberation Serif', serif; font-size: 11pt; line-height: 1.35; }

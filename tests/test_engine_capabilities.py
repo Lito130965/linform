@@ -177,6 +177,45 @@ def test_a_page_counter_in_ordinary_flow_reports_the_page_it_lands_on():
     assert any("FLOW 2" in line for line in rendered), rendered
 
 
+MARGIN_BOX = """<style>
+@page { size: A4; margin: 20mm; @bottom-center { content: element(f); %(box)s } }
+.f table { width: 100%%; border-collapse: collapse; }
+</style>
+<div style="position: running(f)" class="f"><table><tr>
+  <td id="L">LEFT</td><td id="R" style="text-align:right">RIGHT</td>
+</tr></table></div><p>body</p>"""
+
+
+def _span(box_css: str) -> float:
+    """Millimetres between the left and right edges of the footer's content."""
+    page = weasyprint.HTML(string=MARGIN_BOX % {"box": box_css}).render().pages[0]
+    return (page.anchors["R"][2] - page.anchors["L"][0]) / MM
+
+
+def test_a_margin_box_shrinks_to_its_content_unless_given_a_width():
+    """The default nobody expects, and the reason the header switch writes
+    `width: 100%`. The canvas draws the band across the page — that is what a
+    band is — so a footer that prints 37mm wide and centred is the editor and
+    the renderer disagreeing about the one thing a header is for.
+    """
+    # As a property rather than a number: how narrow shrink-to-fit comes out
+    # depends on the font, and what matters is that it is nothing like the page.
+    narrow = _span("")
+    assert narrow < 100, f"the default stopped being shrink-to-fit ({narrow:.0f}mm)"
+    assert _span("width: 100%;") == pytest.approx(170, abs=1), "width: 100% no longer spans"
+
+
+def test_a_width_on_the_running_element_does_not_widen_its_box():
+    """Worth pinning because it is the obvious thing to try and it does nothing:
+    a percentage on the element resolves against the box, which is the thing
+    that needed widening."""
+    page = weasyprint.HTML(
+        string=(MARGIN_BOX % {"box": ""}).replace(".f table {", ".f { width: 100% } .f table {")
+    ).render().pages[0]
+    span = (page.anchors["R"][2] - page.anchors["L"][0]) / MM
+    assert span < 100, f"a width on the element widened its box after all ({span:.0f}mm)"
+
+
 def test_javascript_in_a_template_does_not_run():
     """The security model rests on this: the engine draws documents and does not
     execute them. If a WeasyPrint release ever grew a script engine, everything

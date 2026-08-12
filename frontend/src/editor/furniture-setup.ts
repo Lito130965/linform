@@ -108,7 +108,12 @@ export function setFurnitureBox(html: string, edge: Edge, on: boolean): string {
   if (!on) return dropEmptyPageRules(out)
 
   const rule = /@page\b[^{]*\{/i.exec(out)
-  const box = `\n  ${BOX[edge]} { content: element(${RUNNING_NAME[edge]}); }`
+  // `width: 100%` is not decoration. A margin box is shrink-to-fit by default —
+  // measured: a footer of three columns comes out 37mm wide and centred on a
+  // 170mm page area, while the canvas draws the band across the page — so
+  // without this the editor and the renderer disagree about the one thing a
+  // header is for. See tests/test_engine_capabilities.py.
+  const box = `\n  ${BOX[edge]} { content: element(${RUNNING_NAME[edge]}); width: 100%; }`
   if (rule) {
     const at = rule.index + rule[0].length
     return out.slice(0, at) + box + out.slice(at)

@@ -1429,15 +1429,6 @@ export default function CanvasEditor({
       ? (selected.el as HTMLElement).getBoundingClientRect()
       : null
 
-  /** A header or footer sitting in its band, and therefore something that can
-   * be nudged away from the edge it is anchored to. */
-  const runningRect =
-    selected?.el.isConnected &&
-    selected.el.hasAttribute(RUNNING_ATTR) &&
-    selected.el.getAttribute(RUNNING_ATTR) !== 'unplaced'
-      ? (selected.el as HTMLElement).getBoundingClientRect()
-      : null
-
   // ---- snapping ----------------------------------------------------------
 
   /** How near a dragged edge must come before it falls onto a line — in SCREEN
@@ -1724,38 +1715,6 @@ export default function CanvasEditor({
     })
   }
 
-  /**
-   * Nudge a header or footer away from the edge it is anchored to.
-   *
-   * Written as the element's own margins, in millimetres, because that is what
-   * moves it in PRINT too: a margin box positions its content by the content's
-   * own box. The canvas is not remembering an offset of its own — it is writing
-   * the thing the renderer will obey, and the corner stays the origin.
-   */
-  const startRunningMove = (e: ReactMouseEvent) => {
-    if (!selected) return
-    e.preventDefault()
-    const el = selected.el as HTMLElement
-    const startX = e.clientX
-    const startY = e.clientY
-    const from = { x: parseFloat(el.style.marginLeft) || 0, y: parseFloat(el.style.marginTop) || 0 }
-    const round = (mm: number) => Math.round(mm * 10) / 10
-    startDrag({
-      cursor: 'move',
-      onMove: (ev) => {
-        const moved = ev.shiftKey
-          ? lockAxis((ev.clientX - startX) / zoom, (ev.clientY - startY) / zoom)
-          : { dx: (ev.clientX - startX) / zoom, dy: (ev.clientY - startY) / zoom }
-        const x = round(from.x + moved.dx / PX_PER_MM)
-        const y = round(from.y + moved.dy / PX_PER_MM)
-        el.style.marginLeft = `${x}mm`
-        el.style.marginTop = `${y}mm`
-        readOut(ev, `${x} × ${y} mm from the page corner${ev.shiftKey ? ' · one axis' : ''}`)
-        setTick((t) => t + 1)
-      },
-    })
-  }
-
   const stageWidth = pageWidth === null ? undefined : pageWidth * zoom
 
   return (
@@ -1895,7 +1854,13 @@ export default function CanvasEditor({
               onChange={(e) => applyStyle('font-size', e.target.value)}
             />
           </label>
-          {canvasWindow && (
+          {selected.el.hasAttribute(RUNNING_ATTR) && (
+            <span className="muted">
+              The band is as tall as the page margin — set it in Page. What is
+              inside it is edited like anything else.
+            </span>
+          )}
+          {canvasWindow && !selected.el.hasAttribute(RUNNING_ATTR) && (
             <BoxModel
               el={selected.el as HTMLElement}
               view={canvasWindow}
@@ -2303,22 +2268,7 @@ export default function CanvasEditor({
                   )}
                 </>
               )}
-              {runningRect && (
-              // A grip rather than a sheet over the whole band: a header is
-              // something you type in, and an overlay covering it would take
-              // every click meant for the text underneath.
-              <div
-                aria-hidden="true"
-                className="running-grip"
-                title="Drag to move it within its margin — the page corner is the origin"
-                style={{
-                  left: runningRect.left * zoom - 16,
-                  top: runningRect.top * zoom + (runningRect.height * zoom) / 2 - 7,
-                }}
-                onMouseDown={startRunningMove}
-              />
-            )}
-            {moveDrop &&
+              {moveDrop &&
                 (() => {
                   const tr = (moveDrop.el as HTMLElement).getBoundingClientRect()
                   // Dropping into a cell is not a line between two things, it is
