@@ -17,22 +17,28 @@ import { createTemplate, enterVisual, openTemplate, uniqueCode } from './support
 
 const CANVAS = 'iframe[title="template canvas"]'
 
-/** A4 with 20mm margins holds about 257mm of content, so a block of 240mm plus
- * a table pushes the table across the first boundary. */
+/**
+ * A4 with 20mm margins holds about 257mm of content.
+ *
+ * Both fixtures are things the canvas CANNOT move out of the way, which is what
+ * makes a warning worth drawing: a spacer cannot live between table rows, and
+ * nothing can make a block taller than a page fit on one. Everything else is
+ * moved to the next sheet now, and shown there — a warning about content the
+ * canvas has already placed correctly would be noise.
+ */
 const CROSSING_TABLE =
   '<style>@page { size: A4; margin: 20mm }\n' +
   'table { width: 100%; border-collapse: collapse }\n' +
   'td { border: 1px solid #999; height: 30mm }</style>\n' +
-  '<div style="height: 240mm">tall block</div>\n' +
   '<table><tbody>\n' +
-  '  <tr><td>row one</td></tr>\n' +
-  '  <tr><td>row two</td></tr>\n' +
+  '  <tr><td>row one</td></tr><tr><td>row two</td></tr><tr><td>row three</td></tr>\n' +
+  '  <tr><td>row four</td></tr><tr><td>row five</td></tr><tr><td>row six</td></tr>\n' +
+  '  <tr><td>row seven</td></tr><tr><td>row eight</td></tr><tr><td>row nine</td></tr>\n' +
   '</tbody></table>\n'
 
 const CROSSING_TEXT =
   '<style>@page { size: A4; margin: 20mm }</style>\n' +
-  '<div style="height: 240mm">tall block</div>\n' +
-  '<p style="height: 60mm">a paragraph long enough to reach across the break</p>\n'
+  '<p style="height: 400mm">a paragraph too tall for any page to hold</p>\n'
 
 test('a row that will move to the next page whole says so', async ({ page, request }) => {
   const code = uniqueCode('break-row')
@@ -41,7 +47,7 @@ test('a row that will move to the next page whole says so', async ({ page, reque
   await enterVisual(page)
 
   // There is a page break to cross in the first place.
-  await expect(page.locator('.page-boundary')).not.toHaveCount(0)
+  await expect(page.locator('.sheet-edge')).not.toHaveCount(0)
 
   const warning = page.locator('.break-warning.moves')
   await expect(warning).toHaveCount(1)
@@ -50,8 +56,8 @@ test('a row that will move to the next page whole says so', async ({ page, reque
   // It is drawn over the row, not over the whole table: a table crossing a page
   // is not news, the row that lands on the line is.
   const warned = (await warning.boundingBox())!
-  const row = (await page.frameLocator(CANVAS).locator('tr').first().boundingBox())!
-  expect(Math.abs(warned.height - row.height)).toBeLessThan(6)
+  const anyRow = (await page.frameLocator(CANVAS).locator('tr').first().boundingBox())!
+  expect(Math.abs(warned.height - anyRow.height)).toBeLessThan(6)
 })
 
 test('a paragraph that will simply flow on says that instead', async ({ page, request }) => {
@@ -77,4 +83,65 @@ test('nothing is marked when the break falls between elements', async ({ page, r
   await enterVisual(page)
 
   await expect(page.locator('.break-warning')).toHaveCount(0)
+})
+
+test('the space between two sheets is real, and shows what the furniture costs', async ({
+  page,
+  request,
+}) => {
+  // The strip used to run the content bands together with a line between them:
+  // the margins between sheets existed in the arithmetic and nowhere on screen,
+  // so a header could only ever be seen on page one.
+  const code = uniqueCode('sheet-gap')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 20mm; margin-bottom: 26mm;\n' +
+      '  @top-center { content: element(lf-head) } }</style>\n' +
+      '<div id="head" style="position: running(lf-head)">Quarterly report</div>\n' +
+      '<div id="first" style="height: 200mm">first</div>\n' +
+      '<div id="second" style="height: 60mm">second</div>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  // Two sheets, with the gap drawn between them.
+  const gap = page.locator('.sheet-gap')
+  await expect(gap).toHaveCount(1)
+  await expect(gap.locator('.sheet-band.head')).toContainText('header')
+  await expect(gap.locator('.sheet-edge')).toContainText('page 2')
+
+  // The block that would not fit starts below the gap, on the next page's band
+  // — not straddling the paper edge.
+  const gapBox = (await gap.boundingBox())!
+  const second = (await frame.locator('#second').boundingBox())!
+  expect(second.y).toBeGreaterThan(gapBox.y + gapBox.height - 2)
+})
+
+test('the sheet does not grow a page while nothing is added', async ({ page, request }) => {
+  // Pagination inserts spacing into the flow it measures, so it has to be
+  // self-consistent or it feeds its own output back in. This is that, typed at.
+  const code = uniqueCode('no-growth')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 15mm }</style>\n' +
+      '<h1 id="title">Report</h1>\n' +
+      '<div style="height: 150mm">one</div>\n<div style="height: 150mm">two</div>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const gaps = page.locator('.sheet-gap')
+  const before = await gaps.count()
+  expect(before).toBeGreaterThan(0)
+
+  for (let i = 0; i < 3; i++) {
+    await page.frameLocator(CANVAS).locator('#title').click()
+    await page.keyboard.press('End')
+    await page.keyboard.type('x')
+    await page.waitForTimeout(400)
+  }
+  expect(await gaps.count(), 'the strip grew a sheet while nothing was added').toBe(before)
 })

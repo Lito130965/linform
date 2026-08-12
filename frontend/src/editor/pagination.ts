@@ -1,31 +1,41 @@
 /**
- * Where the printed pages actually end.
+ * Where the printed pages are, in the canvas.
  *
- * The canvas lays a template out as ONE continuous strip, but paged media does
- * not work that way: every printed page loses its top and bottom @page margins,
- * so the content that fits on a page is `pageHeight - marginTop - marginBottom`
- * — not `pageHeight`.
+ * The canvas lays a template out as one continuous strip, but paged media does
+ * not work that way: every page spends its top and bottom @page margins, so a
+ * page holds `pageHeight - marginTop - marginBottom` of content — not
+ * `pageHeight`.
  *
  * Getting this wrong is not a rounding error, it accumulates. With A4 and
  * `margin: 10mm 15mm 15mm 15mm` the canvas used to draw its page-2 line 40mm
- * below the true break (`k*H - (mT + k*U) = k*(mT+mB) - mT`), which on a real
- * form was two full rows of content shown on the wrong page.
+ * below the true break, which on a real form was two full rows of content shown
+ * on the wrong page.
  *
- * Everything here is in sheet coordinates: y is measured from the top edge of
- * the paper, and the body — which is the page area, inset by the @page margins
- * exactly as it is in print — starts at `marginTop`, where the first page's
- * content band begins.
+ * **Each page occupies a whole sheet in the strip.** The strip used to run the
+ * content bands together — page 2's content began directly under page 1's, with
+ * a line between them — so the margins between sheets existed in the arithmetic
+ * and nowhere on screen, and a header or footer could only be shown on the
+ * first page. Now page k occupies `[k*pageHeight, (k+1)*pageHeight)` and the
+ * gap between two sheets is real space: the footer band of one page, the paper
+ * edge, and the header band of the next.
  *
- * What this does NOT do, deliberately (see README "Limits"): it says where a
- * page ENDS, not what moves. The canvas keeps the document as one continuous
- * strip, so a block straddling a boundary is drawn whole with the line through
- * it, while the renderer pushes it entirely to the next page — and content
- * inside a table cannot be pushed by the canvas at all, since a spacer div
- * cannot live between table rows. Beyond that, the browser and WeasyPrint are
- * different layout engines with different font metrics, and `page-break-inside`,
- * widows and orphans are the renderer's business. The PDF preview stays the
- * source of truth; this model exists to stop the canvas being systematically,
- * cumulatively wrong.
+ * That makes the coordinates self-consistent — a position measured in the live
+ * document is already the position on the strip, with no bookkeeping about how
+ * much spacing has been inserted above it — which is what keeps pagination from
+ * feeding back into itself and growing a page per pass.
+ *
+ * Everything here is in sheet coordinates unless a parameter says otherwise: y
+ * is measured from the top edge of the paper, and the body — which is the page
+ * area, inset by the @page margins exactly as it is in print — starts at
+ * `marginTop`.
+ *
+ * What this does NOT do, deliberately (see README "Limits"): only top-level
+ * blocks are moved, because a spacer cannot live between table rows, and an
+ * element taller than a page is left to cross. Beyond that the browser and
+ * WeasyPrint are different layout engines with different font metrics, and
+ * `page-break-inside`, widows and orphans are the renderer's business. The PDF
+ * preview stays the source of truth; this model exists to stop the canvas being
+ * systematically, cumulatively wrong.
  *
  * Pure functions with no DOM, so the geometry is testable without a layout
  * engine — jsdom has none.
@@ -51,39 +61,78 @@ export function canPaginate(g: PageGeometry | null): g is PageGeometry {
   return g !== null && g.pageHeight > 0 && usablePageHeight(g) > 0
 }
 
-/** How many printed pages a strip of content this tall occupies. */
+/**
+ * How many sheets the strip holds.
+ *
+ * @param contentHeight sheet y the content reaches — the top margin plus what
+ *   the body holds, spacers included, since those are part of the strip
+ */
 export function pageCountFor(contentHeight: number, g: PageGeometry): number {
   if (!canPaginate(g)) return 1
-  const flowing = contentHeight - g.marginTop
-  if (flowing <= 0) return 1
-  return Math.max(1, Math.ceil(flowing / usablePageHeight(g)))
+  const page = pageIndexAt(contentHeight - 0.5, g)
+  // Content reaching into a page's bottom margin is content the renderer will
+  // carry to the next page — it is past the printable band — so it needs a
+  // sheet of its own. Counting by total height alone missed exactly that
+  // window, and a document one line too long showed as a single page.
+  const bandEnd = (page + 1) * g.pageHeight - g.marginBottom
+  return Math.max(1, page + 1 + (contentHeight > bandEnd + 0.5 ? 1 : 0))
 }
 
-/** Canvas y of the end of each printed page, for the boundary lines. Page k
- * (1-based) ends at `marginTop + k * usable`. Returns `pages - 1` offsets: the
- * last page's end is the end of the document, not a break. */
+/** Sheet y where each page's content band ends — one per gap between sheets,
+ * so `pages - 1` of them. The last page's content ends where the document does,
+ * which is not a break. */
 export function pageBreakOffsets(contentHeight: number, g: PageGeometry): number[] {
   const pages = pageCountFor(contentHeight, g)
-  const usable = usablePageHeight(g)
-  return Array.from({ length: Math.max(0, pages - 1) }, (_, i) => g.marginTop + (i + 1) * usable)
+  return Array.from(
+    { length: Math.max(0, pages - 1) },
+    (_, i) => (i + 1) * g.pageHeight - g.marginBottom,
+  )
 }
 
-/** Zero-based index of the page an edge at canvas y falls on. */
+/** Sheet y of the top edge of each sheet after the first — where one page's
+ * paper ends and the next begins. */
+export function sheetEdges(contentHeight: number, g: PageGeometry): number[] {
+  const pages = pageCountFor(contentHeight, g)
+  return Array.from({ length: Math.max(0, pages - 1) }, (_, i) => (i + 1) * g.pageHeight)
+}
+
+/** Zero-based index of the page a sheet y falls on. */
 export function pageIndexAt(y: number, g: PageGeometry): number {
-  const usable = usablePageHeight(g)
-  return Math.max(0, Math.floor((y - g.marginTop) / usable))
+  if (!canPaginate(g)) return 0
+  return Math.max(0, Math.floor(y / g.pageHeight))
 }
 
-/** Height of the spacer needed to push an edge to the top of the next page's
- * content band — the explicit `page-break` case. Returns 0 when the edge
- * already sits at a page start (nothing to push). */
-export function gapToNextPage(edge: number, g: PageGeometry): number {
+/** Sheet y where page `k`'s content band begins. */
+export function bandStart(page: number, g: PageGeometry): number {
+  return page * g.pageHeight + g.marginTop
+}
+
+/**
+ * How far a block whose top is at sheet y `top` has to move to begin on the
+ * next page's content band.
+ *
+ * Rects measured inside the canvas are already sheet coordinates, and a spacer
+ * inserted in the flow shifts everything after it by its own height — so this
+ * number is the spacer's height, with no arithmetic about what was inserted
+ * above it. That self-consistency is what keeps pagination from feeding back
+ * into itself.
+ */
+export function gapToNextPage(top: number, g: PageGeometry): number {
   if (!canPaginate(g)) return 0
-  const usable = usablePageHeight(g)
-  const flowing = edge - g.marginTop
-  // An edge exactly on a boundary is already at the top of the next page.
-  const boundaries = Math.ceil(flowing / usable)
-  const nextStart = g.marginTop + boundaries * usable
-  const gap = nextStart - edge
+  const gap = bandStart(pageIndexAt(top, g) + 1, g) - top
   return gap > 0 ? gap : 0
+}
+
+/**
+ * Does a block starting at sheet y `top` and this tall run past the page it
+ * starts on?
+ *
+ * Blocks taller than a page are excluded: nothing can make one fit, and moving
+ * it would only carry the overflow down a sheet.
+ */
+export function overflowsItsPage(top: number, height: number, g: PageGeometry): boolean {
+  if (!canPaginate(g)) return false
+  if (height > usablePageHeight(g)) return false
+  const bandEnd = (pageIndexAt(top, g) + 1) * g.pageHeight - g.marginBottom
+  return top + height > bandEnd + 0.5
 }

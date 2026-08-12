@@ -47,8 +47,10 @@ import { laterOverrides, readPageSetup, type PageSetup } from './page-css'
 import {
   canPaginate,
   gapToNextPage,
+  overflowsItsPage,
   pageBreakOffsets,
   pageCountFor,
+  sheetEdges,
   usablePageHeight,
   type PageGeometry,
 } from './pagination'
@@ -132,23 +134,44 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
   for (const s of Array.from(body.querySelectorAll('[data-lf-spacer]'))) s.remove()
   if (!canPaginate(geom)) return
   const doc = body.ownerDocument
+
+  const spacerOf = (height: number): HTMLElement => {
+    const spacer = doc.createElement('div')
+    spacer.setAttribute('data-lf-spacer', '1')
+    spacer.style.height = `${Math.round(height)}px`
+    return spacer
+  }
+
+  // Explicit breaks first, and by their own element rather than by the top-level
+  // block that holds them: `page-break-after` on a row inside a table is a
+  // thing people write, and the spacer goes beside the element that asked.
   for (const el of Array.from(body.querySelectorAll<HTMLElement>('*'))) {
     const side = breakSide(el)
     if (!side) continue
-    // Sheet coordinates, which is what the page geometry is expressed in. A
-    // rect inside the iframe is already measured from the sheet corner; the
-    // body starts one top margin below it.
     const rect = el.getBoundingClientRect()
-    const edge = side === 'after' ? rect.bottom : rect.top
-    // Land on the next page's CONTENT band, not the next sheet edge: every page
-    // spends its top and bottom margins, so the two are not the same place.
-    const gap = gapToNextPage(edge, geom)
-    if (gap <= 2 || gap >= usablePageHeight(geom)) continue
-    const spacer = doc.createElement('div')
-    spacer.setAttribute('data-lf-spacer', '1')
-    spacer.style.height = `${Math.round(gap)}px`
-    if (side === 'after') el.after(spacer)
-    else el.before(spacer)
+    const gap = gapToNextPage(side === 'after' ? rect.bottom : rect.top, geom)
+    if (gap <= 2 || gap >= geom.pageHeight) continue
+    if (side === 'after') el.after(spacerOf(gap))
+    else el.before(spacerOf(gap))
+  }
+
+  // Then the natural ones. Each sheet occupies a whole page height in the strip,
+  // so a block that would run past its page is moved to the next page's content
+  // band and the space between the two sheets — one footer band, the paper edge,
+  // one header band — is left standing where it belongs.
+  //
+  // In document order, measuring as it goes: a spacer shifts everything after
+  // it, and every rect read here is read after the shifts above it have already
+  // happened. That is what keeps this from needing to know how much it has
+  // inserted, and from feeding its own output back into the next pass.
+  for (const child of Array.from(body.children)) {
+    if (child.hasAttribute('data-lf-spacer')) continue
+    const rect = child.getBoundingClientRect()
+    if (rect.height === 0) continue
+    if (!overflowsItsPage(rect.top, rect.height, geom)) continue
+    const gap = gapToNextPage(rect.top, geom)
+    if (gap <= 2) continue
+    child.before(spacerOf(gap))
   }
 }
 
@@ -346,9 +369,10 @@ export default function CanvasEditor({
   const pageCount = geometry ? pageCountFor(frameHeight, geometry) : 1
   const breakOffsets = geometry ? pageBreakOffsets(frameHeight, geometry) : []
   // The sheet shown always reaches the bottom edge of the last printed page.
-  const sheetHeight = geometry
-    ? Math.max(frameHeight, margins.top + pageCount * usablePageHeight(geometry) + margins.bottom)
-    : frameHeight
+  // Whole sheets: the strip is as tall as the pages it holds, so the space
+  // between two of them is on screen rather than only in the arithmetic.
+  const sheetHeight = geometry ? Math.max(frameHeight, pageCount * geometry.pageHeight) : frameHeight
+  const edges = geometry ? sheetEdges(frameHeight, geometry) : []
   // The observer closure (mounted once) reads the live geometry from here.
   const geometryRef = useRef(geometry)
   geometryRef.current = geometry
@@ -1125,6 +1149,19 @@ export default function CanvasEditor({
     setTick((t) => t + 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasStyles])
+
+  // Paginate again once the page is known. At mount the margins have not been
+  // measured yet — they are read off the laid-out body, which happens in the
+  // same pass — so the first pagination runs against a page with no margins and
+  // finds nothing to move. Without this, a document only ever paginated if
+  // something else edited it afterwards.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!body) return
+    paginate(body, geometryRef.current)
+    measureRef.current?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [margins.top, margins.bottom, pageHeight])
 
   // Headers and footers, put in the band they print in. Re-run whenever the
   // document or the page changes: which box pulls which element comes from the
@@ -2183,23 +2220,26 @@ export default function CanvasEditor({
                   </div>
                 )
               })}
-              {/* Physical page boundaries: a line where each printed page ends. */}
-              {breakOffsets.map((offset, i) => (
+              {/* Between two sheets: the footer band of the page above, the
+                  paper edge, and the header band of the page below. Real space
+                  in the strip rather than a line, so what a header or footer
+                  costs on every page is visible on every page. */}
+              {edges.map((edge, i) => (
                 <div
                   key={i}
-                  className="page-boundary"
-                  style={{ top: offset * zoom, width: (pageWidth ?? 0) * zoom }}
+                  className="sheet-gap"
+                  style={{
+                    top: (edge - margins.bottom) * zoom,
+                    height: (margins.bottom + margins.top) * zoom,
+                    width: (pageWidth ?? 0) * zoom,
+                  }}
                 >
-                  {/* What the next page spends before its content starts. The
-                      canvas is one strip — it does not draw the gap between
-                      sheets — so the line says what the gap holds. */}
-                  <span>
-                    page {i + 2}
-                    {bands.bottom || bands.top
-                      ? ` · ${[bands.bottom && 'footer', bands.top && 'header']
-                          .filter(Boolean)
-                          .join(' + ')} repeat here`
-                      : ''}
+                  <span className="sheet-band foot" style={{ height: margins.bottom * zoom }}>
+                    {bands.bottom ? 'footer' : ''}
+                  </span>
+                  <span className="sheet-edge">page {i + 2}</span>
+                  <span className="sheet-band head" style={{ height: margins.top * zoom }}>
+                    {bands.top ? 'header' : ''}
                   </span>
                 </div>
               ))}

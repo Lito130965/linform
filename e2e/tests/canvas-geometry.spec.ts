@@ -33,7 +33,7 @@ test('the sheet does not grow a page every time you edit', async ({ page, reques
   await openTemplate(page, code)
   await enterVisual(page)
 
-  const boundaries = page.locator('.page-boundary')
+  const boundaries = page.locator('.sheet-gap')
   const before = await boundaries.count()
   expect(before, 'this template is taller than one page and should say so').toBeGreaterThan(0)
 
