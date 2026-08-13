@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test'
 import {
   createTemplate,
   enterVisual,
+  latestDraftHtml,
   openTemplate,
+  saveDraft,
   uniqueCode,
 } from './support'
 
@@ -241,4 +243,76 @@ test('a field can be typed around: clicking one leaves a caret beside it', async
 
   // And the field itself survived being typed around, exactly once.
   await expect(chip).toHaveCount(1)
+})
+
+test('typing a slash offers the blocks and inserts the one chosen', async ({ page, request }) => {
+  // The same bargain as `{{`, for structure rather than for values: somebody
+  // who wants a table types the word. The alternative was to look away from the
+  // page, find the palette, and come back to a caret that had moved on.
+  const code = uniqueCode('slash')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  await frame.locator('#line').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' /tab')
+
+  const menu = page.locator('.field-typeahead')
+  await expect(menu).toBeVisible()
+  await expect(menu.locator('.field-label').first()).toHaveText('Table')
+
+  await page.keyboard.press('Enter')
+  await expect(menu).toHaveCount(0)
+  await expect(frame.locator('table')).toHaveCount(2)
+  // The typed trigger goes with it: `/tab` left beside a new table is litter
+  // somebody then has to find and delete.
+  await expect(frame.locator('#line')).not.toContainText('/tab')
+
+  await saveDraft(page, 'a table from the slash menu')
+  const saved = await latestDraftHtml(request, code)
+  // Not a bare search for "/tab": that is a substring of every closing table
+  // tag in the document this test just added one to.
+  expect(saved).not.toContain('credit. /tab')
+  expect(saved).toContain('<table')
+})
+
+test('a slash inside a date is left alone', async ({ page, request }) => {
+  const code = uniqueCode('slash-date')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  await frame.locator('#line').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' 12/03')
+  await expect(page.locator('.field-typeahead')).toHaveCount(0)
+  await expect(frame.locator('#line')).toContainText('12/03')
+})
+
+test('the test data says what it is missing and what nobody reads', async ({ page, request }) => {
+  // Both directions fail quietly: a value the data does not carry renders as a
+  // blank that reads as a layout problem, and a spare one is usually a field
+  // renamed on one side only.
+  const code = uniqueCode('data-check')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 15mm }</style>\n' +
+      '<p>{{ number }} for {{ customer.name }}</p>\n',
+  )
+  await openTemplate(page, code)
+  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await page.locator('#test-data-json').fill('{"number": "INV-1", "legacy": "x"}')
+
+  const check = page.locator('.data-check')
+  await expect(check).toContainText('customer.name')
+  await expect(check).toContainText('legacy')
+
+  // Filling in what is missing answers the first half, and says so.
+  await page.locator('.test-data-actions button', { hasText: 'Fill in missing' }).click()
+  await expect(check).not.toContainText('customer.name')
+  await expect(check).toContainText('legacy')
 })

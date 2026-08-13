@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
-import { BLOCKS } from './blocks'
+import { BLOCKS, type BlockDef } from './blocks'
 import { exportBody, prepareBody, prepareFragment } from './export-body'
 import { SnapshotHistory } from './history'
 import {
@@ -19,16 +19,17 @@ import {
 } from './page'
 import BoxModel from './BoxModel'
 import { GRID_MAJOR_MM, GRID_MINOR_MM, PX_PER_MM } from './box-model'
-import { CANVAS_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
+import { CANVAS_SHORTCUTS, EDITOR_SHORTCUTS, intentFor, type CanvasIntent } from './keyboard'
 import { CANVAS_MODIFIERS, isDuplicating, keepRatio, lockAxis } from './modifiers'
 import { VERDICT_LABEL, crossingsAt, type BoxNode } from './page-breaks'
 import { dropPlacement, place, placementFor, type Placement } from './placement'
 import { scopesAt, type FieldRow, type LoopScope } from './fields'
-import { rank, triggerAt, type Trigger } from './typeahead'
+import { rank, rankLabels, slashTriggerAt, triggerAt, type Trigger } from './typeahead'
 import {
   ATOMIC_SELECTOR,
   allInline,
   caretAfter,
+  caretAtPoint,
   caretBeside,
   caretRangeIn,
   clampOutOfAtomic,
@@ -104,6 +105,35 @@ function writeExpression(el: Element, attr: ExprAttr, expression: string): void 
   if (!expr) return
   el.setAttribute(attr, expr)
   if (attr === 'data-jinja-expr') el.textContent = `{{ ${expr} }}`
+}
+
+/**
+ * Hand a shortcut the canvas does not use to the application around it.
+ *
+ * A key press inside an iframe never reaches the document hosting it, so every
+ * shortcut the editor offers was dead for as long as the caret was in the page
+ * — which is where somebody editing a document keeps it. Ctrl+S in particular
+ * did the browser's "save this page as" instead of saving the draft.
+ *
+ * Rather than teach the canvas what the shell binds, the press is re-dispatched
+ * on the host document: whatever the shell listens for works from inside too,
+ * and neither side has to hold a copy of the other's list. The return value
+ * says whether anything claimed it, so the browser's own binding is stopped
+ * exactly when something else took the key and never otherwise.
+ */
+function forwardToApp(e: KeyboardEvent): boolean {
+  const forwarded = new KeyboardEvent('keydown', {
+    key: e.key,
+    code: e.code,
+    ctrlKey: e.ctrlKey,
+    metaKey: e.metaKey,
+    shiftKey: e.shiftKey,
+    altKey: e.altKey,
+    bubbles: true,
+    cancelable: true,
+  })
+  document.dispatchEvent(forwarded)
+  return forwarded.defaultPrevented
 }
 
 /** Does this element force a page break, and on which side? */
@@ -217,6 +247,7 @@ export default function CanvasEditor({
   onScopes,
   onPageSetup,
   onFurniture,
+  onDropFiles,
   compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
@@ -241,6 +272,10 @@ export default function CanvasEditor({
   /** fires when a header or footer is switched on or off; the shell writes both
    * halves — the margin box and the element it pulls */
   onFurniture?: (edge: Edge, on: boolean) => void
+  /** fires when files are dropped on the page, with the caret already placed
+   * where they landed. The canvas knows about the document, not about storage:
+   * uploading them and inserting whatever they became is the shell's half */
+  onDropFiles?: (files: File[]) => void
   /** the window is tight enough that panels cost more than they give */
   compact?: boolean
 }) {
@@ -261,8 +296,24 @@ export default function CanvasEditor({
   // The palette lives in the shell, and the function it calls is declared
   // below the mount effect that publishes the API.
   const insertBlockRef = useRef<((id: string) => void) | null>(null)
-  const callbacksRef = useRef({ onChange, onReady, onSanitized, onScopes, onPageSetup, onFurniture })
-  callbacksRef.current = { onChange, onReady, onSanitized, onScopes, onPageSetup, onFurniture }
+  const callbacksRef = useRef({
+    onChange,
+    onReady,
+    onSanitized,
+    onScopes,
+    onPageSetup,
+    onFurniture,
+    onDropFiles,
+  })
+  callbacksRef.current = {
+    onChange,
+    onReady,
+    onSanitized,
+    onScopes,
+    onPageSetup,
+    onFurniture,
+    onDropFiles,
+  }
   // The stylesheet element the canvas injects, kept so a change to the page
   // can be applied without tearing the document down and losing its history.
   const styleElRef = useRef<HTMLStyleElement | null>(null)
@@ -289,7 +340,36 @@ export default function CanvasEditor({
   // prompt cannot be styled, cannot show what the expression is for, and on a
   // second monitor opens somewhere the user is not looking.
   const [editingExpr, setEditingExpr] = useState<{ el: Element; attr: ExprAttr } | null>(null)
-  const [zoom, setZoom] = useState(1)
+  /**
+   * How big the page is drawn.
+   *
+   * Two numbers, because there are two answers and the editor has to hold both:
+   * the width the window happens to allow, and the size the reader asked for.
+   * Fitting is the default — a page that arrives already whole is what somebody
+   * opening a document wants — but it is a default, not a rule. Reading 8pt
+   * small print, or placing something against a margin, needs a closer look,
+   * and until now the only way to get one was to make the browser window
+   * bigger.
+   *
+   * A manual choice wins until it is given back ("Fit"), and window resizes go
+   * on updating the fitted value underneath, so handing it back is instant.
+   */
+  const [fitted, setFitted] = useState(1)
+  const [manualZoom, setManualZoom] = useState<number | null>(null)
+  const zoom = manualZoom ?? fitted
+  // Read from inside the canvas document's own listeners, which are bound once
+  // at mount and would otherwise hold the zoom the page had when it opened.
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  // Where the context menu is, in host pixels. What it acts on is the
+  // selection: right-clicking selects first, so the menu and the properties bar
+  // are always talking about the same element.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  // A file is over the page. Shown, because a drop target that gives no sign
+  // it is one is indistinguishable from a page that will refuse the file.
+  const [dropping, setDropping] = useState(false)
+  const menuRef = useRef(false)
+  menuRef.current = menu !== null
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
@@ -341,13 +421,18 @@ export default function CanvasEditor({
   const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
   const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
-  // Typing `{{` in the canvas offers the fields, at the caret. Held here as a
-  // position plus a shortlist; the text node it belongs to is in the ref, since
-  // the keyboard handler inside the iframe is mounted once and cannot see state.
+  // Typing at the caret offers something: `{{` the fields, `/` the blocks. Held
+  // here as a position plus a shortlist of labels; what each row MEANS is in the
+  // ref, along with the text node it belongs to — the keyboard handler inside
+  // the iframe is mounted once and cannot see state.
   const [typeahead, setTypeahead] = useState<
-    { left: number; top: number; rows: FieldRow[]; active: number } | null
+    { left: number; top: number; rows: { label: string; sample?: string }[]; active: number } | null
   >(null)
-  const typeaheadRef = useRef<{ node: Text; trigger: Trigger; rows: FieldRow[]; active: number } | null>(null)
+  const typeaheadRef = useRef<
+    | { kind: 'field'; node: Text; trigger: Trigger; rows: FieldRow[]; active: number }
+    | { kind: 'block'; node: Text; trigger: Trigger; rows: BlockDef[]; active: number }
+    | null
+  >(null)
   const fieldsRef = useRef<FieldRow[]>(fields)
   fieldsRef.current = fields
 
@@ -554,8 +639,8 @@ export default function CanvasEditor({
     setTypeahead(null)
   }
 
-  /** Look behind the caret for `{{` and offer what could follow it. Called on
-   * every input, so it stays cheap and gives up early. */
+  /** Look behind the caret for `{{` or `/` and offer what could follow it.
+   * Called on every input, so it stays cheap and gives up early. */
   const refreshTypeahead = (): void => {
     const body = bodyRef.current
     const doc = body?.ownerDocument
@@ -567,19 +652,39 @@ export default function CanvasEditor({
     }
     const node = range.startContainer as Text
     if (!body.contains(node)) return closeTypeahead()
-    const trigger = triggerAt(node.data, range.startOffset)
-    if (!trigger) return closeTypeahead()
-    const rows = rank(fieldsRef.current, trigger.query)
-    if (rows.length === 0) return closeTypeahead()
+    const caret = range.startOffset
 
-    // Measured over the braces rather than the caret: a collapsed range has no
-    // reliable rectangle, two characters always do.
-    const probe = doc.createRange()
-    probe.setStart(node, trigger.start)
-    probe.setEnd(node, trigger.end)
-    const box = probe.getBoundingClientRect()
-    typeaheadRef.current = { node, trigger, rows, active: 0 }
-    setTypeahead({ left: box.left, top: box.bottom, rows, active: 0 })
+    /** Where to draw it: measured over the trigger text rather than the caret,
+     * because a collapsed range has no reliable rectangle and two characters
+     * always do. */
+    const show = (trigger: Trigger, rows: { label: string; sample?: string }[]): void => {
+      const probe = doc.createRange()
+      probe.setStart(node, trigger.start)
+      probe.setEnd(node, trigger.end)
+      const box = probe.getBoundingClientRect()
+      setTypeahead({ left: box.left, top: box.bottom, rows, active: 0 })
+    }
+
+    const field = triggerAt(node.data, caret)
+    if (field) {
+      const rows = rank(fieldsRef.current, field.query)
+      if (rows.length > 0) {
+        typeaheadRef.current = { kind: 'field', node, trigger: field, rows, active: 0 }
+        show(field, rows.map((row) => ({ label: row.label, sample: row.sample })))
+        return
+      }
+    }
+
+    const slash = slashTriggerAt(node.data, caret)
+    if (slash) {
+      const rows = rankLabels(BLOCKS, slash.query)
+      if (rows.length > 0) {
+        typeaheadRef.current = { kind: 'block', node, trigger: slash, rows, active: 0 }
+        show(slash, rows.map((row) => ({ label: row.label, sample: 'block' })))
+        return
+      }
+    }
+    closeTypeahead()
   }
 
   const moveTypeahead = (by: number): void => {
@@ -590,17 +695,39 @@ export default function CanvasEditor({
     setTypeahead((t) => (t ? { ...t, active } : t))
   }
 
-  /** Replace the `{{ …` that was typed with the chip it stood for. */
-  const acceptTypeahead = (row?: FieldRow): void => {
+  /** Take the offer: replace what was typed with what it stood for — a chip for
+   * a field, a whole block for `/`. */
+  const acceptTypeahead = (index?: number): void => {
     const open = typeaheadRef.current
     const body = bodyRef.current
-    const chosen = row ?? open?.rows[open.active]
-    if (!open || !body || !chosen?.expression) return
+    if (!open || !body) return
     const doc = body.ownerDocument
+    const at = index ?? open.active
+
+    // The typed trigger goes first in both cases: whatever is inserted takes
+    // its place, and leaving `/tab` on the page beside a new table is the kind
+    // of litter somebody then has to find and delete.
     const range = doc.createRange()
     range.setStart(open.node, open.trigger.start)
     range.setEnd(open.node, Math.min(open.trigger.end, open.node.data.length))
     range.deleteContents()
+
+    if (open.kind === 'block') {
+      const chosen = open.rows[at]
+      if (!chosen) return closeTypeahead()
+      // Put the caret where the trigger was, so the block lands there rather
+      // than wherever the selection collapsed to when the text was removed.
+      const selection = doc.getSelection()
+      range.collapse(true)
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      closeTypeahead()
+      insertBlockRef.current?.(chosen.id)
+      return
+    }
+
+    const chosen = open.rows[at]
+    if (!chosen?.expression) return closeTypeahead()
     const chip = doc.createElement('span')
     chip.setAttribute('data-jinja-expr', chosen.expression)
     chip.textContent = `{{ ${chosen.expression} }}`
@@ -917,6 +1044,90 @@ export default function CanvasEditor({
     }
     doc.addEventListener('click', onClick)
 
+    /**
+     * Right-click: select what is under the pointer and offer what can be done
+     * to it, where the pointer already is.
+     *
+     * Everything in this menu exists elsewhere — in the properties bar, in the
+     * structure panel, behind Alt — and all of it required knowing where to
+     * look. A context menu is where people look first, and it is the one place
+     * a list of "what applies to THIS" can be shown without a bar of controls
+     * that mostly do not.
+     *
+     * Only over something structural. On bare background the browser's own menu
+     * is left alone, because there it still carries spelling suggestions, and
+     * replacing those with nothing is a loss.
+     */
+    const onContextMenu = (e: MouseEvent): void => {
+      const under = doc.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element)
+      const el = findSelectable(under, body)
+      if (!el) return
+      e.preventDefault()
+      select(el)
+      closeTypeahead()
+      // The iframe's coordinates are its own and unscaled; the menu is drawn by
+      // the host, over everything, so it needs the point in host pixels.
+      const frame = iframeRef.current?.getBoundingClientRect()
+      setMenu({
+        x: (frame?.left ?? 0) + e.clientX * zoomRef.current,
+        y: (frame?.top ?? 0) + e.clientY * zoomRef.current,
+      })
+    }
+    doc.addEventListener('contextmenu', onContextMenu)
+    // A press anywhere in the page closes it, including the one that lands on
+    // whatever the menu was about. Right-click presses too, and its own
+    // contextmenu arrives afterwards, so opening still wins.
+    const closeMenu = (): void => setMenu(null)
+    doc.addEventListener('mousedown', closeMenu)
+
+    // Ctrl+wheel is what every drawing tool has taught people zoom is, and over
+    // a page it is the gesture people reach for first. Not passive: the whole
+    // point is to stop the browser scaling the application around the page.
+    const onWheel = (e: WheelEvent): void => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      setManualZoom(clampZoom(zoomRef.current * (1 - e.deltaY / 400)))
+    }
+    doc.addEventListener('wheel', onWheel, { passive: false })
+
+    /**
+     * A file dragged onto the page.
+     *
+     * The alternative was: find the Assets tab, press Upload, find the file in
+     * a dialog, then find where it went. Dropping it is what somebody tries
+     * first, and until now the browser answered by navigating the canvas to the
+     * image — the document simply disappeared, replaced by a picture.
+     *
+     * The caret is placed where the file landed before the shell is told, so
+     * the image is inserted where it was aimed and not wherever the caret was
+     * left. Everything past that point — storage, what markup a file becomes —
+     * belongs to the shell.
+     */
+    const hasFiles = (e: DragEvent): boolean =>
+      Array.from(e.dataTransfer?.types ?? []).includes('Files')
+    const onDragOver = (e: DragEvent): void => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      setDropping(true)
+    }
+    const onDragLeave = (e: DragEvent): void => {
+      // relatedTarget is null when the pointer leaves the document itself; a
+      // move between two elements inside it is not a departure.
+      if (!e.relatedTarget) setDropping(false)
+    }
+    const onDrop = (e: DragEvent): void => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      setDropping(false)
+      caretAtPoint(doc, e.clientX, e.clientY)
+      const files = Array.from(e.dataTransfer?.files ?? [])
+      if (files.length > 0) callbacksRef.current.onDropFiles?.(files)
+    }
+    doc.addEventListener('dragover', onDragOver)
+    doc.addEventListener('dragleave', onDragLeave)
+    doc.addEventListener('drop', onDrop)
+
     // `{{` is what somebody writes when they mean a value. In a canvas those
     // would otherwise be two characters that print.
     const onInput = () => refreshTypeahead()
@@ -999,7 +1210,19 @@ export default function CanvasEditor({
         } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
           e.preventDefault()
           redo()
+        } else if (zoomKey(e.key)) {
+          // The editor's own zoom, not the browser's: the browser would scale
+          // the whole application, including the panels, which is never what
+          // somebody looking closely at a page means.
+          e.preventDefault()
+        } else if (forwardToApp(e)) {
+          e.preventDefault()
         }
+        return
+      }
+      if (e.key === 'Escape' && menuRef.current) {
+        e.preventDefault()
+        setMenu(null)
         return
       }
       // Changed your mind halfway through a drag: put it back, without letting
@@ -1134,6 +1357,12 @@ export default function CanvasEditor({
       clearTimeout(timer)
       observer.disconnect()
       doc.removeEventListener('click', onClick)
+      doc.removeEventListener('contextmenu', onContextMenu)
+      doc.removeEventListener('mousedown', closeMenu)
+      doc.removeEventListener('wheel', onWheel)
+      doc.removeEventListener('dragover', onDragOver)
+      doc.removeEventListener('dragleave', onDragLeave)
+      doc.removeEventListener('drop', onDrop)
       doc.removeEventListener('input', onInput)
       doc.removeEventListener('dblclick', onDblClick)
       doc.removeEventListener('mousemove', onPointerMove)
@@ -1198,6 +1427,17 @@ export default function CanvasEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasStyles, margins.top, margins.bottom, pageHeight, tick])
 
+  // A press outside the canvas closes the menu too — including on the toolbar
+  // above it, which is otherwise the one place a click leaves it standing.
+  useEffect(() => {
+    if (!menu) return
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.('.canvas-menu')) setMenu(null)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menu])
+
   // The same shortcuts, for when focus is in the editor but not in the canvas
   // document — after using the toolbar, say.
   //
@@ -1207,12 +1447,26 @@ export default function CanvasEditor({
   // that the shortcuts work without clicking into the canvas first.
   useEffect(() => {
     const onKeydown = (e: KeyboardEvent) => {
+      // Zoom belongs to the canvas wherever it is pressed from — the toolbar,
+      // the structure panel — and it is taken from the browser deliberately.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && zoomKey(e.key)) {
+        e.preventDefault()
+        return
+      }
       // Before the guard below: a gesture can be started from a control that
       // holds the focus — scrubbing a spacing box is one — and Escape has to
       // reach it there too.
       if (e.key === 'Escape' && gestureRef.current) {
         e.preventDefault()
         endGesture(false)
+        return
+      }
+      // An open menu takes Escape before the selection does: stepping out of
+      // the element while its own menu is still on screen is not what the key
+      // was pressed for.
+      if (e.key === 'Escape' && menu) {
+        e.preventDefault()
+        setMenu(null)
         return
       }
       const target = e.target as HTMLElement | null
@@ -1241,16 +1495,46 @@ export default function CanvasEditor({
     if (!scroll) return
     const fit = () => {
       if (pageWidth === null) {
-        setZoom(1)
+        setFitted(1)
         return
       }
-      setZoom(fitZoom(scroll.clientWidth - CANVAS_GUTTER_PX, pageWidth) / 100)
+      setFitted(fitZoom(scroll.clientWidth - CANVAS_GUTTER_PX, pageWidth) / 100)
     }
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(scroll)
     return () => ro.disconnect()
   }, [pageWidth])
+
+  // ---- zoom ---------------------------------------------------------------
+  //
+  // Stops rather than a free percentage for the buttons: the useful sizes are
+  // few, and a control that lands on 100% and on half again is worth more than
+  // one that can express 87%. Ctrl+wheel is continuous, because a wheel is.
+  //
+  // Everything here reads the live zoom through the ref and only calls setState
+  // — so the canvas document's own listeners, bound once at mount, can call it
+  // without holding a zoom from when the page opened.
+  const ZOOM_STOPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
+  const clampZoom = (value: number): number => Math.min(3, Math.max(0.25, value))
+
+  const zoomStep = (dir: -1 | 1): void => {
+    const current = zoomRef.current
+    const next =
+      dir === 1
+        ? ZOOM_STOPS.find((stop) => stop > current + 0.005)
+        : [...ZOOM_STOPS].reverse().find((stop) => stop < current - 0.005)
+    setManualZoom(next ?? (dir === 1 ? ZOOM_STOPS[ZOOM_STOPS.length - 1] : ZOOM_STOPS[0]))
+  }
+
+  /** True when a key press was a zoom command, so the caller can stop the
+   * browser doing its own zoom with the same keys. */
+  const zoomKey = (key: string): boolean => {
+    if (key === '=' || key === '+') return zoomStep(1), true
+    if (key === '-' || key === '_') return zoomStep(-1), true
+    if (key === '0') return setManualZoom(null), true
+    return false
+  }
 
   // ---- commands -----------------------------------------------------------
   const withDoc = (fn: (doc: Document) => void) => {
@@ -1369,6 +1653,17 @@ export default function CanvasEditor({
     if (dir === -1) sibling.before(el)
     else sibling.after(el)
     setTick((t) => t + 1)
+  }
+
+  /** The selectable element around this one, or null at the top. */
+  const containerOf = (el: Element): Element | null =>
+    bodyRef.current ? parentSelectable(el, bodyRef.current) : null
+
+  /** Run a menu item and put the menu away. Wrapped rather than remembered at
+   * each call site, so no item can be added that leaves it standing. */
+  const runFromMenu = (run: () => void) => () => {
+    setMenu(null)
+    run()
   }
 
   const removeSelected = () => {
@@ -1821,7 +2116,27 @@ export default function CanvasEditor({
             Panel
           </button>
         </span>
-        <span className="muted">{Math.round(zoom * 100)}%</span>
+        {/* The percentage was a read-out of a number nobody could change. It is
+            the control now, and pressing it hands the size back to the window. */}
+        <span className="topbar-group zoom-group">
+          <button className="tb" aria-label="Zoom out" title="Zoom out (Ctrl+−)" onClick={() => zoomStep(-1)}>
+            −
+          </button>
+          <button
+            className={manualZoom === null ? 'tb zoom-value fitted' : 'tb zoom-value'}
+            title={
+              manualZoom === null
+                ? 'The page is fitted to the window'
+                : 'Fit the page to the window (Ctrl+0)'
+            }
+            onClick={() => setManualZoom(null)}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button className="tb" aria-label="Zoom in" title="Zoom in (Ctrl++)" onClick={() => zoomStep(1)}>
+            +
+          </button>
+        </span>
       </div>
       {/* Always present, even with nothing selected. It used to appear with the
           first selection, and appearing is moving: the whole canvas dropped a
@@ -2082,7 +2397,7 @@ export default function CanvasEditor({
       <details className="canvas-keys">
         <summary>Keyboard</summary>
         <dl>
-          {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS].map((shortcut) => (
+          {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS, ...EDITOR_SHORTCUTS].map((shortcut) => (
             <div key={shortcut.keys}>
               <dt>{shortcut.keys}</dt>
               <dd>{shortcut.does}</dd>
@@ -2094,7 +2409,9 @@ export default function CanvasEditor({
           canvas — it outlines what a row is about — so it must never be drawn
           over the thing it points at. */}
       <div className="canvas-body">
-        <div className="canvas-scroll" ref={scrollRef}>
+        {/* The menu is placed in window coordinates, so a scroll would leave it
+            hanging over a different element than the one it is about. */}
+        <div className="canvas-scroll" ref={scrollRef} onScroll={() => menu && setMenu(null)}>
           <div
             className="canvas-stage"
             style={{ width: stageWidth, height: sheetHeight * zoom }}
@@ -2119,6 +2436,13 @@ export default function CanvasEditor({
                   display: 'block',
                 }}
               />
+              {/* A drop target that gives no sign it is one cannot be told
+                  apart from a page that will refuse the file. */}
+              {dropping && (
+                <div className="drop-veil" aria-hidden="true">
+                  <span>Drop the image where it should go</span>
+                </div>
+              )}
               {hover && !drag && (
                 <div
                   aria-hidden="true"
@@ -2146,7 +2470,7 @@ export default function CanvasEditor({
                       // the chip back at wherever the selection collapsed to.
                       onMouseDown={(e) => {
                         e.preventDefault()
-                        acceptTypeahead(row)
+                        acceptTypeahead(index)
                       }}
                       onMouseEnter={() => moveTypeahead(index - typeahead.active)}
                     >
@@ -2447,6 +2771,78 @@ export default function CanvasEditor({
           }}
           onClose={() => setEditingExpr(null)}
         />
+      )}
+      {/* What can be done to the thing under the pointer, where the pointer is.
+          Everything here exists elsewhere too — the properties bar, the
+          structure panel, Alt — and all of it had to be looked for. Clamped
+          into the window by a rough size rather than measured: a menu that has
+          to be drawn before it can be placed flickers, and being a few pixels
+          off the corner costs nobody anything. */}
+      {menu && selected && (
+        <div
+          className="canvas-menu"
+          role="menu"
+          aria-label="What can be done with the selected element"
+          style={{
+            left: Math.min(menu.x, window.innerWidth - 240),
+            top: Math.min(menu.y, window.innerHeight - 280),
+          }}
+        >
+          <span className="canvas-menu-head">{KIND_LABEL[selected.kind]}</span>
+          {expressionAttr(selected.el) && (
+            <button
+              role="menuitem"
+              onClick={runFromMenu(() =>
+                setEditingExpr({ el: selected.el, attr: expressionAttr(selected.el)! }),
+              )}
+            >
+              Edit expression…
+            </button>
+          )}
+          <button role="menuitem" onClick={runFromMenu(duplicateSelected)}>
+            Duplicate
+          </button>
+          <button role="menuitem" onClick={runFromMenu(() => moveSelected(-1))}>
+            Move up
+          </button>
+          <button role="menuitem" onClick={runFromMenu(() => moveSelected(1))}>
+            Move down
+          </button>
+          {canRepeat && (
+            <button
+              role="menuitem"
+              onClick={runFromMenu(() =>
+                setConvert({ type: 'repeat', value: arrayHints[0] ?? 'items', item: 'item' }),
+              )}
+            >
+              Repeat for each…
+            </button>
+          )}
+          {canCondition && (
+            <button
+              role="menuitem"
+              onClick={runFromMenu(() =>
+                setConvert({ type: 'if', value: existingValue(selected.el) || 'flag', item: '' }),
+              )}
+            >
+              Show only if…
+            </button>
+          )}
+          <button
+            role="menuitem"
+            onClick={runFromMenu(() => toggleHidden(selected.el as HTMLElement))}
+          >
+            {selected.el.hasAttribute('data-lf-hidden') ? 'Show' : 'Hide while editing'}
+          </button>
+          {containerOf(selected.el) && (
+            <button role="menuitem" onClick={runFromMenu(() => select(containerOf(selected.el)))}>
+              Select what contains this
+            </button>
+          )}
+          <button className="danger" role="menuitem" onClick={runFromMenu(removeSelected)}>
+            Delete
+          </button>
+        </div>
       )}
       {readout && (
         <div className="drag-readout" style={{ left: readout.left, top: readout.top }}>

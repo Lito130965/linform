@@ -55,4 +55,5 @@ export const CANVAS_MODIFIERS: { keys: string; does: string }[] = [
   { keys: 'Shift + drag', does: 'keep the proportion when resizing, or the axis when moving' },
   { keys: 'Alt + drag', does: 'ignore snapping for as long as it is held' },
   { keys: 'Ctrl + drag', does: 'drag a copy instead of the element itself' },
+  { keys: 'Ctrl + wheel', does: 'zoom the page, as in any drawing tool' },
 ]

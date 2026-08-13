@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ctrl+S saves the draft**, from wherever the focus is. A key press inside an
+  iframe never reaches the page hosting it, so with the caret in the document —
+  where somebody writing one keeps it — the shortcut used to offer to save the
+  browser's copy of the page. The canvas now hands on whatever it does not use
+  itself, so this and anything bound later work from inside it. What was saved
+  is said out loud, briefly: the only other sign was a badge going away.
+- **A right-click menu on the page.** Duplicate, move, hide, repeat, delete,
+  edit the expression, select what contains this — all of it existed already, in
+  the properties bar, the structure panel or behind Alt, and all of it had to be
+  looked for. Over the page margin the browser keeps its own menu, which still
+  carries spelling suggestions.
+- **The zoom is a control rather than a read-out.** The percentage in the
+  toolbar was a number nobody could change: reading 8pt small print, or placing
+  something against a margin, meant making the browser window bigger. Buttons,
+  Ctrl+wheel and Ctrl + + / − / 0 now set it, and pressing the percentage hands
+  the size back to the window.
+- **An image can be dropped on the page.** It is stored as an asset and placed
+  where it landed, caret and all. Dropping one used to navigate the canvas to
+  the file — the document was replaced by a picture.
+- **Typing `/` offers the blocks**, the same way `{{` offers the fields: type
+  the word "table" instead of looking away from the page to find the palette. A
+  slash inside a date or a URL is left alone.
+- **The test data says what it disagrees with the template about** — values
+  named on the page that the payload does not carry, and keys the template never
+  reads. Both fail quietly otherwise: a missing value renders as a blank that
+  reads as a layout problem, and a spare one is usually a field renamed on one
+  side only.
+
 - **A field list built from the test data**, replacing the panel that could only
   show placeholders the template already used — which meant a fresh template
   offered nothing and the first field of every document had to be typed in Code

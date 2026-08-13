@@ -45,6 +45,60 @@ export function triggerAt(text: string, caret: number): Trigger | null {
   return { start, end: caret, query }
 }
 
+/** The most that can be typed after `/` before this stops being the name of a
+ * block and starts being a sentence with a slash in it. */
+const MAX_SLASH = 24
+
+/**
+ * Is the caret just past a `/` that was meant as a menu?
+ *
+ * The same bargain as `{{`, for structure rather than for values: a person who
+ * wants a table types the word "table", and the alternative was to look away
+ * from the page, find the palette and come back. `/` is what every editor of
+ * this shape has taught people to press.
+ *
+ * Only where a word could begin — after a space, or at the start of the text —
+ * so `12/03/2026` and `and/or` are left alone. Two words at most after it:
+ * "page break" and "2 columns" are the longest names there are, and a third
+ * word means this was prose with a slash in it rather than somebody reaching
+ * for a block.
+ */
+export function slashTriggerAt(text: string, caret: number): Trigger | null {
+  const start = text.lastIndexOf('/', caret)
+  if (start === -1 || start >= caret) return null
+  const before = start === 0 ? '' : text[start - 1]
+  if (before && !/\s/.test(before)) return null
+  const query = text.slice(start + 1, caret)
+  if (query.length > MAX_SLASH) return null
+  if (!/^[\w-]*(?: [\w-]+)?$/.test(query)) return null
+  return { start, end: caret, query }
+}
+
+/** Rank named things by what has been typed. The same shape of match as `rank`
+ * below, over a plain label rather than a dotted path: a prefix beats the start
+ * of any later word, which beats a match in the middle. */
+export function rankLabels<T extends { label: string }>(
+  rows: readonly T[],
+  query: string,
+  limit = 8,
+): T[] {
+  const needle = query.toLowerCase().trim()
+  if (!needle) return rows.slice(0, limit)
+  const scored: { row: T; score: number; index: number }[] = []
+  rows.forEach((row, index) => {
+    const label = row.label.toLowerCase()
+    let score = -1
+    if (label.startsWith(needle)) score = 3
+    else if (label.split(/\s+/).some((word) => word.startsWith(needle))) score = 2
+    else if (label.includes(needle)) score = 1
+    if (score > 0) scored.push({ row, score, index })
+  })
+  return scored
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, limit)
+    .map((s) => s.row)
+}
+
 /** Rank the offered expressions against what has been typed.
  *
  * A prefix match beats a match in the middle, and a match on the last segment

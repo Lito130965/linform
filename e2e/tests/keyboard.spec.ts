@@ -106,6 +106,36 @@ test('an edit in the canvas is reported while the canvas is still open', async (
   await expect(page.locator('.dirty-badge')).toHaveCount(1)
 })
 
+test('ctrl+s saves the draft, with the caret in the page', async ({ page, request }) => {
+  // The shortcut every editor has, and this one did not: a key press inside an
+  // iframe never reaches the document hosting it, so with the caret in the page
+  // — where somebody writing a document keeps it — Ctrl+S offered to save the
+  // browser's copy of the page instead. The canvas now hands on what it does
+  // not use itself.
+  const code = uniqueCode('kbd-save')
+  await createTemplate(request, code, '<h1>Heading</h1>\n<p>Body</p>\n')
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  await frame.locator('h1').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' TYPED')
+  await expect(page.locator('.dirty-badge')).toHaveCount(1)
+
+  const saved = page.waitForResponse(
+    (r) => r.url().includes('/drafts') && r.request().method() !== 'GET',
+  )
+  await page.keyboard.press('Control+s')
+  await saved
+
+  // Said out loud: without a word the only sign is a badge going away, which
+  // nobody sees mid-sentence.
+  await expect(page.locator('.toast')).toContainText('Draft saved')
+  await expect(page.locator('.dirty-badge')).toHaveCount(0)
+  expect(await latestDraftHtml(request, code)).toContain('TYPED')
+})
+
 test('the shortcuts are written down where somebody can find them', async ({ page, request }) => {
   // A shortcut nobody can discover is a shortcut nobody has, and the canvas
   // offers no other hint that Alt does anything at all.
@@ -119,4 +149,7 @@ test('the shortcuts are written down where somebody can find them', async ({ pag
   await hint.locator('summary').click()
   await expect(hint).toContainText('Alt + Enter')
   await expect(hint).toContainText('Esc')
+  // Including the ones the canvas does not implement itself: somebody looking
+  // for "how do I save" does not know which module answers.
+  await expect(hint).toContainText('Ctrl + S')
 })

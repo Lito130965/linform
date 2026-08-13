@@ -141,6 +141,110 @@ function expectedShape(template: string): Record<string, unknown> {
   return out
 }
 
+/** Every identifier the template mentions inside Jinja, however it is used.
+ *
+ * Deliberately blunt, and only ever used to decide that a key is NOT read: a
+ * value can be named in an `{% if %}`, in a filter argument or in a test, and
+ * the shape reader above sees none of those. Telling somebody their data is
+ * unused when the template does read it is the one mistake this must not make;
+ * missing a genuinely dead key costs nothing.
+ */
+function mentionedNames(template: string): Set<string> {
+  const names = new Set<string>()
+  const add = (text: string): void => {
+    for (const name of text.matchAll(/[A-Za-z_]\w*/g)) names.add(name[0])
+  }
+  for (const region of template.matchAll(/\{\{([\s\S]*?)\}\}|\{%([\s\S]*?)%\}/g)) {
+    add(region[1] ?? region[2] ?? '')
+  }
+  // While the canvas is open the same facts live in attributes instead.
+  for (const attr of template.matchAll(/data-jinja-(?:expr|raw|for|if)="([^"]*)"/g)) add(attr[1])
+  return names
+}
+
+export interface DataCheck {
+  /** Values the template names that the payload does not carry. */
+  missing: string[]
+  /** Keys the payload carries that the template never mentions. */
+  unused: string[]
+}
+
+/**
+ * What the template and the test data disagree about.
+ *
+ * Both directions, because they fail differently and both fail quietly: a
+ * missing value renders as a blank space that looks like a layout problem, and
+ * a spare one is usually a renamed field — the old key left behind, the new one
+ * never filled in. Neither shows up in a preview as anything but "hmm".
+ *
+ * Null when the JSON cannot be read at all; the panel already says so, and a
+ * second complaint about the same thing is noise.
+ */
+export function checkData(template: string, currentJson: string): DataCheck | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(currentJson)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const data = parsed as Record<string, unknown>
+  const missing: string[] = []
+
+  /** Walk the expected shape against what is carried, naming the leaves.
+   *
+   * Leaves rather than the branch they hang from: told that `customer` is
+   * missing, somebody still has to work out what belongs in it, and
+   * `customer.name` is the thing they can act on. An absent object is walked
+   * with nothing on the other side, so all of it is reported at once. */
+  const walk = (
+    shape: Record<string, unknown>,
+    carried: Record<string, unknown> | null,
+    prefix: string,
+  ): void => {
+    for (const [key, value] of Object.entries(shape)) {
+      const path = prefix ? `${prefix}.${key}` : key
+      const present = !!carried && key in carried
+      const found = present ? carried![key] : undefined
+
+      if (Array.isArray(value)) {
+        if (!present) {
+          missing.push(path)
+          continue
+        }
+        const item = value[0]
+        if (!item || typeof item !== 'object') continue
+        const rows = Array.isArray(found) ? found : []
+        for (const field of Object.keys(item as Record<string, unknown>)) {
+          // Absent from every row is a mismatch between template and data;
+          // absent from one row is that row's business, and the preview shows
+          // it as a gap where it happens.
+          const anywhere = rows.some(
+            (row) => !!row && typeof row === 'object' && field in (row as Record<string, unknown>),
+          )
+          if (!anywhere) missing.push(`${path}[].${field}`)
+        }
+        continue
+      }
+
+      if (value && typeof value === 'object') {
+        const inner =
+          found && typeof found === 'object' && !Array.isArray(found)
+            ? (found as Record<string, unknown>)
+            : null
+        walk(value as Record<string, unknown>, inner, path)
+        continue
+      }
+
+      if (!present) missing.push(path)
+    }
+  }
+  walk(expectedShape(template), data, '')
+
+  const mentioned = mentionedNames(template)
+  return { missing, unused: Object.keys(data).filter((key) => !mentioned.has(key)) }
+}
+
 /** Everything the template names, as a fresh payload. */
 export function generateSample(template: string): SampleResult {
   const shape = expectedShape(template)

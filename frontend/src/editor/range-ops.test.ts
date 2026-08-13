@@ -1,6 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { allInline, caretBeside, caretRangeIn, clampOutOfAtomic, isInline } from './range-ops'
+import {
+  allInline,
+  caretAtPoint,
+  caretBeside,
+  caretRangeIn,
+  clampOutOfAtomic,
+  isInline,
+} from './range-ops'
 
 function fixture(html: string): HTMLElement {
   const host = document.createElement('div')
@@ -162,5 +169,53 @@ describe('clicking a chip', () => {
     caretBeside(chip, -10)
     const range = document.getSelection()!.getRangeAt(0)
     expect(range.startOffset).toBe(1) // text, |, chip
+  })
+})
+
+describe('dropping something at a point', () => {
+  /** jsdom has no hit testing, so the engine's answer is stated rather than
+   * measured: what is under test is what this module does with it. */
+  const engineAnswers = (make: () => Range | null): void => {
+    ;(document as Document & { caretRangeFromPoint?: unknown }).caretRangeFromPoint = () => make()
+  }
+
+  it('puts the caret where the pointer was', () => {
+    const host = fixture('<p>Bill to somebody</p>')
+    const text = host.querySelector('p')!.firstChild!
+    engineAnswers(() => {
+      const range = document.createRange()
+      range.setStart(text, 4)
+      range.collapse(true)
+      return range
+    })
+
+    expect(caretAtPoint(document, 40, 20)).toBe(true)
+    const range = document.getSelection()!.getRangeAt(0)
+    expect(range.startContainer).toBe(text)
+    expect(range.startOffset).toBe(4)
+  })
+
+  it('lands beside a field rather than inside it', () => {
+    // There is no position inside a chip: it is one thing, not text with places
+    // between its letters. An image dropped on `{{ customer }}` used to be
+    // inserted into the middle of the expression.
+    const host = fixture(`<p>Bill to ${CHIP} on</p>`)
+    const chip = host.querySelector('[data-jinja-expr]')!
+    engineAnswers(() => {
+      const range = document.createRange()
+      range.setStart(chip.firstChild!, 5)
+      range.collapse(true)
+      return range
+    })
+
+    expect(caretAtPoint(document, 40, 20)).toBe(true)
+    const range = document.getSelection()!.getRangeAt(0)
+    expect(range.startContainer).toBe(chip.parentNode)
+  })
+
+  it('says so when the point was over nothing', () => {
+    fixture('<p>text</p>')
+    engineAnswers(() => null)
+    expect(caretAtPoint(document, 4000, 4000)).toBe(false)
   })
 })
