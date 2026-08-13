@@ -157,3 +157,33 @@ test('a template that goes around the editor says so before it is applied', asyn
   // Said, not refused: the Apply button is still there.
   await expect(page.locator('.chat-proposal button', { hasText: 'Apply' })).toHaveCount(1)
 })
+
+test('applying a template from Visual mode actually replaces the document', async ({
+  page,
+  request,
+}) => {
+  // Reported as "Apply, and nothing changed". Leaving Visual unmounts the
+  // canvas, and the canvas flushes its body on the way out — a flush carrying
+  // the document that WAS open. It landed after the new template had been
+  // written and put the old one back, with no error and no sign anything had
+  // happened.
+  const code = uniqueCode('apply-visual')
+  await stubAssistant(
+    page,
+    'Added a column.\n\n```html\n' +
+      '<style>@page { size: A4; margin: 20mm }</style>\n' +
+      '<h1 id="title">Report</h1>\n<p id="added">A NEW PARAGRAPH</p>\n```',
+  )
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  await ask(page, 'add a paragraph')
+
+  await page.locator('.chat-proposal button', { hasText: 'Apply' }).click()
+
+  // Back in Code mode, holding the new document — not the old one.
+  await expect(page.locator('.mode-toggle .btn.mode.active')).toHaveText('Code')
+  await expect(page.locator('.toast')).toContainText('Template applied')
+  await saveDraft(page, 'applied from visual mode')
+  expect(await latestDraftHtml(request, code)).toContain('A NEW PARAGRAPH')
+})

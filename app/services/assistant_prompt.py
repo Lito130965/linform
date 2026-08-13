@@ -174,7 +174,18 @@ and ask, or fall back to a template reply.
 
 Mixed requests: if part of the work is covered and part is not, do NOT split \
 the answer — a half-applied change is worse than either. Use a template reply \
-for the whole of it."""
+for the whole of it.
+
+What is NOT covered, and is a template reply: changing something that is \
+already in the document (a column added to an existing table, a style, a \
+wording), anything that has to find a particular element, and anything \
+structural these operations cannot name. Adding a column of ticks to a \
+repeating table is a template edit, not the checkbox preset.
+
+Name what you actually did. Never say you used an operation in a reply that \
+carries a template — the user reads that sentence as a small, reviewable change \
+and then receives a whole document. If the request is not covered, one plain \
+sentence saying so is the honest answer, and no apology is needed."""
 
 
 EDITOR_MARKUP = """WHEN YOU DO WRITE HTML, write what the editor writes. \

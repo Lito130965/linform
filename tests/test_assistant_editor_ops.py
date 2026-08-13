@@ -90,6 +90,10 @@ def test_the_operations_contract_reaches_the_model():
     # And the reason it is preferred, since a rule without one is followed
     # until it is inconvenient.
     assert "select, move and restyle" in prompt
+    # What the operations do NOT cover, said plainly: the first real reply
+    # claimed to have "used the checkbox operation" while returning a whole
+    # template, which reads as a small edit and is not one.
+    assert "Never say you used an operation in a reply that carries a template" in prompt
 
 
 def test_the_prompt_still_forbids_the_markup_the_editor_cannot_edit():

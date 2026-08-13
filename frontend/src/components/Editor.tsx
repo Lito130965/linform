@@ -159,6 +159,9 @@ export default function Editor({
   // shows read-only but must not let the user edit into the body.
   const splitRef = useRef<{ prefix: string; suffix: string; styles: string } | null>(null)
   const visualInitialRef = useRef('')
+  // Set while the document is being replaced wholesale, and cleared once the
+  // canvas that held the previous one is gone — see applyFromAssistant.
+  const replacingRef = useRef(false)
 
   const currentVersion = detail?.current_version ?? null
   const openDraftId = open?.kind === 'draft' ? open.id : null
@@ -568,6 +571,10 @@ export default function Editor({
   }
 
   const handleVisualChange = (bodyHtml: string) => {
+    // A report from a canvas whose document has just been replaced is a report
+    // about the document that WAS open. Writing it back would undo the
+    // replacement, silently and completely.
+    if (replacingRef.current) return
     const split = splitRef.current
     if (!split) return
     try {
@@ -608,6 +615,12 @@ export default function Editor({
     htmlRef.current = html
   }, [html])
 
+  // The canvas has unmounted by the time this runs — its cleanup belongs to the
+  // same commit and runs first — so no further report from it can arrive.
+  useEffect(() => {
+    if (mode === 'code') replacingRef.current = false
+  }, [mode])
+
   // Ctrl+S saves the draft from wherever the focus is — including inside the
   // canvas, which re-dispatches the shortcuts it does not use itself. Bound
   // once and reading the current save through a ref: rebinding the listener on
@@ -632,6 +645,11 @@ export default function Editor({
   }, [])
 
   const applyFromAssistant = (newHtml: string) => {
+    // Before leaving Visual: the canvas flushes its body as it unmounts, and
+    // that flush carries the OLD document. It lands after the new template has
+    // been written and quietly puts the old one back — which is exactly how
+    // this was reported: "Apply, and nothing changed".
+    replacingRef.current = true
     if (mode === 'visual') exitVisual()
     // Warn, but do not rewrite: putting a whole document through the DOM would
     // normalize the author's bytes, and preserving them exactly is a promise
@@ -642,6 +660,7 @@ export default function Editor({
     htmlRef.current = newHtml
     setDirty(true)
     setFixError(null)
+    setNotice('Template applied — check the preview, then save')
   }
 
   const placeholderNames = useMemo(() => {

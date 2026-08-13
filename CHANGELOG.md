@@ -150,6 +150,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Applying an assistant's template from Visual mode did nothing at all.**
+  Leaving Visual unmounts the canvas, and the canvas flushes its body on the way
+  out — a flush carrying the document that was open. It landed after the new
+  template had been written and put the old one back, with no error and no sign
+  anything had happened.
 - **Aligning a footer, or changing its font, quietly stopped it being a
   footer.** `position: running(lf-footer)` is what puts an element in the page
   band, and no browser implements it — so it is never in the CSSOM, and it
