@@ -244,3 +244,79 @@ test('an edit made by hand survives being included in the snapshot', async ({ pa
   await page.locator('.undo-change').click()
   await expect(frame.locator('#title')).toHaveText('Report TYPED')
 })
+
+const TABLE_DOC =
+  '<style>@page { size: A4; margin: 20mm }</style>\n' +
+  '<h1 id="title">Report</h1>\n' +
+  '<table class="data">\n' +
+  '  <thead><tr><th>Metric</th><th class="num">This quarter</th></tr></thead>\n' +
+  '  <tbody>{% for row in metrics %}<tr><td>{{ row.name }}</td>' +
+  '<td class="num">{{ row.current }}</td></tr>{% endfor %}</tbody>\n' +
+  '</table>\n'
+
+test('a column is added by an edit, not by retyping the document', async ({ page, request }) => {
+  // The request that showed why this exists: asked for one column, the
+  // assistant returned all sixty lines of the template with three of them
+  // different. Every line retyped is a line that can come back paraphrased,
+  // and on a form of several hundred that is how a template stops being the
+  // form.
+  const code = uniqueCode('edit-column')
+  await stubAssistant(
+    page,
+    'Added a Flag column.\n\n' +
+      ops(
+        JSON.stringify([
+          {
+            op: 'edit',
+            find: '<th class="num">This quarter</th>',
+            replace: '<th class="num">This quarter</th><th>Flag</th>',
+          },
+          {
+            op: 'edit',
+            find: '<td class="num">{{ row.current }}</td>',
+            replace:
+              '<td class="num">{{ row.current }}</td>' +
+              "<td>{{ '\u2611' if row.flag else '\u2610' }}</td>",
+          },
+        ]),
+      ),
+  )
+  await createTemplate(request, code, TABLE_DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  await ask(page, 'add a Flag column with ticks')
+
+  // Each edit read as a sentence saying what arrives, and both applied.
+  await expect(page.locator('.op-list')).toContainText('<th>Flag</th>')
+  await expect(page.frameLocator(CANVAS).locator('thead th')).toHaveCount(3)
+
+  await saveDraft(page, 'a column added by edits')
+  const saved = await latestDraftHtml(request, code)
+  expect(saved).toContain('<th>Flag</th>')
+  expect(saved).toContain("{{ '\u2611' if row.flag else '\u2610' }}")
+  // Everything the edits did not name is byte for byte what it was.
+  expect(saved).toContain('<h1 id="title">Report</h1>')
+  expect(saved).toContain('{% for row in metrics %}')
+})
+
+test('an edit that names no place, or too many, changes nothing and says so', async ({
+  page,
+  request,
+}) => {
+  // Changing the first of three identical rows and calling it done is worse
+  // than doing nothing, and a "done" over an unchanged document is worse still.
+  const code = uniqueCode('edit-refused')
+  await stubAssistant(
+    page,
+    'Renamed the column.\n\n' +
+      ops(JSON.stringify([{ op: 'edit', find: '<th>Total</th>', replace: '<th>Sum</th>' }])),
+  )
+  await createTemplate(request, code, TABLE_DOC)
+  await openTemplate(page, code)
+  await ask(page, 'rename the total column')
+
+  await expect(page.locator('.error-box')).toContainText('not in the document')
+  await expect(page.locator('.undo-change')).toHaveCount(0)
+  await saveDraft(page, 'nothing changed')
+  expect(await latestDraftHtml(request, code)).toContain('<th>Metric</th>')
+})

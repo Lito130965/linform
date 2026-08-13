@@ -96,6 +96,19 @@ def test_the_operations_contract_reaches_the_model():
     assert "Never say you used an operation in a reply that carries a template" in prompt
 
 
+def test_a_whole_template_is_named_as_the_last_resort():
+    # The failure that put this rule here: asked to add one column to a table,
+    # the assistant returned all sixty lines of the template with three of them
+    # different. On a form of several hundred lines that is not merely wasteful
+    # — every line retyped is a line that can come back paraphrased.
+    prompt = build_system_prompt()
+    assert "RETURNING A WHOLE TEMPLATE IS THE LAST RESORT" in prompt
+    assert '"op": "edit"' in prompt
+    assert "Never reproduce a document in order to change a part of it." in prompt
+    # And the rule that keeps an edit honest: one place, or nothing.
+    assert "must name exactly" in prompt
+
+
 def test_a_reply_carries_the_template_and_nothing_after_it():
     # Everything a template reply used to end with — the placeholder list, an
     # example payload — is now either built by a button or scrolled past. The

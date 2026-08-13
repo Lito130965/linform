@@ -25,6 +25,7 @@
 import { BLOCKS } from '../editor/blocks'
 import { PAGE_SIZES } from '../editor/page-css'
 import { PRESETS } from '../presets/registry'
+import { describeEdit } from './edit'
 
 export type Op =
   | {
@@ -38,6 +39,7 @@ export type Op =
   | { op: 'block'; id: string }
   | { op: 'preset'; id: string; params?: Record<string, string> }
   | { op: 'field'; expression: string }
+  | { op: 'edit'; find: string; replace: string }
 
 export interface OpsParse {
   ops: Op[]
@@ -145,6 +147,18 @@ function parseOne(raw: unknown): { ok: Op } | { why: string; what: string } {
       return { ok: { op: 'preset', id, params } }
     }
 
+    case 'edit': {
+      // The one operation that is not a feature of the editor: a change to
+      // the markup, expressed as a change rather than as a new document.
+      const find = typeof value.find === 'string' ? value.find : ''
+      const replace = typeof value.replace === 'string' ? value.replace : ''
+      if (!find.trim()) return { what: 'an edit', why: 'nothing to find' }
+      if (value.replace === undefined) {
+        return { what: 'an edit', why: 'no replacement given (use "" to remove)' }
+      }
+      return { ok: { op: 'edit', find, replace } }
+    }
+
     case 'field': {
       const expression = text('expression').trim()
       // A path, optionally with filters after it — the same shape the field
@@ -230,5 +244,7 @@ export function describeOp(op: Op): string {
     }
     case 'field':
       return `Insert the field {{ ${op.expression} }}`
+    case 'edit':
+      return describeEdit(op.find, op.replace)
   }
 }

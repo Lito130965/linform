@@ -52,7 +52,8 @@ export default function AssistantPanel({
   /** put a whole document in place of the open one */
   onReplaceDocument: (html: string) => void
   /** run editor operations — the same functions the panels call */
-  onApplyOps: (ops: Op[]) => void
+  /** run editor operations; says whether the document actually changed */
+  onApplyOps: (ops: Op[]) => boolean
   onClose: () => void
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -135,9 +136,15 @@ export default function AssistantPanel({
       // the page, and the page is the thing being worked on. Taken back in
       // one press, exactly, because that is what makes applying safe.
       const before = currentDocument()
-      if (proposed) onReplaceDocument(proposed)
-      else if (ops && ops.ops.length > 0) onApplyOps(ops.ops)
-      const changed = !!proposed || !!(ops && ops.ops.length > 0)
+      let changed = false
+      if (proposed) {
+        onReplaceDocument(proposed)
+        changed = true
+      } else if (ops && ops.ops.length > 0) {
+        // Asked for is not done: an edit that named no place changes nothing,
+        // and an "Undo this change" over an untouched document is a lie.
+        changed = onApplyOps(ops.ops)
+      }
       setMessages((m) => {
         const next = [...m]
         const last = next[next.length - 1]
@@ -146,7 +153,7 @@ export default function AssistantPanel({
           ...last,
           text: ops ? withoutOpsBlock(prose) : prose,
           appliedHtml: proposed ?? undefined,
-          appliedOps: ops && ops.ops.length > 0 ? ops.ops : undefined,
+          appliedOps: changed && ops && ops.ops.length > 0 ? ops.ops : undefined,
           rejectedOps: ops && ops.rejected.length > 0 ? ops.rejected : undefined,
           undoTo: changed ? before : undefined,
         }

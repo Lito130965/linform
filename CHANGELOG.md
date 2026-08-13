@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   What lands is what the editor makes. Its vocabulary is closed and checked
   against the editor's own source in CI, so it cannot offer a block that does
   not exist; anything it invents is refused out loud rather than ignored.
+- **The assistant changes part of a document instead of retyping it.** Asked to
+  add one column to a table, it returned all sixty lines of the template with
+  three of them different: the user could not see what changed, and every line
+  retyped is a line that can come back subtly altered — a wording paraphrased, a
+  reference off by a digit. It can now say the change itself: the text to find
+  and what to put in its place. The document is spliced, never reformatted, and
+  an edit that names no place, or three, changes nothing and says so rather than
+  altering the first one it meets.
 - **The assistant's changes land in the document as they arrive**, in the visual
   editor rather than behind a diff and an Apply button, and one press takes any
   of them back exactly — including work typed by hand a moment earlier, because

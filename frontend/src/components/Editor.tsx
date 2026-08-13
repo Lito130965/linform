@@ -30,6 +30,7 @@ import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 import { describeOp, type Op } from '../assistant/ops'
+import { applyEdit } from '../assistant/edit'
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -506,7 +507,36 @@ export default function Editor({
    * panels afterwards. It is also one step in the same undo history as any
    * hand edit.
    */
-  const applyOps = (ops: Op[]) => {
+  const applyOps = (ops: Op[]): boolean => {
+    // Edits first, and on their own. Each is text work over the document,
+    // applied one after another so a second edit sees the result of the
+    // first, and the whole lot lands as one replacement.
+    const edits = ops.filter((op): op is Extract<Op, { op: 'edit' }> => op.op === 'edit')
+    const rest = ops.filter((op) => op.op !== 'edit')
+    if (edits.length > 0) {
+      let source = currentHtml()
+      const refused: string[] = []
+      for (const edit of edits) {
+        const result = applyEdit(source, edit.find, edit.replace)
+        if ('error' in result) refused.push(result.error)
+        else source = result.html
+      }
+      const changed = source !== currentHtml()
+      if (changed) replaceDocument(source)
+      // Said, never swallowed: an edit that matched nothing and a document
+      // that did not change look identical from the outside.
+      if (refused.length > 0) setError(`Not changed:\n- ${refused.join('\n- ')}`)
+      if (rest.length > 0) {
+        // The document has just been rebuilt underneath them, so the caret
+        // they would insert at no longer exists.
+        setNotice(`${rest.length} further operation(s) were not run — ask again`)
+        return changed
+      }
+      if (refused.length === 0) {
+        setNotice(edits.length === 1 ? describeOp(edits[0]) : `Applied ${edits.length} changes`)
+      }
+      return changed
+    }
     for (const op of ops) {
       if (op.op === 'page') {
         // Merged onto what the document already says: an operation names the
@@ -539,6 +569,7 @@ export default function Editor({
       }
     }
     setNotice(ops.length === 1 ? describeOp(ops[0]) : `Applied ${ops.length} changes`)
+    return ops.length > 0
   }
 
   const insertBlock = (id: string) => {
