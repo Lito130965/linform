@@ -130,3 +130,34 @@ test('a resize handle sits on the edge it resizes', async ({ page, request }) =>
     'the column handle is not on the right edge of the column',
   ).toBeLessThan(6)
 })
+
+test('the page can be looked at closely, and handed back to the window', async ({
+  page,
+  request,
+}) => {
+  // The percentage in the toolbar used to be a read-out of a number nobody
+  // could change: the only way to see 8pt small print, or to place something
+  // against a margin, was to make the browser window bigger.
+  const code = uniqueCode('zoom')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 15mm }</style>\n<h1 id="title">Report</h1>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const percent = page.locator('.zoom-value')
+  const sheet = page.locator(CANVAS)
+  const fitted = (await sheet.boundingBox())!.width
+  const fittedText = await percent.textContent()
+
+  await page.getByRole('button', { name: 'Zoom in' }).click()
+  await expect(percent).not.toHaveText(fittedText!)
+  expect((await sheet.boundingBox())!.width).toBeGreaterThan(fitted)
+
+  // The percentage is the way back: pressing it returns the size to the window.
+  await percent.click()
+  await expect(percent).toHaveText(fittedText!)
+  expect((await sheet.boundingBox())!.width).toBeCloseTo(fitted, 0)
+})

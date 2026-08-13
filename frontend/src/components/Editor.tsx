@@ -21,7 +21,7 @@ import AssetsPanel from './AssetsPanel'
 import type { Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import { BLOCKS } from '../editor/blocks'
-import { fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
+import { checkData, fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
 import { ensurePageCounterRules, writePageSetup, type PageSetup } from '../editor/page-css'
 import { setFurnitureBox, type Edge } from '../editor/furniture-setup'
 import VersionHistory from './VersionHistory'
@@ -120,6 +120,21 @@ export default function Editor({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [sanitizeWarning, setSanitizeWarning] = useState<string | null>(null)
   const [mode, setMode] = useState<'code' | 'visual'>('code')
+  // Something that just happened, said briefly and then gone. A save from the
+  // keyboard has no other visible effect — the "unsaved" badge simply stops
+  // being there, which nobody notices mid-sentence. It floats over the page
+  // rather than taking a row in the toolbar: anything that appears above the
+  // canvas moves the canvas, and a page that moves under the pointer costs more
+  // than the message is worth.
+  const [notice, setNotice] = useState<string | null>(null)
+  // Bumped when a file arrives by a door other than the Assets panel, so the
+  // panel goes and looks again instead of listing what it found on opening.
+  const [assetsVersion, setAssetsVersion] = useState(0)
+  useEffect(() => {
+    if (!notice) return
+    const t = setTimeout(() => setNotice(null), 2500)
+    return () => clearTimeout(t)
+  }, [notice])
 
   // Which panels this instance can actually serve. Assets need storage behind
   // them; on a demo the panel would offer an upload button and answer "Not
@@ -231,6 +246,13 @@ export default function Editor({
    * a published version is open starts a NEW draft, because a published
    * version is immutable — that is what makes pinning trustworthy. */
   const save = async () => {
+    // The button is disabled in these cases; the shortcut has to say the same
+    // thing itself, and saying it out loud beats doing nothing silently.
+    if (isScratch) {
+      setNotice('This example is a scratch copy — there is nothing to save.')
+      return
+    }
+    if (busy || !currentHtml().trim()) return
     setBusy(true)
     setError(null)
     try {
@@ -246,6 +268,7 @@ export default function Editor({
       setOpen({ kind: 'draft', id: draft.id })
       await refreshDetail()
       setDirty(false)
+      setNotice('Draft saved')
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -431,6 +454,41 @@ export default function Editor({
     setDirty(true)
   }
 
+  /**
+   * Files dropped on the page. The canvas has already put the caret where they
+   * landed; this half is storage, which the canvas knows nothing about.
+   *
+   * Images only, and said out loud when it is not one — a PDF dropped on a
+   * template has no meaning here, and silence would read as a broken editor
+   * rather than as a refusal.
+   */
+  const dropFiles = async (files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (images.length === 0) {
+      setNotice('Only images can be dropped on the page.')
+      return
+    }
+    if (!assets) {
+      setNotice('This instance keeps no assets, so there is nowhere to put a dropped file.')
+      return
+    }
+    setBusy(true)
+    try {
+      for (const file of images) {
+        const asset = await api.uploadAsset(file)
+        insertText(`<img src="${asset.url}" alt="${asset.filename}">`)
+      }
+      // The Assets tab lists what it found when it opened; a file that arrived
+      // by another door has to be worth finding there too.
+      setAssetsVersion((v) => v + 1)
+      setNotice(images.length === 1 ? `Placed ${images[0].name}` : `Placed ${images.length} images`)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const insertBlock = (id: string) => {
     if (mode === 'visual') {
       canvasApiRef.current?.insertBlock(id)
@@ -504,6 +562,24 @@ export default function Editor({
     htmlRef.current = html
   }, [html])
 
+  // Ctrl+S saves the draft from wherever the focus is — including inside the
+  // canvas, which re-dispatches the shortcuts it does not use itself. Bound
+  // once and reading the current save through a ref: rebinding the listener on
+  // every keystroke is churn nobody can see and everybody pays for.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+      if (e.key.toLowerCase() !== 's') return
+      // Whatever else happens, not the browser's "save this page as".
+      e.preventDefault()
+      void saveRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
   // Assistant status decides whether the feature is shown at all.
   useEffect(() => {
     api.assistantStatus().then(setAssistant).catch(() => setAssistant({ enabled: false, model: null, sends_test_data: false }))
@@ -527,6 +603,10 @@ export default function Editor({
     for (const m of html.matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)/g)) names.add(m[1])
     return [...names]
   }, [html])
+
+  // Recomputed as either side is edited — it is string work over a template
+  // and a payload, and both are already in hand.
+  const dataCheck = useMemo(() => checkData(html, testData), [html, testData])
 
   const parsedData = useMemo<{ data: Record<string, unknown> | null; error: string | null }>(() => {
     try {
@@ -610,7 +690,12 @@ export default function Editor({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
-            <button className="btn primary" onClick={save} disabled={busy || !html.trim()}>
+            <button
+              className="btn primary"
+              onClick={save}
+              disabled={busy || !html.trim()}
+              title="Save the working copy as a draft (Ctrl+S)"
+            >
               {openDraftId != null ? 'Save draft' : 'Save as draft'}
             </button>
             <button
@@ -686,6 +771,7 @@ export default function Editor({
               fields={fields}
               onPageSetup={applyPageSetup}
               onFurniture={applyFurniture}
+              onDropFiles={dropFiles}
               onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
@@ -739,7 +825,7 @@ export default function Editor({
                 <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
               )}
               {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
-              {panelTab === 'assets' && <AssetsPanel onInsert={insertText} />}
+              {panelTab === 'assets' && <AssetsPanel key={assetsVersion} onInsert={insertText} />}
               {panelTab === 'data' && (
                 <div className="test-data">
                   <div className="test-data-head">
@@ -775,6 +861,34 @@ export default function Editor({
                   />
                   {sampleNote && <p className="muted small">{sampleNote}</p>}
                   {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+                  {/* Both directions, because both fail quietly: a value the
+                      data does not carry renders as a blank that reads as a
+                      layout problem, and a spare one is usually a field renamed
+                      on one side only. Neither shows up in a preview as
+                      anything but "hmm". */}
+                  {dataCheck && (
+                    <div className="data-check">
+                      {dataCheck.missing.length > 0 && (
+                        <p className="warn">
+                          <strong>{dataCheck.missing.length}</strong> named by the template, not in
+                          the data: <code>{dataCheck.missing.slice(0, 8).join(', ')}</code>
+                          {dataCheck.missing.length > 8 && ' …'}
+                        </p>
+                      )}
+                      {dataCheck.unused.length > 0 && (
+                        <p className="muted small">
+                          <strong>{dataCheck.unused.length}</strong> in the data the template never
+                          reads: <code>{dataCheck.unused.slice(0, 8).join(', ')}</code>
+                          {dataCheck.unused.length > 8 && ' …'}
+                        </p>
+                      )}
+                      {dataCheck.missing.length === 0 && dataCheck.unused.length === 0 && (
+                        <p className="muted small">
+                          The data covers everything the template names, and nothing else.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -825,6 +939,14 @@ export default function Editor({
             onDeleteDraft={(id) => discardDraft(id)}
             onClose={() => setShowHistory(false)}
           />
+        )}
+
+        {/* role=status, not alert: this is confirmation of something the user
+            just did, and an alert would interrupt a screen reader mid-word. */}
+        {notice && (
+          <div className="toast" role="status">
+            {notice}
+          </div>
         )}
 
         {presetFor && (

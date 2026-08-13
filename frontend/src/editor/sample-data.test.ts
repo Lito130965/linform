@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fillMissing, generateSample, sampleFor } from './sample-data'
+import { checkData, fillMissing, generateSample, sampleFor } from './sample-data'
 
 const parse = (json: string) => JSON.parse(json) as Record<string, unknown>
 
@@ -95,5 +95,40 @@ describe('filling in what is missing', () => {
   it('reports nothing added when the payload already covers the template', () => {
     const full = generateSample(INVOICE).json
     expect(fillMissing(INVOICE, full).added).toEqual([])
+  })
+})
+
+describe('what the template and the data disagree about', () => {
+  it('names what the template asks for and the data does not carry', () => {
+    const check = checkData('<p>{{ title }} for {{ customer.name }}</p>', '{"title": "Report"}')
+    expect(check?.missing).toEqual(['customer.name'])
+  })
+
+  it('looks inside a loop, one row being enough to count as carried', () => {
+    const template = '{% for row in items %}<p>{{ row.name }} {{ row.price }}</p>{% endfor %}'
+    const check = checkData(template, '{"items": [{"name": "A"}, {"name": "B", "price": 1}]}')
+    expect(check?.missing).toEqual([])
+
+    const short = checkData(template, '{"items": [{"name": "A"}]}')
+    expect(short?.missing).toEqual(['items[].price'])
+  })
+
+  it('names what the data carries and the template never reads', () => {
+    const check = checkData('<p>{{ title }}</p>', '{"title": "Report", "legacy_code": "X"}')
+    expect(check?.unused).toEqual(['legacy_code'])
+  })
+
+  it('counts a value used only in a condition as read', () => {
+    // The shape reader sees `{{ … }}` and loops; a value can also be named in a
+    // test, a filter argument or an if. Calling one of those unused would be
+    // telling somebody to delete data the template needs.
+    const check = checkData('{% if paid %}<p>{{ title }}</p>{% endif %}', '{"title": "R", "paid": true}')
+    expect(check?.unused).toEqual([])
+  })
+
+  it('says nothing at all when the JSON cannot be read', () => {
+    // The panel already reports the parse error; saying it twice is noise.
+    expect(checkData('<p>{{ title }}</p>', '{ not json')).toBeNull()
+    expect(checkData('<p>{{ title }}</p>', '[1, 2]')).toBeNull()
   })
 })

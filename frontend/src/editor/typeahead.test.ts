@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rank, triggerAt } from './typeahead'
+import { rank, rankLabels, slashTriggerAt, triggerAt } from './typeahead'
 
 const at = (text: string) => triggerAt(text, text.length)
 
@@ -64,5 +64,51 @@ describe('ordering what is offered', () => {
       expression: `f${i}`,
     }))
     expect(rank(many, 'f')).toHaveLength(8)
+  })
+})
+
+const slash = (text: string) => slashTriggerAt(text, text.length)
+
+describe('when a slash means a block', () => {
+  it('fires on the slash and on a name being typed after it', () => {
+    expect(slash('/')).toMatchObject({ query: '' })
+    expect(slash('/tab')).toMatchObject({ query: 'tab' })
+    expect(slash('Some text /page bre')).toMatchObject({ query: 'page bre' })
+  })
+
+  it('reports where the slash is, so the typing can be replaced by the block', () => {
+    expect(slash('text /tab')).toMatchObject({ start: 5, end: 9 })
+  })
+
+  it('leaves a slash that was part of something else alone', () => {
+    expect(slash('12/03/2026')).toBeNull()
+    expect(slash('and/or')).toBeNull()
+    expect(slash('https://example.com/lo')).toBeNull()
+    expect(slash(`/${'x'.repeat(40)}`)).toBeNull()
+    // Prose that happens to follow a slash: two words are a block name, five
+    // are a sentence.
+    expect(slash('/one two three four five')).toBeNull()
+  })
+
+  it('is not fooled by a slash earlier in the line', () => {
+    expect(slash('/table inserted, then more text.')).toBeNull()
+  })
+})
+
+describe('ranking blocks by the name being typed', () => {
+  const rows = [{ label: 'Text' }, { label: 'Table' }, { label: '2 columns' }, { label: 'Page break' }]
+
+  it('offers everything before anything is typed', () => {
+    expect(rankLabels(rows, '')).toHaveLength(4)
+  })
+
+  it('puts a prefix ahead of a later word, and a later word ahead of the middle', () => {
+    expect(rankLabels(rows, 'ta').map((r) => r.label)).toEqual(['Table'])
+    expect(rankLabels(rows, 'break').map((r) => r.label)).toEqual(['Page break'])
+    expect(rankLabels(rows, 'te').map((r) => r.label)).toEqual(['Text'])
+  })
+
+  it('says nothing rather than offering something unrelated', () => {
+    expect(rankLabels(rows, 'zzz')).toEqual([])
   })
 })

@@ -125,6 +125,50 @@ export function caretBeside(node: Element, clientX: number): void {
   selection.addRange(range)
 }
 
+/**
+ * Put the caret where the pointer is, so something dropped on the page lands
+ * where it was aimed rather than wherever the caret happened to be.
+ *
+ * Two spellings of one feature: `caretPositionFromPoint` is the standard and
+ * `caretRangeFromPoint` is what Chromium has shipped for years. A point inside
+ * an atomic chip is handed to `caretBeside`, because there is no position
+ * inside one — a chip is a single thing, not text with places between letters.
+ *
+ * Returns whether a caret was placed; a point over nothing at all leaves the
+ * selection where it was rather than clearing it.
+ */
+export function caretAtPoint(doc: Document, clientX: number, clientY: number): boolean {
+  const engine = doc as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+  }
+  let range: Range | null = null
+  if (typeof engine.caretRangeFromPoint === 'function') {
+    range = engine.caretRangeFromPoint(clientX, clientY)
+  } else if (typeof engine.caretPositionFromPoint === 'function') {
+    const position = engine.caretPositionFromPoint(clientX, clientY)
+    if (position) {
+      range = doc.createRange()
+      range.setStart(position.offsetNode, position.offset)
+      range.collapse(true)
+    }
+  }
+  if (!range) return false
+
+  const start = range.startContainer
+  const el = start.nodeType === Node.ELEMENT_NODE ? (start as Element) : start.parentElement
+  const atomic = el?.closest(ATOMIC_SELECTOR)
+  if (atomic) {
+    caretBeside(atomic, clientX)
+    return true
+  }
+  const selection = doc.getSelection()
+  if (!selection) return false
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return true
+}
+
 /** Put the caret immediately after `node`, so typing carries on from what was
  * just inserted rather than from wherever the mouse last was. */
 export function caretAfter(node: Node): void {

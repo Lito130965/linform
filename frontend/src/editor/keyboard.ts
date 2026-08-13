@@ -120,6 +120,19 @@ export function intentFor(
   }
 }
 
+/**
+ * Shortcuts implemented elsewhere: undo lives in the canvas component because
+ * the history is the component's, and Ctrl+S belongs to the editor around it
+ * because a document is saved, not a page. Listed beside the others because a
+ * user looking for "how do I save" does not know or care which module answers,
+ * and one list is the only kind anybody reads.
+ */
+export const EDITOR_SHORTCUTS: { keys: string; does: string }[] = [
+  { keys: 'Ctrl + Z / Ctrl + Y', does: 'undo, redo' },
+  { keys: 'Ctrl + S', does: 'save the draft — from the canvas too' },
+  { keys: 'Ctrl + + / − / 0', does: 'zoom the page in, out, back to fitting the window' },
+]
+
 /** The shortcuts, in one place, so the hint in the UI and the documentation
  * cannot drift from what the code above actually does. */
 export const CANVAS_SHORTCUTS: { keys: string; does: string }[] = [
