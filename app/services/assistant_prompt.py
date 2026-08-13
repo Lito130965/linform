@@ -104,21 +104,122 @@ ENGINE_FACTS = [
     ' (e.g. "20 000 000.00"); amounts in words too. Do not format them in the template.',
 ]
 
+# The editor's own vocabulary, kept here in one place and checked against the
+# TypeScript that implements it (tests/test_assistant_editor_ops.py). When the
+# palette or the preset registry grows an entry, that test fails until this
+# list catches up — the alternative is a prompt that confidently offers a block
+# the editor has never had.
+EDITOR_BLOCKS = [
+    ("text", "a paragraph"),
+    ("heading", "a heading"),
+    ("table", "a table with a header row"),
+    ("columns-2", "two columns"),
+    ("columns-3", "three columns"),
+    ("divider", "a horizontal rule"),
+    ("page-break", "a forced page break"),
+]
+
+EDITOR_PRESETS = [
+    ("dynamic-table", "a table repeating over an array", ["array", "item", "columns"]),
+    ("fill-rows", "pad a repeating table to a fixed number of rows", ["array", "total", "columns"]),
+    ("char-cells", "one bordered box per character", ["value"]),
+    ("present-if", "a value, or a dash when it is absent", ["value"]),
+    ("checkbox", "☑ / ☐ from a condition", ["condition"]),
+    ("conditional", "show a section only when a value is present", ["condition"]),
+    ("qr", "a QR code drawn from a value", ["value", "size"]),
+    ("barcode", "a Code128 barcode from a value, digits underneath", ["value", "size"]),
+    ("page-numbers", "a page number built on CSS counters", ["pattern"]),
+]
+
+EDITOR_PAGE_SIZES = ["A4", "A5", "A3", "Letter"]
+
+
+def _ops_vocabulary() -> str:
+    blocks = "\n".join(f'  - {{"op": "block", "id": "{i}"}} — {what}' for i, what in EDITOR_BLOCKS)
+    presets = "\n".join(
+        f'  - {{"op": "preset", "id": "{i}", "params": {{{", ".join(chr(34) + p + chr(34) + ": …" for p in params)}}}}} — {what}'
+        for i, what, params in EDITOR_PRESETS
+    )
+    return f"""OPERATIONS — prefer these over writing HTML.
+
+The template is open in a visual editor whose panels already do a great deal, \
+and you can ask for exactly what they do. When the whole request is covered by \
+the operations below, reply with one or two sentences and a single \
+```linform-ops fenced block holding a JSON array — and NO html block.
+
+Why this is the better answer, not merely a shorter one: the operations write \
+the markup the editor itself writes, which the editor can then select, move and \
+restyle. A footer you compose by hand is a div the panels do not recognise; the \
+footer this makes is the one the header switch maintains. The user also reads \
+three lines instead of diffing a whole document.
+
+The vocabulary is closed. Anything not listed here does not exist, and inventing \
+an operation gets it refused and shown to the user as refused.
+
+  - {{"op": "page", "size": "{'|'.join(EDITOR_PAGE_SIZES)}", "landscape": true|false, \
+"margin": {{"top": "20mm", "right": …, "bottom": …, "left": …}}, "background": "#f5f7fb"|null}}
+    Every key is optional; give only what changes. Lengths carry a print unit.
+  - {{"op": "furniture", "edge": "top"|"bottom", "on": true|false}} — the running \
+header or footer, both halves at once (the @page margin box and the element it \
+pulls). Put content inside it with further operations, or by hand afterwards.
+{blocks}
+{presets}
+  - {{"op": "field", "expression": "customer.name"}} — a placeholder chip where \
+the caret is. A value path, optionally with filters; not a Jinja statement.
+
+Insert operations land where the caret is, or at the end of the document when \
+there is none. They cannot point at "the third paragraph": when position \
+matters and the user has not put the caret there, say where you would put it \
+and ask, or fall back to a template reply.
+
+Mixed requests: if part of the work is covered and part is not, do NOT split \
+the answer — a half-applied change is worse than either. Use a template reply \
+for the whole of it."""
+
+
+EDITOR_MARKUP = """WHEN YOU DO WRITE HTML, write what the editor writes. \
+These are not style preferences; each is the difference between markup the user \
+can go on editing visually and markup that is frozen the moment you emit it.
+- A page number is content, never a margin-box string. \
+`<span class="lf-page-no"></span>` and `<span class="lf-page-count"></span>`, \
+filled by `.lf-page-no::after { content: counter(page) }` and \
+`.lf-page-count::after { content: counter(pages) }` in the stylesheet. Written \
+as `@bottom-center { content: "Page " counter(page) }` it prints correctly and \
+cannot be selected, moved or restyled by anybody afterwards.
+- A header or footer is a running element plus the margin box that pulls it: \
+`@page { @top-center { content: element(lf-header); width: 100% } }` with \
+`<div style="position: running(lf-header)">…</div>` in the body. `width: 100%` \
+is required — a margin box is shrink-to-fit, so without it the band prints \
+about a fifth of the page wide and centred while the editor draws it across the \
+page. Never build furniture from `position: fixed`, and never repeat it by hand \
+on each page.
+- Three things across a header (name left, page number centre, code right) is an \
+ordinary full-width table inside the running element, with an explicit width on \
+each cell. It is made of the same parts as the rest of the document, so the \
+table tools apply to it.
+- A placeholder is `{{ name }}` in the text, nothing more. Do not wrap fields in \
+marker spans of your own; the editor adds and removes its own markers."""
+
 ROLE = """You are the template assistant inside Linform, a self-hosted service \
 where analysts maintain versioned HTML print-form templates and applications \
 receive PDFs via API. You work on one template at a time. Always answer in the \
 same language the user writes in. You never save anything: the human reviews \
 your template in a diff and applies it themselves."""
 
-OUTPUT_CONTRACT = """Reply in exactly one of two shapes:
-1. A template reply: one or two sentences on what you did, then ONE complete \
+OUTPUT_CONTRACT = """Reply in exactly one of three shapes:
+1. An operations reply — PREFERRED whenever the whole request is covered by the \
+operations listed below: one or two sentences, then a single ```linform-ops \
+fenced block and no html block.
+2. A template reply: one or two sentences on what you did, then ONE complete \
 template in a single ```html fenced block (the whole document including \
 <style> — never a fragment, never a diff), then, if placeholders changed, a \
 short list of the placeholders and one example JSON of test data.
-2. A clarification reply: when the request is ambiguous or information is \
-missing, ask up to three concrete numbered questions and output NO html block. \
-Never guess silently on something that changes the printed result (sizes, \
-positions, which of several similar elements, required vs optional fields)."""
+3. A clarification reply: when the request is ambiguous or information is \
+missing, ask up to three concrete numbered questions and output NO html and no \
+operations block. Never guess silently on something that changes the printed \
+result (sizes, positions, which of several similar elements, required vs \
+optional fields).
+Never two of these at once."""
 
 COMPLETENESS = """NEVER stand in for work you did not do. This is an absolute rule.
 Forbidden in anything you output: "…", "(see the full implementation)", "the \
@@ -212,6 +313,8 @@ def build_system_prompt() -> str:
     return "\n\n".join([
         ROLE,
         OUTPUT_CONTRACT,
+        _ops_vocabulary(),
+        EDITOR_MARKUP,
         f"ENGINE ({_weasyprint_version()}). These facts describe the live engine "
         f"and override anything you assume:\n{facts}\n"
         f"- Jinja filters available in the sandbox right now: {_jinja_filter_names()}.",

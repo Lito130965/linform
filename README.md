@@ -180,6 +180,16 @@ from a description or a scan and makes targeted corrections. It proposes; you
 review the diff and apply it yourself. **It never writes to the database** —
 saving a version stays a human action, so immutability is untouched.
 
+For anything the editor already does — the page, a header or footer, a block,
+a preset, a field — the assistant asks for **that operation** rather than
+writing markup, and you see it as a list of sentences before it runs. What
+lands is then what the panels produce: a footer the header switch maintains, a
+page number built on counters, both still editable afterwards. Its vocabulary
+is exactly the editor's, checked against the editor's own source in CI. When it
+does write a whole template, anything that would put the document out of the
+visual editor's reach is said beside the Apply button rather than discovered
+later.
+
 Bring your own key. It stays on the backend and is never sent to the browser.
 Without `LINFORM_AI_API_KEY` the feature is off and hidden in the UI.
 

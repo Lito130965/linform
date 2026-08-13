@@ -18,17 +18,18 @@ import InsertPanel from './InsertPanel'
 import PresetPanel from './PresetPanel'
 import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
-import type { Preset } from '../presets/registry'
+import { PRESETS, type Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import { BLOCKS } from '../editor/blocks'
 import { checkData, fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
-import { ensurePageCounterRules, writePageSetup, type PageSetup } from '../editor/page-css'
-import { setFurnitureBox, type Edge } from '../editor/furniture-setup'
+import { ensurePageCounterRules, readPageSetup, writePageSetup, type PageSetup } from '../editor/page-css'
+import { setFurniture, setFurnitureBox, type Edge } from '../editor/furniture-setup'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
+import { describeOp, type Op } from '../assistant/ops'
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -489,6 +490,51 @@ export default function Editor({
     }
   }
 
+  /**
+   * Do what the assistant asked for, through the editor's own operations.
+   *
+   * Every branch here is the function a panel calls: the page control's writer,
+   * the header switch, the palette's insert, the preset dialog's generator. So
+   * the result is not "markup a model wrote that resembles a footer" but the
+   * footer this editor makes — selectable, movable, and understood by the
+   * panels afterwards. It is also one step in the same undo history as any
+   * hand edit.
+   */
+  const applyOps = (ops: Op[]) => {
+    for (const op of ops) {
+      if (op.op === 'page') {
+        // Merged onto what the document already says: an operation names the
+        // one thing it changes, and everything else about the page stays.
+        const current = readPageSetup(currentHtml())
+        applyPageSetup({
+          ...current,
+          ...(op.size !== undefined ? { size: op.size } : {}),
+          ...(op.landscape !== undefined ? { landscape: op.landscape } : {}),
+          ...(op.background !== undefined ? { background: op.background } : {}),
+          margin: { ...current.margin, ...(op.margin ?? {}) },
+        })
+      } else if (op.op === 'furniture') {
+        if (mode === 'visual') canvasApiRef.current?.setFurniture(op.edge, op.on)
+        else {
+          // No canvas to hold the element half, so both halves are written to
+          // the source here.
+          const next = setFurniture(currentHtml(), op.edge, op.on)
+          htmlRef.current = next
+          setHtml(next)
+          setDirty(true)
+        }
+      } else if (op.op === 'block') {
+        insertBlock(op.id)
+      } else if (op.op === 'preset') {
+        const preset = PRESETS.find((p) => p.id === op.id)
+        if (preset) insertPresetSource(preset.generate(op.params ?? {}))
+      } else if (op.op === 'field') {
+        insertPlaceholder(op.expression)
+      }
+    }
+    setNotice(ops.length === 1 ? describeOp(ops[0]) : `Applied ${ops.length} changes`)
+  }
+
   const insertBlock = (id: string) => {
     if (mode === 'visual') {
       canvasApiRef.current?.insertBlock(id)
@@ -919,6 +965,7 @@ export default function Editor({
             placeholders={placeholderNames}
             fixError={fixError}
             onApply={applyFromAssistant}
+            onApplyOps={applyOps}
             onClose={() => setShowAssistant(false)}
           />
         )}

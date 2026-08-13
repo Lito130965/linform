@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The assistant asks the editor to do things, instead of writing markup for
+  them.** For "make it A5" or "add a footer", a whole document in an html block
+  was a bad answer twice over: the user diffed a file to find three lines, and
+  whatever the model composed by hand was what the document then had — a footer
+  built as `position: fixed`, a page number as a string in a margin box, none of
+  which the panels could touch. It now replies with a small list of editor
+  operations — page, header/footer, block, preset, field — shown as sentences
+  before anything runs, and applied through the very functions the panels call.
+  What lands is what the editor makes. Its vocabulary is closed and checked
+  against the editor's own source in CI, so it cannot offer a block that does
+  not exist; anything it invents is refused out loud rather than ignored.
+- **A proposed template says what it will cost before it is applied**: a header
+  written as text in an `@page` margin box (prints, but nothing can select or
+  move it afterwards), or Jinja the visual editor cannot open (the template
+  becomes code-only). Both are invisible in a diff. It is a sentence beside the
+  Apply button, not a refusal — sometimes that markup is the right answer.
+
 - **Ctrl+S saves the draft**, from wherever the focus is. A key press inside an
   iframe never reaches the page hosting it, so with the caret in the document —
   where somebody writing one keeps it — the shortcut used to offer to save the

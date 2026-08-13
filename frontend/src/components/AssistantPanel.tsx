@@ -3,6 +3,8 @@ import Icon from './Icon'
 import { diffLines, type Change } from 'diff'
 import { assistantChat, AssistantStatus } from '../api'
 import { extractHtmlBlock, replyProse } from '../assistant/extract'
+import { describeOp, extractOps, withoutOpsBlock, type Op } from '../assistant/ops'
+import { proposalCaveats } from '../assistant/proposal'
 import { toDownscaledDataUrl } from '../assistant/image'
 import { renderMarkdown } from '../assistant/markdown'
 
@@ -11,6 +13,12 @@ interface ChatMessage {
   text: string
   /** template proposed by this assistant message, if any */
   proposedHtml?: string
+  /** editor operations proposed by this message — the preferred shape of
+   * answer for anything the editor already does */
+  proposedOps?: Op[]
+  /** operations that were asked for and refused, with the reason. Shown, not
+   * swallowed: silence would read as an editor that ignored the assistant. */
+  rejectedOps?: { what: string; why: string }[]
 }
 
 /** Assistant chat. The whole panel is hidden when the feature is off, so the
@@ -23,6 +31,7 @@ export default function AssistantPanel({
   fixError,
   overlay = false,
   onApply,
+  onApplyOps,
   onClose,
 }: {
   status: AssistantStatus
@@ -33,6 +42,8 @@ export default function AssistantPanel({
   /** a render error to seed a "fix this" turn, or null */
   fixError: string | null
   onApply: (html: string) => void
+  /** run editor operations — the same functions the panels call */
+  onApplyOps: (ops: Op[]) => void
   onClose: () => void
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -110,13 +121,17 @@ export default function AssistantPanel({
       })
     } finally {
       const proposed = extractHtmlBlock(acc)
+      const ops = extractOps(acc)
       setMessages((m) => {
         const next = [...m]
         const last = next[next.length - 1]
+        const prose = proposed ? replyProse(acc) : acc
         next[next.length - 1] = {
           ...last,
-          text: proposed ? replyProse(acc) : acc,
+          text: ops ? withoutOpsBlock(prose) : prose,
           proposedHtml: proposed ?? undefined,
+          proposedOps: ops && ops.ops.length > 0 ? ops.ops : undefined,
+          rejectedOps: ops && ops.rejected.length > 0 ? ops.rejected : undefined,
         }
         return next
       })
@@ -202,6 +217,32 @@ export default function AssistantPanel({
                 {m.text || (streaming && i === messages.length - 1 ? `Thinking… ${elapsed}s` : '')}
               </div>
             )}
+            {/* Operations first: when a reply carries both, the small edit is
+                the one to offer, and the template is the fallback. */}
+            {m.proposedOps && (
+              <div className="chat-proposal ops">
+                <ul className="op-list">
+                  {m.proposedOps.map((op, j) => (
+                    <li key={j}>{describeOp(op)}</li>
+                  ))}
+                </ul>
+                <button
+                  className="btn small primary"
+                  onClick={() => onApplyOps(m.proposedOps!)}
+                >
+                  {m.proposedOps.length === 1 ? 'Do it' : `Do all ${m.proposedOps.length}`}
+                </button>
+              </div>
+            )}
+            {m.rejectedOps && (
+              <ul className="op-list rejected">
+                {m.rejectedOps.map((bad, j) => (
+                  <li key={j}>
+                    <strong>{bad.what}</strong> — {bad.why}
+                  </li>
+                ))}
+              </ul>
+            )}
             {m.proposedHtml && (
               <div className="chat-proposal">
                 <button className="btn small" onClick={() => setDiffFor(diffFor === i ? null : i)}>
@@ -210,6 +251,14 @@ export default function AssistantPanel({
                 <button className="btn small primary" onClick={() => onApply(m.proposedHtml!)}>
                   Apply
                 </button>
+                {/* Not a refusal — sometimes a macro is the right answer and the
+                    author knows it. It is the sentence that makes applying a
+                    decision rather than a surprise found later. */}
+                {proposalCaveats(m.proposedHtml).map((caveat, j) => (
+                  <p key={j} className="proposal-caveat">
+                    <strong>{caveat.what}</strong> — {caveat.cost}
+                  </p>
+                ))}
                 {diffFor === i && <DiffView from={currentHtml} to={m.proposedHtml} />}
               </div>
             )}

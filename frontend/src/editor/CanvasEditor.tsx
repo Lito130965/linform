@@ -218,6 +218,11 @@ export interface CanvasEditorApi {
   insertHtml: (html: string) => void
   /** Insert one of the palette's blocks, and select it so it can be edited. */
   insertBlock: (id: string) => void
+  /** Switch a header or footer on or off — both halves, exactly as the page
+   * panel's own checkbox does. The element half is a document edit and the
+   * document is in here; rewriting the body from outside would rebuild the
+   * canvas and lose the caret. */
+  setFurniture: (edge: Edge, on: boolean) => void
   /** Current canvas-form body (protected markup, canvas asset URLs). */
   getBody: () => string
 }
@@ -296,6 +301,9 @@ export default function CanvasEditor({
   // The palette lives in the shell, and the function it calls is declared
   // below the mount effect that publishes the API.
   const insertBlockRef = useRef<((id: string) => void) | null>(null)
+  // Same reason as insertBlockRef: the API object is built inside the mount
+  // effect, which cannot see a function this render defined.
+  const furnitureRef = useRef<((edge: Edge, on: boolean) => void) | null>(null)
   const callbacksRef = useRef({
     onChange,
     onReady,
@@ -631,6 +639,7 @@ export default function CanvasEditor({
     callbacksRef.current.onFurniture?.(edge, on)
     setTick((t) => t + 1)
   }
+  furnitureRef.current = toggleFurniture
 
   // ---- typing a field --------------------------------------------------
 
@@ -1350,6 +1359,7 @@ export default function CanvasEditor({
         if (nodes.length > 0) insertNodes(nodes, body)
       },
       insertBlock: (id: string) => insertBlockRef.current?.(id),
+      setFurniture: (edge: Edge, on: boolean) => furnitureRef.current?.(edge, on),
       getBody: () => exportBody(body),
     })
 
