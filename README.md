@@ -176,9 +176,11 @@ classic reason a scanner will not read it.
 ## AI assistant (optional, off by default)
 
 With a key configured, the editor gains an assistant that drafts a template
-from a description or a scan and makes targeted corrections. It proposes; you
-review the diff and apply it yourself. **It never writes to the database** —
-saving a version stays a human action, so immutability is untouched.
+from a description or a scan and makes targeted corrections. What it returns is
+applied to the open document as it arrives — in the visual editor, where you can
+see it — and one press takes it back exactly. **It never writes to the
+database** — saving and publishing stay human actions, so immutability is
+untouched.
 
 For anything the editor already does — the page, a header or footer, a block,
 a preset, a field — the assistant asks for **that operation** rather than

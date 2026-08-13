@@ -131,6 +131,9 @@ export default function Editor({
   // Bumped when a file arrives by a door other than the Assets panel, so the
   // panel goes and looks again instead of listing what it found on opening.
   const [assetsVersion, setAssetsVersion] = useState(0)
+  // Bumped whenever the open document is replaced, so the canvas is rebuilt
+  // around the new one instead of going on showing the old.
+  const [canvasNonce, setCanvasNonce] = useState(0)
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(() => setNotice(null), 2500)
@@ -548,26 +551,42 @@ export default function Editor({
     if (block) insertText(block.content)
   }
 
-  const enterVisual = () => {
-    setError(null)
-    const detected = detect(html)
+  /** Prepare the canvas for a document and show it, or say why it cannot be
+   * shown. Separate from the Visual button because the same steps run when a
+   * document is REPLACED under an open canvas, and that path has to rebuild
+   * the canvas rather than leave it holding the document before. */
+  const openInVisual = (source: string, complain = true): boolean => {
+    const detected = detect(source)
     if (!detected.supported) {
-      setError(`Visual mode is unavailable for this template:\n- ${detected.reasons.join('\n- ')}`)
-      return
+      if (complain) {
+        setError(
+          `Visual mode is unavailable for this template:\n- ${detected.reasons.join('\n- ')}`,
+        )
+      }
+      return false
     }
-    const split = splitForVisual(html)
+    const split = splitForVisual(source)
     if (!split.ok) {
-      setError(`Visual mode is unavailable for this template:\n- ${split.reason}`)
-      return
+      if (complain) setError(`Visual mode is unavailable for this template:\n- ${split.reason}`)
+      return false
     }
     try {
       visualInitialRef.current = toCanvasAssets(protect(split.body))
     } catch (e) {
-      setError((e as Error).message)
-      return
+      if (complain) setError((e as Error).message)
+      return false
     }
     splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
     setMode('visual')
+    // A new document needs a new canvas: the body is written at mount and
+    // never again, so without this the previous page stays on screen.
+    setCanvasNonce((n) => n + 1)
+    return true
+  }
+
+  const enterVisual = () => {
+    setError(null)
+    openInVisual(html)
   }
 
   const handleVisualChange = (bodyHtml: string) => {
@@ -617,9 +636,11 @@ export default function Editor({
 
   // The canvas has unmounted by the time this runs — its cleanup belongs to the
   // same commit and runs first — so no further report from it can arrive.
+  // Keyed on the nonce too: replacing the document while staying in Visual
+  // swaps one canvas for another without the mode changing at all.
   useEffect(() => {
-    if (mode === 'code') replacingRef.current = false
-  }, [mode])
+    replacingRef.current = false
+  }, [mode, canvasNonce])
 
   // Ctrl+S saves the draft from wherever the focus is — including inside the
   // canvas, which re-dispatches the shortcuts it does not use itself. Bound
@@ -644,23 +665,34 @@ export default function Editor({
     api.assistantStatus().then(setAssistant).catch(() => setAssistant({ enabled: false, model: null, sends_test_data: false }))
   }, [])
 
-  const applyFromAssistant = (newHtml: string) => {
-    // Before leaving Visual: the canvas flushes its body as it unmounts, and
-    // that flush carries the OLD document. It lands after the new template has
-    // been written and quietly puts the old one back — which is exactly how
-    // this was reported: "Apply, and nothing changed".
+  /**
+   * Put a whole document in place of the one that is open.
+   *
+   * Used both ways: an assistant's template lands here, and so does an undo of
+   * it. Where the canvas is open the document is reopened IN the canvas rather
+   * than dropping the user into Code: a change you have to go and look for in
+   * another mode is a change you cannot judge.
+   *
+   * The guard is not optional. Rebuilding or leaving the canvas unmounts it,
+   * and the canvas flushes its body on the way out. That flush carries the
+   * document that WAS open, lands after this has written the new one, and puts
+   * the old one straight back without a word.
+   */
+  const replaceDocument = (nextHtml: string) => {
     replacingRef.current = true
-    if (mode === 'visual') exitVisual()
     // Warn, but do not rewrite: putting a whole document through the DOM would
     // normalize the author's bytes, and preserving them exactly is a promise
     // this project keeps. The canvas is where such markup could actually run,
     // and it strips on entry.
-    setSanitizeWarning(describeRemoved(scanForExecutableMarkup(newHtml), false))
-    setHtml(newHtml)
-    htmlRef.current = newHtml
+    setSanitizeWarning(describeRemoved(scanForExecutableMarkup(nextHtml), false))
+    setHtml(nextHtml)
+    htmlRef.current = nextHtml
     setDirty(true)
     setFixError(null)
-    setNotice('Template applied — check the preview, then save')
+    // Only try the canvas if that is where the user already was. Quietly:
+    // the caveats beside the message already say what a code-only template
+    // costs, and a red box on top of that is the same thing said twice.
+    if (mode === 'visual' && !openInVisual(nextHtml, false)) exitVisual()
   }
 
   const placeholderNames = useMemo(() => {
@@ -827,7 +859,7 @@ export default function Editor({
             />
           ) : (
             <CanvasEditor
-              key={open ? (open.kind === 'draft' ? `d${open.id}` : `v${open.version}`) : 'new'}
+              key={`${open ? (open.kind === 'draft' ? `d${open.id}` : `v${open.version}`) : 'new'}:${canvasNonce}`}
               initialBody={visualInitialRef.current}
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
@@ -983,7 +1015,8 @@ export default function Editor({
             currentHtml={html}
             placeholders={placeholderNames}
             fixError={fixError}
-            onApply={applyFromAssistant}
+            currentDocument={currentHtml}
+            onReplaceDocument={replaceDocument}
             onApplyOps={applyOps}
             onClose={() => setShowAssistant(false)}
           />

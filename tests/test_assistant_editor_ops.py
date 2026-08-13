@@ -96,6 +96,17 @@ def test_the_operations_contract_reaches_the_model():
     assert "Never say you used an operation in a reply that carries a template" in prompt
 
 
+def test_a_reply_carries_the_template_and_nothing_after_it():
+    # Everything a template reply used to end with — the placeholder list, an
+    # example payload — is now either built by a button or scrolled past. The
+    # block itself is applied rather than read.
+    prompt = build_system_prompt()
+    assert "No list of placeholders, no example JSON" in prompt
+    # And it is applied on arrival, so the assistant must not talk as though the
+    # user still has to press something.
+    assert "applied to the open document immediately" in prompt
+
+
 def test_the_prompt_still_forbids_the_markup_the_editor_cannot_edit():
     prompt = build_system_prompt()
     assert "lf-page-no" in prompt

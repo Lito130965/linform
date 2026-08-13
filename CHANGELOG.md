@@ -20,11 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   What lands is what the editor makes. Its vocabulary is closed and checked
   against the editor's own source in CI, so it cannot offer a block that does
   not exist; anything it invents is refused out loud rather than ignored.
-- **A proposed template says what it will cost before it is applied**: a header
-  written as text in an `@page` margin box (prints, but nothing can select or
-  move it afterwards), or Jinja the visual editor cannot open (the template
-  becomes code-only). Both are invisible in a diff. It is a sentence beside the
-  Apply button, not a refusal — sometimes that markup is the right answer.
+- **The assistant's changes land in the document as they arrive**, in the visual
+  editor rather than behind a diff and an Apply button, and one press takes any
+  of them back exactly — including work typed by hand a moment earlier, because
+  the snapshot is taken from the canvas rather than from the shell's slightly
+  older copy. A change you have to press a button to see is a change you judge
+  from a diff, when the page is the thing being worked on.
+- **A change says what it cost**: a header written as text in an `@page` margin
+  box (prints, but nothing can select or move it afterwards), or Jinja the visual
+  editor cannot open (the template becomes code-only). Both are invisible in a
+  diff. A sentence beside the message, not a refusal — sometimes that markup is
+  the right answer.
+- Replies carry the template and nothing after it. The list of placeholders and
+  the example payload that used to follow are gone: test data is built from the
+  template on a button now, and the template block is applied rather than read.
 
 - **Ctrl+S saves the draft**, from wherever the focus is. A key press inside an
   iframe never reaches the page hosting it, so with the caret in the document —

@@ -10,6 +10,11 @@ import { createTemplate, enterVisual, latestDraftHtml, openTemplate, saveDraft, 
  * `position: fixed`, a page number as a margin-box string — none of which the
  * panels can touch afterwards.
  *
+ * Whatever comes back is applied to the open document as it arrives, and one
+ * press takes it back: a change you have to press a button to see is a change
+ * you judge from a diff rather than from the page, and the page is the thing
+ * being worked on.
+ *
  * The reply is stubbed at the network, not in the app: what is under test is
  * the whole chain from a model's words to a changed document, and the model's
  * side of it is the one part that cannot be pinned down in a test.
@@ -59,13 +64,12 @@ test('an operation is shown as a sentence and changes the document', async ({ pa
   await openTemplate(page, code)
   await ask(page, 'make it A5')
 
-  // Read before it runs: "Apply" on a blob of JSON is not a choice anybody can
-  // make.
+  // Said in sentences, in the past tense: the JSON it arrived as is not
+  // something anybody can read, and the change has already happened.
   const list = page.locator('.op-list')
   await expect(list).toContainText('A5')
   await expect(list).toContainText('margins top 15mm')
 
-  await page.locator('.chat-proposal.ops button', { hasText: 'Do it' }).click()
   await saveDraft(page, 'A5 from the assistant')
   const saved = await latestDraftHtml(request, code)
   expect(saved).toMatch(/size:\s*A5/i)
@@ -89,7 +93,6 @@ test('a footer asked for by the assistant is the footer the editor makes', async
   await enterVisual(page)
   await ask(page, 'add a footer')
 
-  await page.locator('.chat-proposal.ops button', { hasText: 'Do it' }).click()
   const footer = page.frameLocator(CANVAS).locator('div[style*="running(lf-footer)"]')
   await expect(footer).toHaveAttribute('data-lf-running', 'bottom-center')
   await expect(
@@ -117,7 +120,8 @@ test('an operation the editor does not have is refused out loud', async ({ page,
 
   await expect(page.locator('.op-list.rejected')).toContainText('set-font')
   await expect(page.locator('.op-list.rejected')).toContainText('not an operation this editor has')
-  await expect(page.locator('.chat-proposal.ops')).toHaveCount(0)
+  // Nothing happened, so there is nothing to take back either.
+  await expect(page.locator('.undo-change')).toHaveCount(0)
 })
 
 test('a plain answer still offers nothing to apply', async ({ page, request }) => {
@@ -128,17 +132,18 @@ test('a plain answer still offers nothing to apply', async ({ page, request }) =
   await ask(page, 'add a footer')
 
   await expect(page.locator('.chat-msg.assistant').last()).toContainText('already has a footer')
-  await expect(page.locator('.chat-proposal')).toHaveCount(0)
+  await expect(page.locator('.chat-applied')).toHaveCount(0)
+  await expect(page.locator('.undo-change')).toHaveCount(0)
 })
 
-test('a template that goes around the editor says so before it is applied', async ({
+test('a template that goes around the editor says what it cost', async ({
   page,
   request,
 }) => {
-  // The other half of the same idea: when the assistant does write markup, the
-  // cost of applying it is visible beforehand. Both of these are invisible in a
-  // diff — ordinary-looking lines of CSS and Jinja — and the loss is discovered
-  // later with no clue which edit caused it.
+  // The other half of the same idea: when the assistant does write markup, what
+  // it cost is said where the change is. Both of these are invisible in a diff
+  // — ordinary-looking lines of CSS and Jinja — and the loss would otherwise be
+  // discovered much later, with no clue which edit caused it.
   const code = uniqueCode('ops-caveat')
   await stubAssistant(
     page,
@@ -154,8 +159,8 @@ test('a template that goes around the editor says so before it is applied', asyn
   await expect(caveats).toHaveCount(2)
   await expect(caveats.first()).toContainText('margin box')
   await expect(caveats.last()).toContainText('code-only')
-  // Said, not refused: the Apply button is still there.
-  await expect(page.locator('.chat-proposal button', { hasText: 'Apply' })).toHaveCount(1)
+  // Said, not refused: the change is in, and this is what it cost.
+  await expect(page.locator('.chat-applied .applied-note')).toContainText('Applied')
 })
 
 test('applying a template from Visual mode actually replaces the document', async ({
@@ -179,11 +184,63 @@ test('applying a template from Visual mode actually replaces the document', asyn
   await enterVisual(page)
   await ask(page, 'add a paragraph')
 
-  await page.locator('.chat-proposal button', { hasText: 'Apply' }).click()
-
-  // Back in Code mode, holding the new document — not the old one.
-  await expect(page.locator('.mode-toggle .btn.mode.active')).toHaveText('Code')
-  await expect(page.locator('.toast')).toContainText('Template applied')
+  // Applied where the user is looking — in the canvas, not by dropping them
+  // into Code to go and find it.
+  await expect(page.frameLocator(CANVAS).locator('#added')).toHaveText('A NEW PARAGRAPH')
+  await expect(page.locator('.mode-toggle .btn.mode.active')).toHaveText('Visual')
   await saveDraft(page, 'applied from visual mode')
   expect(await latestDraftHtml(request, code)).toContain('A NEW PARAGRAPH')
+})
+
+test('one press takes the change back, exactly', async ({ page, request }) => {
+  // What makes applying on arrival safe. The snapshot is the document as it
+  // stood — canvas included, since the canvas reports on a debounce and the
+  // shell's copy can be a moment behind.
+  const code = uniqueCode('undo')
+  await stubAssistant(
+    page,
+    'Replaced the heading.\n\n```html\n' +
+      '<style>@page { size: A4; margin: 20mm }</style>\n<h1 id="title">SOMETHING ELSE</h1>\n```',
+  )
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  await ask(page, 'rename the heading')
+
+  const heading = page.frameLocator(CANVAS).locator('#title')
+  await expect(heading).toHaveText('SOMETHING ELSE')
+
+  await page.locator('.undo-change').click()
+  await expect(heading).toHaveText('Report')
+  await expect(page.locator('.undo-change')).toHaveText('Taken back')
+
+  await saveDraft(page, 'took it back')
+  const saved = await latestDraftHtml(request, code)
+  expect(saved).toContain('Report')
+  expect(saved).not.toContain('SOMETHING ELSE')
+})
+
+test('an edit made by hand survives being included in the snapshot', async ({ page, request }) => {
+  // The snapshot is taken from the canvas, not from the shell's copy of the
+  // template: the canvas reports its changes on a debounce, so a document that
+  // has just been typed into is a fraction of a second ahead. Undoing to the
+  // stale copy would silently throw that typing away.
+  const code = uniqueCode('undo-typed')
+  await stubAssistant(
+    page,
+    'Done.\n\n```html\n<style>@page { size: A4; margin: 20mm }</style>\n<h1 id="title">OTHER</h1>\n```',
+  )
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const frame = page.frameLocator(CANVAS)
+  await frame.locator('#title').click()
+  await page.keyboard.press('End')
+  await page.keyboard.type(' TYPED')
+  await ask(page, 'change it')
+  await expect(frame.locator('#title')).toHaveText('OTHER')
+
+  await page.locator('.undo-change').click()
+  await expect(frame.locator('#title')).toHaveText('Report TYPED')
 })
