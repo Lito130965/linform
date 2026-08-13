@@ -9,6 +9,7 @@
  */
 
 import { clampOutOfAtomic } from './range-ops'
+import { setDeclaration } from './style-attr'
 
 const TAGS = { bold: 'B', italic: 'I', underline: 'U' } as const
 export type InlineFormat = keyof typeof TAGS
@@ -58,10 +59,13 @@ export function toggleInline(doc: Document, format: InlineFormat): void {
   sel.addRange(after)
 }
 
-/** Set text alignment on the nearest block that owns the selection/element. */
+/** Set text alignment on the nearest block that owns the selection/element.
+ *
+ * Through the style attribute rather than through el.style: a CSSOM write
+ * rebuilds the attribute from what the parser kept, and a footer's
+ * `position: running(…)` is not among it — aligning a footer used to turn it
+ * into an ordinary block. See style-attr.ts. */
 export function setAlign(target: Element, align: 'left' | 'center' | 'right' | 'justify'): void {
-  const block = target.closest(
-    'p, h1, h2, h3, h4, h5, h6, div, td, th, li, blockquote',
-  ) as HTMLElement | null
-  if (block) block.style.textAlign = align
+  const block = target.closest('p, h1, h2, h3, h4, h5, h6, div, td, th, li, blockquote')
+  if (block) setDeclaration(block, 'text-align', align)
 }

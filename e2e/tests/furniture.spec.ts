@@ -263,6 +263,84 @@ test('switching a header off takes both halves with it', async ({ page, request 
   expect(saved).toContain('lf-footer')
 })
 
+/**
+ * The shape the examples have, and the reason the switch failed on them: the
+ * `@page` rule that pulls the element sits in a <style> INSIDE the body, beside
+ * the element it belongs to. That is the canvas's document, not the shell's
+ * copy of the template — see examples/report.html, which is written this way so
+ * that a header carries its own rule.
+ */
+const IN_BODY =
+  '<html>\n<head>\n<style>@page { size: A4; margin: 20mm; }</style>\n</head>\n<body>\n' +
+  '  <style>@page { margin-top: 24mm; @top-center { content: element(lf-header); width: 100%; } }</style>\n' +
+  '  <div id="head" style="position: running(lf-header)">Head</div>\n' +
+  '  <style>@page { margin-bottom: 24mm; @bottom-center { content: element(lf-footer); width: 100%; } }</style>\n' +
+  '  <div id="foot" style="position: running(lf-footer)">Foot</div>\n' +
+  '  <h1 id="title">Body</h1>\n</body>\n</html>\n'
+
+test('both bands can be off at once', async ({ page, request }) => {
+  // Reported: uncheck one, then the other, and the tick jumps back to the first
+  // — always one band checked, however many times it is cleared. The template
+  // was right and the canvas was not: the rule in the body belongs to the
+  // canvas, the shell's rewrite never reached it, and the canvas reported the
+  // box back on its next change.
+  const code = uniqueCode('furniture-both-off')
+  await createTemplate(request, code, IN_BODY)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+  const row = (name: string) =>
+    page.locator('.page-setup .furniture-row', { hasText: name }).getByRole('checkbox')
+
+  await page.locator('.canvas-topbar button', { hasText: 'Page:' }).click()
+  await row('Header').uncheck()
+  await row('Footer').uncheck()
+
+  // Both, at the same time, and still so after the canvas has reported back.
+  await expect(row('Header')).not.toBeChecked()
+  await expect(row('Footer')).not.toBeChecked()
+  await expect(frame.locator('#head')).toHaveCount(0)
+  await expect(frame.locator('#foot')).toHaveCount(0)
+
+  await page.keyboard.press('Escape')
+  await saveDraft(page, 'no bands at all')
+  const saved = await latestDraftHtml(request, code)
+  expect(saved).not.toContain('lf-header')
+  expect(saved).not.toContain('lf-head')
+  expect(saved).not.toContain('lf-footer')
+  expect(saved).not.toContain('element(')
+})
+
+test('styling a footer does not stop it being a footer', async ({ page, request }) => {
+  // `position: running(lf-footer)` is what makes it one, and no browser parses
+  // it — so it lives only in the style attribute, and any write through
+  // el.style rebuilds that attribute from the declarations the parser kept and
+  // drops it. Aligning a footer, or changing its font, quietly turned it into
+  // an ordinary block that printed in the body. This is the half of
+  // src/editor/style-attr.test.ts that jsdom cannot express: its CSSOM keeps
+  // what a browser throws away, so only a real browser can fail here.
+  const code = uniqueCode('furniture-styled')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+  const footer = frame.locator('#foot')
+
+  await footer.click()
+  await page.locator('.canvas-topbar button[title="Align right"]').click()
+  await expect(footer).toHaveCSS('text-align', 'right')
+  await expect(footer).toHaveAttribute('data-lf-running', 'bottom-left')
+
+  await footer.click()
+  await page.locator('.canvas-props select').first().selectOption('monospace')
+  await expect(footer).toHaveAttribute('data-lf-running', 'bottom-left')
+
+  await saveDraft(page, 'aligned the footer')
+  const saved = await latestDraftHtml(request, code)
+  expect(saved).toContain('running(lf-footer)')
+  expect(saved).toContain('text-align: right')
+})
+
 test('a page number is a block, and it goes in the footer', async ({ page, request }) => {
   // It used to be a string inside an @page margin box: it printed, and nothing
   // in the editor could touch it. As content it goes wherever it is wanted —

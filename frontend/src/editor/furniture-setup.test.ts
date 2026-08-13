@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { hasFurniture, hasRunningElement, setFurniture } from './furniture-setup'
+import {
+  hasFurniture,
+  hasRunningElement,
+  removeFurnitureBoxFromCss,
+  setFurniture,
+} from './furniture-setup'
 
 const PLAIN = '<style>\n  @page { size: A4; margin: 20mm; }\n</style>\n<h1>Report</h1>\n'
 
@@ -84,5 +89,31 @@ describe('switching it off', () => {
   it('does nothing to a template that never had one', () => {
     expect(setFurniture(PLAIN, 'bottom', false)).toContain('<h1>Report</h1>')
     expect(hasFurniture(setFurniture(PLAIN, 'bottom', false), 'bottom')).toBe(false)
+  })
+})
+
+describe('taking the box out of one stylesheet', () => {
+  it('removes the margin box and the rule it emptied', () => {
+    const css = '@page { margin-bottom: 24mm; @bottom-center { content: element(lf-footer); } }'
+    expect(removeFurnitureBoxFromCss(css, 'bottom')).toContain('margin-bottom: 24mm')
+    expect(removeFurnitureBoxFromCss(css, 'bottom')).not.toContain('@bottom-center')
+  })
+
+  it('drops a page rule that held nothing else', () => {
+    const css = '@page { @top-center { content: element(lf-header); width: 100%; } }\nbody { color: #000 }'
+    const out = removeFurnitureBoxFromCss(css, 'top')
+    expect(out).not.toContain('@page')
+    expect(out).toContain('body { color: #000 }')
+  })
+
+  it('leaves the other edge, and boxes holding text rather than an element', () => {
+    const css =
+      '@page { @top-center { content: element(lf-header) }\n' +
+      '  @bottom-center { content: element(lf-footer) }\n' +
+      '  @bottom-right { content: "DRAFT" } }'
+    const out = removeFurnitureBoxFromCss(css, 'top')
+    expect(out).toContain('element(lf-footer)')
+    expect(out).toContain('"DRAFT"')
+    expect(out).not.toContain('lf-header')
   })
 })

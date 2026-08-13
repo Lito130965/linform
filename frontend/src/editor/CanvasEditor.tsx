@@ -33,6 +33,7 @@ import {
   caretRangeIn,
   clampOutOfAtomic,
 } from './range-ops'
+import { setDeclaration } from './style-attr'
 import { SNAP_LABEL, edgeLines, snapTo, toMm, type Rect, type SnapKind, type SnapLine } from './snap'
 import { KIND_LABEL, NodeKind, findSelectable, kindOf, parentSelectable } from './selection'
 import ColorControl from './ColorControl'
@@ -41,7 +42,13 @@ import { getFilterArg, setFilterArg } from './filter-args'
 import { parseMarginBoxes, parsePageBox, type PageBox } from './furniture'
 import { RUNNING_ATTR, markRunning, runningBoxCss, slotsByName } from './running'
 import PageSetupPanel from './PageSetupPanel'
-import { RUNNING_NAME, hasFurniture, runningElementHtml, type Edge } from './furniture-setup'
+import {
+  RUNNING_NAME,
+  hasFurniture,
+  removeFurnitureBoxFromCss,
+  runningElementHtml,
+  type Edge,
+} from './furniture-setup'
 import ExpressionDialog from './ExpressionDialog'
 import { laterOverrides, readPageSetup, type PageSetup } from './page-css'
 import {
@@ -523,6 +530,18 @@ export default function CanvasEditor({
     } else if (!on && existing) {
       existing.remove()
       select(null)
+    }
+    // The rule half, for the stylesheets that live in the BODY — which is this
+    // document, not the shell's copy of it. The old header and footer blocks
+    // put their @page rule in a <style> here, and the shell rewriting the
+    // template text left this one standing: the canvas went on rendering the
+    // box, and it came back in the template the moment the canvas reported its
+    // next change. The switch then looked as though it had refused.
+    if (!on) {
+      for (const style of Array.from(body.querySelectorAll('style'))) {
+        const cleaned = removeFurnitureBoxFromCss(style.textContent ?? '', edge)
+        if (cleaned !== style.textContent) style.textContent = cleaned
+      }
     }
     callbacksRef.current.onFurniture?.(edge, on)
     setTick((t) => t + 1)
@@ -1245,11 +1264,13 @@ export default function CanvasEditor({
   const styleValue = (prop: string): string =>
     selected ? (selected.el as HTMLElement).style.getPropertyValue(prop) : ''
 
+  /** Through the attribute rather than through el.style: a CSSOM write
+   * reserialises the whole attribute from what the parser kept, and takes
+   * `position: running(…)` with it — so changing a footer's font used to turn
+   * it into an ordinary block. See style-attr.ts. */
   const applyStyle = (prop: string, value: string): void => {
     if (!selected) return
-    const s = (selected.el as HTMLElement).style
-    if (value.trim()) s.setProperty(prop, value.trim())
-    else s.removeProperty(prop)
+    setDeclaration(selected.el, prop, value.trim() || null)
     setTick((t) => t + 1)
   }
 

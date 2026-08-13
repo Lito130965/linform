@@ -45,29 +45,20 @@ describe('reading a border somebody wrote', () => {
 
 describe('writing the four sides', () => {
   it('uses the shorthand when every side agrees', () => {
-    // Asserted on what the element ends up with, not on the exact string: the
-    // browser normalises a colour on the way in, and the spelling is its
-    // business rather than this module's.
     const el = document.createElement('div')
     applyBorders(el, four({ width: '1px', style: 'solid', colour: '#000000' }))
-    expect(el.style.borderTopStyle).toBe('solid')
-    expect(el.getAttribute('style')).toMatch(/^border: 1px solid /)
-    expect(el.getAttribute('style')).not.toContain('border-top')
+    expect(el.getAttribute('style')).toBe('border: 1px solid #000000')
   })
 
   it('writes one side at a time when they differ', () => {
-    // The bare side is written `border-top-style: none`, which jsdom's CSSOM
-    // does not implement at all — not the property, not the serialisation. The
-    // browser test carries that half of the claim (e2e/tests/element.spec.ts);
-    // what can be checked here is that the shorthand is not used when the four
-    // sides disagree, which is the decision this function makes.
     const el = document.createElement('div')
     applyBorders(el, {
       ...four({ width: '1px', style: 'none', colour: '#000000' }),
       bottom: { width: '2px', style: 'solid', colour: '#333333' },
     })
     const style = el.getAttribute('style')!
-    expect(style).toMatch(/border-bottom: 2px solid /)
+    expect(style).toContain('border-bottom: 2px solid #333333')
+    expect(style).toContain('border-top-style: none')
     expect(style).not.toMatch(/(^|;)\s*border:/)
   })
 
@@ -80,19 +71,24 @@ describe('writing the four sides', () => {
       top: { width: '3px', style: 'double', colour: '#111111' },
     })
     applyBorders(el, four({ width: '1px', style: 'solid', colour: '#000000' }))
-    expect(el.getAttribute('style')).toMatch(/^border: 1px solid /)
-    expect(el.getAttribute('style')).not.toContain('double')
+    expect(el.getAttribute('style')).toBe('border: 1px solid #000000')
   })
 
   it('takes the border it wrote away again, rather than leaving the last one', () => {
     const el = document.createElement('div')
     applyBorders(el, four({ width: '1px', style: 'solid', colour: '#000000' }))
     applyBorders(el, four({ width: '1px', style: 'none', colour: '#000000' }))
-    // The declaration that removes a border from the stylesheet as well —
-    // `border-style: none` — is one jsdom's CSSOM does not implement, so that
-    // half is checked in the browser. What matters here: the previous border
-    // is not still standing.
-    expect(el.getAttribute('style') ?? '').not.toMatch(/border: 1px solid/)
+    expect(el.getAttribute('style')).toBe('border-style: none')
+  })
+
+  it('leaves a declaration the browser cannot parse where it was', () => {
+    // A header IS a border-able element, and its whole nature lives in a
+    // declaration no CSSOM keeps.
+    const el = document.createElement('div')
+    el.setAttribute('style', 'position: running(lf-header); color: #555')
+    applyBorders(el, four({ width: '1px', style: 'solid', colour: '#000000' }))
+    expect(el.getAttribute('style')).toContain('position: running(lf-header)')
+    expect(el.getAttribute('style')).toContain('border: 1px solid #000000')
   })
 })
 
