@@ -18,17 +18,19 @@ import InsertPanel from './InsertPanel'
 import PresetPanel from './PresetPanel'
 import PresetDialog from './PresetDialog'
 import AssetsPanel from './AssetsPanel'
-import type { Preset } from '../presets/registry'
+import { PRESETS, type Preset } from '../presets/registry'
 import { parseHints } from '../presets/hints'
 import { BLOCKS } from '../editor/blocks'
 import { checkData, fillMissing, generateSample, type SampleResult } from '../editor/sample-data'
-import { ensurePageCounterRules, writePageSetup, type PageSetup } from '../editor/page-css'
-import { setFurnitureBox, type Edge } from '../editor/furniture-setup'
+import { ensurePageCounterRules, readPageSetup, writePageSetup, type PageSetup } from '../editor/page-css'
+import { setFurniture, setFurnitureBox, type Edge } from '../editor/furniture-setup'
 import VersionHistory from './VersionHistory'
 import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
+import { describeOp, type Op } from '../assistant/ops'
+import { applyEdit } from '../assistant/edit'
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -130,6 +132,9 @@ export default function Editor({
   // Bumped when a file arrives by a door other than the Assets panel, so the
   // panel goes and looks again instead of listing what it found on opening.
   const [assetsVersion, setAssetsVersion] = useState(0)
+  // Bumped whenever the open document is replaced, so the canvas is rebuilt
+  // around the new one instead of going on showing the old.
+  const [canvasNonce, setCanvasNonce] = useState(0)
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(() => setNotice(null), 2500)
@@ -158,6 +163,9 @@ export default function Editor({
   // shows read-only but must not let the user edit into the body.
   const splitRef = useRef<{ prefix: string; suffix: string; styles: string } | null>(null)
   const visualInitialRef = useRef('')
+  // Set while the document is being replaced wholesale, and cleared once the
+  // canvas that held the previous one is gone — see applyFromAssistant.
+  const replacingRef = useRef(false)
 
   const currentVersion = detail?.current_version ?? null
   const openDraftId = open?.kind === 'draft' ? open.id : null
@@ -489,6 +497,81 @@ export default function Editor({
     }
   }
 
+  /**
+   * Do what the assistant asked for, through the editor's own operations.
+   *
+   * Every branch here is the function a panel calls: the page control's writer,
+   * the header switch, the palette's insert, the preset dialog's generator. So
+   * the result is not "markup a model wrote that resembles a footer" but the
+   * footer this editor makes — selectable, movable, and understood by the
+   * panels afterwards. It is also one step in the same undo history as any
+   * hand edit.
+   */
+  const applyOps = (ops: Op[]): boolean => {
+    // Edits first, and on their own. Each is text work over the document,
+    // applied one after another so a second edit sees the result of the
+    // first, and the whole lot lands as one replacement.
+    const edits = ops.filter((op): op is Extract<Op, { op: 'edit' }> => op.op === 'edit')
+    const rest = ops.filter((op) => op.op !== 'edit')
+    if (edits.length > 0) {
+      let source = currentHtml()
+      const refused: string[] = []
+      for (const edit of edits) {
+        const result = applyEdit(source, edit.find, edit.replace)
+        if ('error' in result) refused.push(result.error)
+        else source = result.html
+      }
+      const changed = source !== currentHtml()
+      if (changed) replaceDocument(source)
+      // Said, never swallowed: an edit that matched nothing and a document
+      // that did not change look identical from the outside.
+      if (refused.length > 0) setError(`Not changed:\n- ${refused.join('\n- ')}`)
+      if (rest.length > 0) {
+        // The document has just been rebuilt underneath them, so the caret
+        // they would insert at no longer exists.
+        setNotice(`${rest.length} further operation(s) were not run — ask again`)
+        return changed
+      }
+      if (refused.length === 0) {
+        setNotice(edits.length === 1 ? describeOp(edits[0]) : `Applied ${edits.length} changes`)
+      }
+      return changed
+    }
+    for (const op of ops) {
+      if (op.op === 'page') {
+        // Merged onto what the document already says: an operation names the
+        // one thing it changes, and everything else about the page stays.
+        const current = readPageSetup(currentHtml())
+        applyPageSetup({
+          ...current,
+          ...(op.size !== undefined ? { size: op.size } : {}),
+          ...(op.landscape !== undefined ? { landscape: op.landscape } : {}),
+          ...(op.background !== undefined ? { background: op.background } : {}),
+          margin: { ...current.margin, ...(op.margin ?? {}) },
+        })
+      } else if (op.op === 'furniture') {
+        if (mode === 'visual') canvasApiRef.current?.setFurniture(op.edge, op.on)
+        else {
+          // No canvas to hold the element half, so both halves are written to
+          // the source here.
+          const next = setFurniture(currentHtml(), op.edge, op.on)
+          htmlRef.current = next
+          setHtml(next)
+          setDirty(true)
+        }
+      } else if (op.op === 'block') {
+        insertBlock(op.id)
+      } else if (op.op === 'preset') {
+        const preset = PRESETS.find((p) => p.id === op.id)
+        if (preset) insertPresetSource(preset.generate(op.params ?? {}))
+      } else if (op.op === 'field') {
+        insertPlaceholder(op.expression)
+      }
+    }
+    setNotice(ops.length === 1 ? describeOp(ops[0]) : `Applied ${ops.length} changes`)
+    return ops.length > 0
+  }
+
   const insertBlock = (id: string) => {
     if (mode === 'visual') {
       canvasApiRef.current?.insertBlock(id)
@@ -499,29 +582,49 @@ export default function Editor({
     if (block) insertText(block.content)
   }
 
-  const enterVisual = () => {
-    setError(null)
-    const detected = detect(html)
+  /** Prepare the canvas for a document and show it, or say why it cannot be
+   * shown. Separate from the Visual button because the same steps run when a
+   * document is REPLACED under an open canvas, and that path has to rebuild
+   * the canvas rather than leave it holding the document before. */
+  const openInVisual = (source: string, complain = true): boolean => {
+    const detected = detect(source)
     if (!detected.supported) {
-      setError(`Visual mode is unavailable for this template:\n- ${detected.reasons.join('\n- ')}`)
-      return
+      if (complain) {
+        setError(
+          `Visual mode is unavailable for this template:\n- ${detected.reasons.join('\n- ')}`,
+        )
+      }
+      return false
     }
-    const split = splitForVisual(html)
+    const split = splitForVisual(source)
     if (!split.ok) {
-      setError(`Visual mode is unavailable for this template:\n- ${split.reason}`)
-      return
+      if (complain) setError(`Visual mode is unavailable for this template:\n- ${split.reason}`)
+      return false
     }
     try {
       visualInitialRef.current = toCanvasAssets(protect(split.body))
     } catch (e) {
-      setError((e as Error).message)
-      return
+      if (complain) setError((e as Error).message)
+      return false
     }
     splitRef.current = { prefix: split.prefix, suffix: split.suffix, styles: split.styles }
     setMode('visual')
+    // A new document needs a new canvas: the body is written at mount and
+    // never again, so without this the previous page stays on screen.
+    setCanvasNonce((n) => n + 1)
+    return true
+  }
+
+  const enterVisual = () => {
+    setError(null)
+    openInVisual(html)
   }
 
   const handleVisualChange = (bodyHtml: string) => {
+    // A report from a canvas whose document has just been replaced is a report
+    // about the document that WAS open. Writing it back would undo the
+    // replacement, silently and completely.
+    if (replacingRef.current) return
     const split = splitRef.current
     if (!split) return
     try {
@@ -562,6 +665,14 @@ export default function Editor({
     htmlRef.current = html
   }, [html])
 
+  // The canvas has unmounted by the time this runs — its cleanup belongs to the
+  // same commit and runs first — so no further report from it can arrive.
+  // Keyed on the nonce too: replacing the document while staying in Visual
+  // swaps one canvas for another without the mode changing at all.
+  useEffect(() => {
+    replacingRef.current = false
+  }, [mode, canvasNonce])
+
   // Ctrl+S saves the draft from wherever the focus is — including inside the
   // canvas, which re-dispatches the shortcuts it does not use itself. Bound
   // once and reading the current save through a ref: rebinding the listener on
@@ -585,17 +696,34 @@ export default function Editor({
     api.assistantStatus().then(setAssistant).catch(() => setAssistant({ enabled: false, model: null, sends_test_data: false }))
   }, [])
 
-  const applyFromAssistant = (newHtml: string) => {
-    if (mode === 'visual') exitVisual()
+  /**
+   * Put a whole document in place of the one that is open.
+   *
+   * Used both ways: an assistant's template lands here, and so does an undo of
+   * it. Where the canvas is open the document is reopened IN the canvas rather
+   * than dropping the user into Code: a change you have to go and look for in
+   * another mode is a change you cannot judge.
+   *
+   * The guard is not optional. Rebuilding or leaving the canvas unmounts it,
+   * and the canvas flushes its body on the way out. That flush carries the
+   * document that WAS open, lands after this has written the new one, and puts
+   * the old one straight back without a word.
+   */
+  const replaceDocument = (nextHtml: string) => {
+    replacingRef.current = true
     // Warn, but do not rewrite: putting a whole document through the DOM would
     // normalize the author's bytes, and preserving them exactly is a promise
     // this project keeps. The canvas is where such markup could actually run,
     // and it strips on entry.
-    setSanitizeWarning(describeRemoved(scanForExecutableMarkup(newHtml), false))
-    setHtml(newHtml)
-    htmlRef.current = newHtml
+    setSanitizeWarning(describeRemoved(scanForExecutableMarkup(nextHtml), false))
+    setHtml(nextHtml)
+    htmlRef.current = nextHtml
     setDirty(true)
     setFixError(null)
+    // Only try the canvas if that is where the user already was. Quietly:
+    // the caveats beside the message already say what a code-only template
+    // costs, and a red box on top of that is the same thing said twice.
+    if (mode === 'visual' && !openInVisual(nextHtml, false)) exitVisual()
   }
 
   const placeholderNames = useMemo(() => {
@@ -762,7 +890,7 @@ export default function Editor({
             />
           ) : (
             <CanvasEditor
-              key={open ? (open.kind === 'draft' ? `d${open.id}` : `v${open.version}`) : 'new'}
+              key={`${open ? (open.kind === 'draft' ? `d${open.id}` : `v${open.version}`) : 'new'}:${canvasNonce}`}
               initialBody={visualInitialRef.current}
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
@@ -918,7 +1046,9 @@ export default function Editor({
             currentHtml={html}
             placeholders={placeholderNames}
             fixError={fixError}
-            onApply={applyFromAssistant}
+            currentDocument={currentHtml}
+            onReplaceDocument={replaceDocument}
+            onApplyOps={applyOps}
             onClose={() => setShowAssistant(false)}
           />
         )}

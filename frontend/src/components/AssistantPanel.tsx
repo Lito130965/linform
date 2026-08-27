@@ -1,16 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
-import { diffLines, type Change } from 'diff'
 import { assistantChat, AssistantStatus } from '../api'
 import { extractHtmlBlock, replyProse } from '../assistant/extract'
+import { describeOp, extractOps, withoutOpsBlock, type Op } from '../assistant/ops'
+import { proposalCaveats } from '../assistant/proposal'
 import { toDownscaledDataUrl } from '../assistant/image'
 import { renderMarkdown } from '../assistant/markdown'
 
 interface ChatMessage {
   role: 'user' | 'assistant'
   text: string
-  /** template proposed by this assistant message, if any */
-  proposedHtml?: string
+  /** the document this message replaced the open one with, if it carried a
+   * template. Applied on arrival; kept so the caveats can be shown. */
+  appliedHtml?: string
+  /** the document as it was just before this message changed anything, so
+   * the change can be taken back exactly */
+  undoTo?: string
+  /** editor operations this message ran */
+  appliedOps?: Op[]
+  /** operations that were asked for and refused, with the reason. Shown, not
+   * swallowed: silence would read as an editor that ignored the assistant. */
+  rejectedOps?: { what: string; why: string }[]
+  /** set once this message's change has been taken back */
+  undone?: boolean
 }
 
 /** Assistant chat. The whole panel is hidden when the feature is off, so the
@@ -22,7 +34,9 @@ export default function AssistantPanel({
   placeholders,
   fixError,
   overlay = false,
-  onApply,
+  currentDocument,
+  onReplaceDocument,
+  onApplyOps,
   onClose,
 }: {
   status: AssistantStatus
@@ -32,7 +46,14 @@ export default function AssistantPanel({
   placeholders: string[]
   /** a render error to seed a "fix this" turn, or null */
   fixError: string | null
-  onApply: (html: string) => void
+  /** the document as it stands right now, canvas included - taken before
+   * each change so it can be put back */
+  currentDocument: () => string
+  /** put a whole document in place of the open one */
+  onReplaceDocument: (html: string) => void
+  /** run editor operations — the same functions the panels call */
+  /** run editor operations; says whether the document actually changed */
+  onApplyOps: (ops: Op[]) => boolean
   onClose: () => void
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -42,7 +63,6 @@ export default function AssistantPanel({
   // A vision request waits seconds before the first token. Without a ticking
   // counter that silence is indistinguishable from a hung page.
   const [elapsed, setElapsed] = useState(0)
-  const [diffFor, setDiffFor] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -110,13 +130,32 @@ export default function AssistantPanel({
       })
     } finally {
       const proposed = extractHtmlBlock(acc)
+      const ops = extractOps(acc)
+      // Applied on arrival, not offered. A change you have to press a
+      // button to see is a change you judge from a diff instead of from
+      // the page, and the page is the thing being worked on. Taken back in
+      // one press, exactly, because that is what makes applying safe.
+      const before = currentDocument()
+      let changed = false
+      if (proposed) {
+        onReplaceDocument(proposed)
+        changed = true
+      } else if (ops && ops.ops.length > 0) {
+        // Asked for is not done: an edit that named no place changes nothing,
+        // and an "Undo this change" over an untouched document is a lie.
+        changed = onApplyOps(ops.ops)
+      }
       setMessages((m) => {
         const next = [...m]
         const last = next[next.length - 1]
+        const prose = proposed ? replyProse(acc) : acc
         next[next.length - 1] = {
           ...last,
-          text: proposed ? replyProse(acc) : acc,
-          proposedHtml: proposed ?? undefined,
+          text: ops ? withoutOpsBlock(prose) : prose,
+          appliedHtml: proposed ?? undefined,
+          appliedOps: changed && ops && ops.ops.length > 0 ? ops.ops : undefined,
+          rejectedOps: ops && ops.rejected.length > 0 ? ops.rejected : undefined,
+          undoTo: changed ? before : undefined,
         }
         return next
       })
@@ -202,16 +241,50 @@ export default function AssistantPanel({
                 {m.text || (streaming && i === messages.length - 1 ? `Thinking… ${elapsed}s` : '')}
               </div>
             )}
-            {m.proposedHtml && (
-              <div className="chat-proposal">
-                <button className="btn small" onClick={() => setDiffFor(diffFor === i ? null : i)}>
-                  {diffFor === i ? 'Hide diff' : 'Show diff'}
-                </button>
-                <button className="btn small primary" onClick={() => onApply(m.proposedHtml!)}>
-                  Apply
-                </button>
-                {diffFor === i && <DiffView from={currentHtml} to={m.proposedHtml} />}
+            {/* What happened, in the past tense. The change is already on the
+                page: an assistant that proposes and waits makes the user judge
+                a diff, when the thing being worked on is the document. */}
+            {m.appliedOps && (
+              <div className="chat-applied">
+                <ul className="op-list">
+                  {m.appliedOps.map((op, j) => (
+                    <li key={j}>{describeOp(op)}</li>
+                  ))}
+                </ul>
               </div>
+            )}
+            {m.rejectedOps && (
+              <ul className="op-list rejected">
+                {m.rejectedOps.map((bad, j) => (
+                  <li key={j}>
+                    <strong>{bad.what}</strong> — {bad.why}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {m.appliedHtml && (
+              <div className="chat-applied">
+                <span className="applied-note">Applied to the document</span>
+                {/* Said after the fact now, and it matters more for it: the
+                    change is in, and this is what it cost. */}
+                {proposalCaveats(m.appliedHtml).map((caveat, j) => (
+                  <p key={j} className="proposal-caveat">
+                    <strong>{caveat.what}</strong> — {caveat.cost}
+                  </p>
+                ))}
+              </div>
+            )}
+            {m.undoTo !== undefined && (
+              <button
+                className="btn small undo-change"
+                disabled={m.undone}
+                onClick={() => {
+                  onReplaceDocument(m.undoTo!)
+                  setMessages((all) => all.map((msg, j) => (j === i ? { ...msg, undone: true } : msg)))
+                }}
+              >
+                {m.undone ? 'Taken back' : 'Undo this change'}
+              </button>
             )}
           </div>
         ))}
@@ -282,20 +355,3 @@ export default function AssistantPanel({
   )
 }
 
-function DiffView({ from, to }: { from: string; to: string }) {
-  const changes: Change[] = diffLines(from, to)
-  return (
-    <div className="diff-view">
-      <pre>
-        {changes.map((part, i) => (
-          <span
-            key={i}
-            className={part.added ? 'diff-add' : part.removed ? 'diff-del' : 'diff-same'}
-          >
-            {part.value}
-          </span>
-        ))}
-      </pre>
-    </div>
-  )
-}

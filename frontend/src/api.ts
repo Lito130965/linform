@@ -337,7 +337,40 @@ export const api = {
     if (!resp.ok) throw await parseError(resp)
   },
 
-  listTemplates: () => request<TemplateInfo[]>('/api/templates'),
+  /**
+   * Every template, not the first page of them.
+   *
+   * The endpoint answers a page at a time — a hundred by default, ordered by
+   * code — and says how many there are in X-Total-Count. Asking for it plainly
+   * therefore showed the first hundred templates and nothing whatsoever to say
+   * the others existed: on an instance past that mark, a template created today
+   * simply was not in the journal, and its author had no way to tell why. Found
+   * by the browser suite, which crossed a hundred templates in one run.
+   *
+   * The pages are followed to the end. A journal of thousands wants paging in
+   * the UI rather than a longer fetch, but showing an unmarked subset is the
+   * one behaviour that cannot be right.
+   */
+  async listTemplates(): Promise<TemplateInfo[]> {
+    const PAGE = 200
+    const out: TemplateInfo[] = []
+    let total = Infinity
+    while (out.length < total) {
+      const resp = await authFetch(`/api/templates?limit=${PAGE}&offset=${out.length}`)
+      if (!resp.ok) throw await parseError(resp)
+      const page = (await resp.json()) as TemplateInfo[]
+      // A missing header reads as 0 through Number(), which is a real count
+      // too — so absence is checked before the value is trusted.
+      const header = resp.headers.get('X-Total-Count')
+      const counted = header === null ? NaN : Number(header)
+      total = Number.isFinite(counted) && counted >= 0 ? counted : out.length + page.length
+      out.push(...page)
+      // A page that came back empty ends it, whatever the count claimed: a
+      // wrong header must not become a loop that never finishes.
+      if (page.length === 0) break
+    }
+    return out
+  },
 
   listExamples: () => request<ExampleMeta[]>('/api/examples'),
 

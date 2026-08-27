@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The assistant asks the editor to do things, instead of writing markup for
+  them.** For "make it A5" or "add a footer", a whole document in an html block
+  was a bad answer twice over: the user diffed a file to find three lines, and
+  whatever the model composed by hand was what the document then had — a footer
+  built as `position: fixed`, a page number as a string in a margin box, none of
+  which the panels could touch. It now replies with a small list of editor
+  operations — page, header/footer, block, preset, field — shown as sentences
+  before anything runs, and applied through the very functions the panels call.
+  What lands is what the editor makes. Its vocabulary is closed and checked
+  against the editor's own source in CI, so it cannot offer a block that does
+  not exist; anything it invents is refused out loud rather than ignored.
+- **The assistant changes part of a document instead of retyping it.** Asked to
+  add one column to a table, it returned all sixty lines of the template with
+  three of them different: the user could not see what changed, and every line
+  retyped is a line that can come back subtly altered — a wording paraphrased, a
+  reference off by a digit. It can now say the change itself: the text to find
+  and what to put in its place. The document is spliced, never reformatted, and
+  an edit that names no place, or three, changes nothing and says so rather than
+  altering the first one it meets.
+- **The assistant's changes land in the document as they arrive**, in the visual
+  editor rather than behind a diff and an Apply button, and one press takes any
+  of them back exactly — including work typed by hand a moment earlier, because
+  the snapshot is taken from the canvas rather than from the shell's slightly
+  older copy. A change you have to press a button to see is a change you judge
+  from a diff, when the page is the thing being worked on.
+- **A change says what it cost**: a header written as text in an `@page` margin
+  box (prints, but nothing can select or move it afterwards), or Jinja the visual
+  editor cannot open (the template becomes code-only). Both are invisible in a
+  diff. A sentence beside the message, not a refusal — sometimes that markup is
+  the right answer.
+- Replies carry the template and nothing after it. The list of placeholders and
+  the example payload that used to follow are gone: test data is built from the
+  template on a button now, and the template block is applied rather than read.
+
 - **Ctrl+S saves the draft**, from wherever the focus is. A key press inside an
   iframe never reaches the page hosting it, so with the caret in the document —
   where somebody writing one keeps it — the shortcut used to offer to save the
@@ -133,6 +167,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The journal showed the first hundred templates and nothing to say there were
+  more.** `/api/templates` answers a page at a time, ordered by code; the editor
+  asked for it plainly and displayed whatever came back. Past a hundred
+  templates, one created today was simply not in the list, with no message and
+  no second page — and no way for its author to tell why. The pages are followed
+  to the end now. Found by the browser suite, which crossed a hundred templates
+  in one run and then could not open its own template.
+- **Applying an assistant's template from Visual mode did nothing at all.**
+  Leaving Visual unmounts the canvas, and the canvas flushes its body on the way
+  out — a flush carrying the document that was open. It landed after the new
+  template had been written and put the old one back, with no error and no sign
+  anything had happened.
 - **Aligning a footer, or changing its font, quietly stopped it being a
   footer.** `position: running(lf-footer)` is what puts an element in the page
   band, and no browser implements it — so it is never in the CSSOM, and it

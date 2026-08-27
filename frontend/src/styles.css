@@ -3075,3 +3075,51 @@ label {
   font-size: 11px;
   opacity: 0.85;
 }
+
+/* What the assistant asked the editor to do, before it does it. A list of
+   sentences rather than the JSON it arrived as: "Apply" on an opaque blob is
+   not a choice anybody can make. */
+.chat-proposal.ops {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.op-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.op-list.rejected {
+  color: #e5b34b;
+  margin-top: 4px;
+}
+
+/* What a proposed template costs, beside the button that applies it. */
+.proposal-caveat {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e5b34b;
+}
+
+/* What an assistant message did, after it did it. */
+.chat-applied {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.applied-note {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.undo-change {
+  margin-top: 6px;
+  align-self: flex-start;
+}
