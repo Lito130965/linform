@@ -167,6 +167,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The journal showed the first hundred templates and nothing to say there were
+  more.** `/api/templates` answers a page at a time, ordered by code; the editor
+  asked for it plainly and displayed whatever came back. Past a hundred
+  templates, one created today was simply not in the list, with no message and
+  no second page — and no way for its author to tell why. The pages are followed
+  to the end now. Found by the browser suite, which crossed a hundred templates
+  in one run and then could not open its own template.
 - **Applying an assistant's template from Visual mode did nothing at all.**
   Leaving Visual unmounts the canvas, and the canvas flushes its body on the way
   out — a flush carrying the document that was open. It landed after the new
