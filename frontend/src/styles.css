@@ -497,7 +497,10 @@ label {
 
 .preview-header {
   display: flex;
-  justify-content: space-between;
+  /* Was space-between, for two items. There are four now — title, pager,
+     freshness, strict — and the pager belongs beside the title rather than
+     wherever an even distribution puts it. */
+  gap: 12px;
   align-items: center;
   padding: 8px 12px;
   background: var(--bg-panel);
@@ -3197,4 +3200,27 @@ label {
 .undo-change {
   margin-top: 6px;
   align-self: flex-start;
+}
+
+/* The preview's own header: what it is, where you are in it, and how fresh it
+   is. The pager exists because every render replaces the document and the
+   built-in viewer would otherwise start again at page one. */
+.preview-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-pager .muted {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.preview-freshness {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.preview-title {
+  font-weight: 600;
 }

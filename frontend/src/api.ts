@@ -469,12 +469,17 @@ export const api = {
       body: JSON.stringify({ html, data: {} }),
     }),
 
+  /** A render, and how many pages it came to.
+   *
+   * The count comes from the service rather than from reading the bytes here:
+   * the renderer already knows, and a PDF parser in the browser to learn what
+   * the server could have said is a lot of code for one number. */
   async renderPreview(
     html: string,
     data: Record<string, unknown>,
     strict: boolean,
     signal: AbortSignal,
-  ): Promise<Blob> {
+  ): Promise<{ blob: Blob; pages: number }> {
     const resp = await authFetch('/api/render', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -482,6 +487,12 @@ export const api = {
       signal,
     })
     if (!resp.ok) throw await parseError(resp)
-    return resp.blob()
+    const counted = Number(resp.headers.get('X-Linform-Pages'))
+    return {
+      blob: await resp.blob(),
+      // An older service, or a proxy that strips the header: one page is the
+      // honest answer when nothing said otherwise, and there IS a document.
+      pages: Number.isFinite(counted) && counted >= 1 ? counted : 1,
+    }
   },
 }
