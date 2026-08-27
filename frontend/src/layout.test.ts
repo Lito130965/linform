@@ -6,6 +6,8 @@ describe('layoutFor', () => {
     expect(layoutFor(1920)).toEqual({
       overlayPanels: false,
       collapseSidebar: false,
+      previewAsTab: false,
+      inspectorOverlay: false,
       tooNarrow: false,
     })
   })
@@ -35,6 +37,29 @@ describe('layoutFor', () => {
     // anyway" in front of somebody at an ordinary screen. Found on the
     // deployed demo, which loaded exactly that way.
     expect(layoutFor(0).tooNarrow).toBe(false)
+  })
+})
+
+describe('the narrow arrangements', () => {
+  it('keeps both columns while there is room for the page between them', () => {
+    const l = layoutFor(1280)
+    expect(l.previewAsTab).toBe(false)
+    expect(l.inspectorOverlay).toBe(false)
+  })
+
+  it('turns the preview into a tab and the inspector into an overlay below that', () => {
+    // Two columns beside an A4 page mean neither is worth looking at; one at a
+    // time, chosen, beats both at once and cramped.
+    const l = layoutFor(1279)
+    expect(l.previewAsTab).toBe(true)
+    expect(l.inspectorOverlay).toBe(true)
+  })
+
+  it('does not rearrange a window that has not been measured', () => {
+    // Same reason as tooNarrow: zero is the absence of a size, and a
+    // background tab must not decide the layout for a full-sized screen.
+    expect(layoutFor(0).previewAsTab).toBe(false)
+    expect(layoutFor(0).inspectorOverlay).toBe(false)
   })
 })
 
