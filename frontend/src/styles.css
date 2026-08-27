@@ -321,16 +321,91 @@ select:focus {
 }
 
 .pane {
-  flex: 1;
-  /* was 0: the panes used to collapse to nothing under a fixed-width panel
-     instead of holding a usable width */
-  min-width: 320px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
+/* The page takes what is left. It used to share the width evenly with the
+   preview, which put an A4 sheet at 70 % on a 1920 screen: half the shell,
+   less a fixed structure panel, is 570 px for a 794 px page. */
 .code-pane {
-  border-right: 1px solid var(--border);
+  flex: 1;
+  min-width: 420px;
+  position: relative;
+}
+
+/* The preview's width is the author's to set, so it is a number rather than a
+   share — set inline from the remembered preference. */
+.preview-pane {
+  flex: none;
+  min-width: 0;
+}
+
+/* The boundary between two columns. Wide enough to hit with a pointer, drawn
+   as a line so it reads as an edge rather than as a gap. */
+.splitter {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--border);
+  border: none;
+  padding: 0;
+}
+
+.splitter:hover,
+.splitter:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+
+/* While a splitter is being dragged the pointer must not be swallowed by the
+   canvas iframe the moment it crosses the boundary. */
+body.splitting {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.splitting iframe {
+  pointer-events: none;
+}
+
+/* A column put away. It keeps its name, sideways, because a panel that
+   vanishes without trace is a feature the next person never finds. */
+.pane-strip {
+  flex: none;
+  width: 36px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.pane-strip:hover {
+  color: var(--text);
+}
+
+.pane-strip span {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+/* An icon-only control in the document toolbar. */
+.btn.icon-btn {
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn.icon-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .code-pane > :first-child {

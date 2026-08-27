@@ -130,6 +130,7 @@ export function intentFor(
 export const EDITOR_SHORTCUTS: { keys: string; does: string }[] = [
   { keys: 'Ctrl + Z / Ctrl + Y', does: 'undo, redo' },
   { keys: 'Ctrl + S', does: 'save the draft — from the canvas too' },
+  { keys: 'Ctrl + \\', does: 'show or hide the preview' },
   { keys: 'Ctrl + + / − / 0', does: 'zoom the page in, out, back to fitting the window' },
 ]
 

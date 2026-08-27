@@ -29,8 +29,25 @@ import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
+import Splitter from './Splitter'
+import Icon from './Icon'
+import { useViewportWidth } from '../layout'
+import {
+  getBoolPref,
+  getNumPref,
+  setBoolPref,
+  setNumPref,
+  PREF_PREVIEW_OPEN,
+  PREF_PREVIEW_WIDTH,
+} from '../prefs'
 import { describeOp, type Op } from '../assistant/ops'
 import { applyEdit } from '../assistant/edit'
+
+/** The preview's column: its default width, and the narrowest it is worth
+ * drawing. Narrower than this and the rendered page is a thumbnail nobody
+ * can check anything against. */
+const PREVIEW_DEFAULT = 560
+const PREVIEW_MIN = 360
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -135,6 +152,29 @@ export default function Editor({
   // Bumped whenever the open document is replaced, so the canvas is rebuilt
   // around the new one instead of going on showing the old.
   const [canvasNonce, setCanvasNonce] = useState(0)
+
+  /**
+   * How the width is divided between the page and its preview.
+   *
+   * Both panes used to be `flex: 1` — an even split with nothing to grab —
+   * which is why an A4 page came out at 70 % on a 1920 screen. Where the
+   * space goes is the author's business: a form being laid out wants the
+   * page, a form being checked wants the render.
+   *
+   * Below 1600 the preview starts put away rather than squeezing the page to
+   * nothing. It is one key press back, and a column too narrow to read is not
+   * a kindness.
+   */
+  const shellWidth = useViewportWidth()
+  const maxPreview = Math.max(PREVIEW_MIN, Math.round(shellWidth * 0.6))
+  const [previewOpen, setPreviewOpen] = useState(() =>
+    getBoolPref(PREF_PREVIEW_OPEN, shellWidth >= 1600),
+  )
+  const [previewWidth, setPreviewWidth] = useState(() =>
+    getNumPref(PREF_PREVIEW_WIDTH, PREVIEW_DEFAULT, PREVIEW_MIN, 2000),
+  )
+  useEffect(() => setBoolPref(PREF_PREVIEW_OPEN, previewOpen), [previewOpen])
+  useEffect(() => setNumPref(PREF_PREVIEW_WIDTH, previewWidth), [previewWidth])
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(() => setNotice(null), 2500)
@@ -682,6 +722,13 @@ export default function Editor({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+      if (e.key === '\\') {
+        // The preview is half the window; being able to put it away in one
+        // press is what makes giving it that much space reasonable.
+        e.preventDefault()
+        setPreviewOpen((on) => !on)
+        return
+      }
       if (e.key.toLowerCase() !== 's') return
       // Whatever else happens, not the browser's "save this page as".
       e.preventDefault()
@@ -855,6 +902,17 @@ export default function Editor({
           </button>
         )}
         {!isScratch && dirty && <span className="dirty-badge">unsaved</span>}
+        {/* Pushed to the end of the row: it is about the window rather than
+            about the document, and the two should not read as one list. */}
+        <button
+          className={previewOpen ? 'btn icon-btn active' : 'btn icon-btn'}
+          aria-label="Show or hide the preview"
+          aria-pressed={previewOpen}
+          title="Show or hide the preview (Ctrl + \)"
+          onClick={() => setPreviewOpen((on) => !on)}
+        >
+          <Icon name="panel-right" />
+        </button>
       </header>
 
       {error && <div className="error-box">{error}</div>}
@@ -1023,21 +1081,49 @@ export default function Editor({
           </div>
         </section>
 
-        <section className="pane preview-pane">
-          <PreviewPane
-            html={html}
-            data={parsedData.data}
-            onError={setPreviewError}
-            fixWithAi={
-              assistant?.enabled
-                ? () => {
-                    setFixError(previewError)
-                    setShowAssistant(true)
-                  }
-                : undefined
-            }
-          />
-        </section>
+        {previewOpen ? (
+          <>
+            <Splitter
+              value={previewWidth}
+              min={PREVIEW_MIN}
+              max={maxPreview}
+              defaultValue={PREVIEW_DEFAULT}
+              label="Resize the preview"
+              grows="after"
+              onChange={setPreviewWidth}
+            />
+            <section
+              className="pane preview-pane"
+              style={{ width: Math.min(previewWidth, maxPreview) }}
+            >
+              <PreviewPane
+                html={html}
+                data={parsedData.data}
+                onError={setPreviewError}
+                fixWithAi={
+                  assistant?.enabled
+                    ? () => {
+                        setFixError(previewError)
+                        setShowAssistant(true)
+                      }
+                    : undefined
+                }
+              />
+            </section>
+          </>
+        ) : (
+          /* Put away, not gone: a strip that says what is behind it and
+             brings it back. A panel that vanishes without trace is a
+             feature the next person does not know exists. */
+          <button
+            className="pane-strip"
+            aria-label="Show the preview"
+            title="Show the preview (Ctrl + \)"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <span>PREVIEW</span>
+          </button>
+        )}
 
         {showAssistant && assistant?.enabled && (
           <AssistantPanel

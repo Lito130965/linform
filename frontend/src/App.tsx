@@ -57,6 +57,15 @@ export default function App() {
   // in between — the effect only fires on an actual change of the mode.
   useEffect(() => setSidebarOpen(!layout.collapseSidebar), [layout.collapseSidebar])
 
+  // Opening a document folds the navigation to its rail, at any width. The
+  // list of templates is how you get to a document; once you are in one it is
+  // 240 px of somewhere else, taken from the page being worked on. The manual
+  // toggle still wins — this fires on the change of document, not on renders.
+  const documentOpen = selected !== null || scratch !== null
+  useEffect(() => {
+    if (documentOpen) setSidebarOpen(false)
+  }, [documentOpen])
+
   if (!ready) return <div className="app-boot" />
 
   // Auth enabled and no valid session — nothing but the sign-in card.

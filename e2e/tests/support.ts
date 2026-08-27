@@ -155,6 +155,20 @@ export async function openTemplate(page: Page, code: string): Promise<void> {
   await expect(page.locator('.cm-content')).toBeVisible()
 }
 
+/**
+ * Make sure the preview column is open.
+ *
+ * Below a 1600 px window the editor starts with the preview put away: a column
+ * narrower than the page it renders costs more than it shows, and it is one key
+ * press back. Most of this suite runs at 1280 (Playwright's Desktop Chrome),
+ * so a test about the preview has to ask for it rather than assume it.
+ */
+export async function showPreview(page: Page): Promise<void> {
+  const strip = page.locator('.pane-strip')
+  if ((await strip.count()) > 0) await strip.click()
+  await expect(page.locator('.preview-pane')).toHaveCount(1)
+}
+
 /** Switch to the visual canvas and wait for the iframe document to be ready. */
 export async function enterVisual(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Visual', exact: true }).click()
