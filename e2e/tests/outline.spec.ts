@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   createTemplate,
   enterVisual,
+  inspectorTab,
   latestDraftHtml,
   openTemplate,
   saveDraft,
@@ -36,6 +37,8 @@ test('it names every level, including the ones a click cannot reach', async ({ p
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
+  // The inspector opens on Properties; the structure is the tab beside it.
+  await inspectorTab(page, 'Structure')
 
   const labels = page.locator('.canvas-outline .outline-label')
   await expect(labels).toHaveText(['Heading 1', 'Table', 'Row', 'Cell'])
@@ -53,6 +56,8 @@ test('taking a row from the list selects that element and not its neighbour', as
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
+  // The inspector opens on Properties; the structure is the tab beside it.
+  await inspectorTab(page, 'Structure')
 
   // The row — not the cell inside it, not the table around it. That is the pick
   // a click in the canvas cannot express.
@@ -68,6 +73,8 @@ test('a selection made in the canvas is findable in the list', async ({ page, re
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
+  // The inspector opens on Properties; the structure is the tab beside it.
+  await inspectorTab(page, 'Structure')
 
   await page.frameLocator(CANVAS).locator('td').first().click()
   const current = page.locator('.canvas-outline .outline-item.current')
@@ -87,6 +94,8 @@ test('hiding a block takes it out of sight without moving anything', async ({ pa
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
+  // The inspector opens on Properties; the structure is the tab beside it.
+  await inspectorTab(page, 'Structure')
 
   const heading = page.frameLocator(CANVAS).locator('h1')
   const tableTop = () =>
@@ -117,6 +126,8 @@ test('what is hidden in the canvas never reaches the template', async ({ page, r
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
+  // The inspector opens on Properties; the structure is the tab beside it.
+  await inspectorTab(page, 'Structure')
 
   await hideRow(page, 'Heading 1')
   await expect(page.frameLocator(CANVAS).locator('h1')).toBeHidden()
@@ -138,6 +149,8 @@ test('the panel can be put away and brought back', async ({ page, request }) => 
   await createTemplate(request, code, NESTED)
   await openTemplate(page, code)
   await enterVisual(page)
+  // The inspector opens on Properties; the structure is the tab beside it.
+  await inspectorTab(page, 'Structure')
 
   const panel = page.locator('.canvas-outline')
   await expect(panel).toBeVisible()

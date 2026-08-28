@@ -953,7 +953,6 @@ export default function Editor({
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onSanitized={setSanitizeWarning}
-              compact={overlayPanels}
               fields={fields}
               onPageSetup={applyPageSetup}
               onFurniture={applyFurniture}

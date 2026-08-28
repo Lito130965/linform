@@ -138,7 +138,20 @@ export async function latestDraftHtml(api: APIRequestContext, code: string): Pro
  * and Playwright's strict mode rightly refuses to guess between them.
  */
 export async function goToTab(page: Page, tab: 'Templates' | 'Examples' | 'Settings'): Promise<void> {
-  await page.locator('.nav-item', { hasText: tab }).click()
+  // The navigation is a rail on a narrow window, and folds to one whenever a
+  // document is open. Its toggle is how anybody gets back to the list, so a
+  // test that wants a tab asks for it the same way.
+  //
+  // Tried rather than tested for: an absent item can equally mean the shell has
+  // not finished booting, and pressing the toggle then CLOSES a sidebar that
+  // was about to appear.
+  const item = page.locator('.nav-item', { hasText: tab })
+  try {
+    await item.click({ timeout: 4000 })
+  } catch {
+    await page.locator('.sidebar-toggle').click()
+    await item.click()
+  }
 }
 
 /** Open a stored template in the editor, waiting until its content is loaded. */
@@ -167,6 +180,19 @@ export async function showPreview(page: Page): Promise<void> {
   const strip = page.locator('.pane-strip')
   if ((await strip.count()) > 0) await strip.click()
   await expect(page.locator('.preview-pane')).toHaveCount(1)
+}
+
+/**
+ * Show one of the inspector's tabs.
+ *
+ * The column opens on Properties — what is selected, or the page when nothing
+ * is — so anything about the structure or the fields has to ask for its tab.
+ */
+export async function inspectorTab(
+  page: Page,
+  name: 'Properties' | 'Structure' | 'Fields',
+): Promise<void> {
+  await page.locator('.side-tab', { hasText: name }).click()
 }
 
 /** Switch to the visual canvas and wait for the iframe document to be ready. */

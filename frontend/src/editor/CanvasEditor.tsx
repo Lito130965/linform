@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from 'react'
 import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
@@ -62,7 +63,19 @@ import {
   usablePageHeight,
   type PageGeometry,
 } from './pagination'
-import OutlinePanel, { type SideTab } from './OutlinePanel'
+import InspectorPanel, { SIDE_TABS, type SideTab } from './InspectorPanel'
+import Splitter from '../components/Splitter'
+import {
+  getBoolPref,
+  getNumPref,
+  getStringPref,
+  setBoolPref,
+  setNumPref,
+  setStringPref,
+  PREF_INSPECTOR_OPEN,
+  PREF_INSPECTOR_TAB,
+  PREF_INSPECTOR_WIDTH,
+} from '../prefs'
 import { CROWDED, outlineOf, selectableChildren, type OutlineItem } from './outline'
 import { describeRemoved, sanitizeHtml } from './sanitize'
 import {
@@ -90,6 +103,12 @@ import { setAlign, toggleInline } from './text-commands'
  * kept in sync for placeholders. Shared by the double-click and the keyboard
  * path, because "the mouse can do one more thing than the keyboard" is how an
  * editor stops being usable without one. */
+/** The inspector's column: wide enough for a spacing box and a colour, and
+ * capped where it would start taking width from the page it describes. */
+const INSPECTOR_DEFAULT = 288
+const INSPECTOR_MIN = 240
+const INSPECTOR_MAX = 460
+
 const EXPR_ATTRS = ['data-jinja-expr', 'data-jinja-for', 'data-jinja-if'] as const
 type ExprAttr = (typeof EXPR_ATTRS)[number]
 
@@ -253,7 +272,6 @@ export default function CanvasEditor({
   onPageSetup,
   onFurniture,
   onDropFiles,
-  compact = false,
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -281,8 +299,6 @@ export default function CanvasEditor({
    * where they landed. The canvas knows about the document, not about storage:
    * uploading them and inserting whatever they became is the shell's half */
   onDropFiles?: (files: File[]) => void
-  /** the window is tight enough that panels cost more than they give */
-  compact?: boolean
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -343,7 +359,6 @@ export default function CanvasEditor({
     }),
     [canvasStyles],
   )
-  const [pageSetupOpen, setPageSetupOpen] = useState(false)
   // The expression being edited, in a dialog rather than a window prompt: a
   // prompt cannot be styled, cannot show what the expression is for, and on a
   // second monitor opens somewhere the user is not looking.
@@ -387,8 +402,21 @@ export default function CanvasEditor({
   const [selId, setSelId] = useState(0)
   // The structure panel. Open by default where there is room for it: a panel
   // nobody knows about answers nobody's question.
-  const [outlineOpen, setOutlineOpen] = useState(!compact)
-  const [sideTab, setSideTab] = useState<SideTab>('structure')
+  // Open by default at any width. It used to follow `compact` — the panel was
+  // an extra then, and hiding it on a laptop bought the page some room. It
+  // holds the properties now, so a closed inspector means clicking a block and
+  // finding nowhere to set its margins: the controls were in a bar above the
+  // canvas before, always there whatever the width.
+  const [inspectorOpen, setInspectorOpen] = useState(() => getBoolPref(PREF_INSPECTOR_OPEN, true))
+  const [inspectorWidth, setInspectorWidth] = useState(() =>
+    getNumPref(PREF_INSPECTOR_WIDTH, INSPECTOR_DEFAULT, INSPECTOR_MIN, INSPECTOR_MAX),
+  )
+  const [sideTab, setSideTab] = useState<SideTab>(() =>
+    getStringPref(PREF_INSPECTOR_TAB, 'properties', SIDE_TABS),
+  )
+  useEffect(() => setBoolPref(PREF_INSPECTOR_OPEN, inspectorOpen), [inspectorOpen])
+  useEffect(() => setNumPref(PREF_INSPECTOR_WIDTH, inspectorWidth), [inspectorWidth])
+  useEffect(() => setStringPref(PREF_INSPECTOR_TAB, sideTab), [sideTab])
   // Which containers the panel has been told to open or close. A WeakMap rather
   // than the document, because opening a twisty is not an edit: writing it into
   // the DOM would put a mutation burst — repaginate, re-measure, re-export —
@@ -618,7 +646,12 @@ export default function CanvasEditor({
         prepareFragment(node)
         if (edge === 'top') body.prepend(node)
         else body.append(node)
-        select(node)
+        // Deliberately NOT selected. Turning a band on is a page-level act, and
+        // the switch that does it lives in the page properties — which are what
+        // the inspector shows when nothing is selected. Selecting the new
+        // element took that panel away under the pointer, height control and
+        // all. The band is drawn in its margin and can be clicked like anything
+        // else.
       }
     } else if (!on && existing) {
       existing.remove()
@@ -759,7 +792,7 @@ export default function CanvasEditor({
 
   const outline = useMemo(() => {
     const body = bodyRef.current
-    if (!body || !outlineOpen) return { items: [] as OutlineItem[], hidden: 0 }
+    if (!body || !inspectorOpen) return { items: [] as OutlineItem[], hidden: 0 }
     return {
       items: outlineOf(body, outlineIsOpen),
       // Read off the document rather than kept beside it: the attribute IS the
@@ -768,7 +801,7 @@ export default function CanvasEditor({
       hidden: body.querySelectorAll('[data-lf-hidden]').length,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, selId, outlineOpen])
+  }, [tick, selId, inspectorOpen])
 
   /** Bring an element into view in the canvas. Selecting something from the
    * panel and watching nothing happen — because it is two pages down — reads as
@@ -842,7 +875,7 @@ export default function CanvasEditor({
   // opening whatever it is buried inside. The panel scrolls to it itself.
   useEffect(() => {
     const body = bodyRef.current
-    if (!selected || !body || !outlineOpen) return
+    if (!selected || !body || !inspectorOpen) return
     let changed = false
     for (let p = selected.el.parentElement; p && p !== body; p = p.parentElement) {
       if (outlineFolds.current.get(p) !== true) {
@@ -851,7 +884,7 @@ export default function CanvasEditor({
       }
     }
     if (changed) setTick((t) => t + 1)
-  }, [selId, outlineOpen, selected])
+  }, [selId, inspectorOpen, selected])
 
   /** Begin a gesture: remember what to return to, and hold history open. */
   const beginGesture = (): void => {
@@ -1463,6 +1496,13 @@ export default function CanvasEditor({
         e.preventDefault()
         return
       }
+      // The inspector is a column the author can put away; the page is what
+      // they came for.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === '.') {
+        e.preventDefault()
+        setInspectorOpen((on) => !on)
+        return
+      }
       // Before the guard below: a gesture can be started from a control that
       // holds the focus — scrubbing a spacing box is one — and Escape has to
       // reach it there too.
@@ -2043,117 +2083,22 @@ export default function CanvasEditor({
 
   const stageWidth = pageWidth === null ? undefined : pageWidth * zoom
 
-  return (
-    <div className="canvas-editor">
-      <div className="canvas-topbar">
-        {/* The page, from the document's own @page rule — not a view setting.
-            The menu that used to be here changed the canvas and left the PDF
-            printing something else. */}
-        <span className="page-setup-host">
-          <button
-            className={pageSetupOpen ? 'tb active' : 'tb'}
-            aria-expanded={pageSetupOpen}
-            title="Size, orientation, margins and background of the printed page"
-            onClick={() => setPageSetupOpen((on) => !on)}
-          >
-            Page: {pageSetup.size || 'A4'}
-            {pageSetup.landscape ? ' landscape' : ''}
-          </button>
-          {pageSetupOpen && (
-            <PageSetupPanel
-              setup={pageSetup}
-              overrides={pageOverrides}
-              furniture={bands}
-              onFurniture={toggleFurniture}
-              onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
-              onClose={() => setPageSetupOpen(false)}
-            />
-          )}
-        </span>
-        <span className="topbar-group">
-          <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
-            <b>B</b>
-          </button>
-          <button className="tb" title="Italic" onClick={() => withDoc((d) => toggleInline(d, 'italic'))}>
-            <i>I</i>
-          </button>
-          <button
-            className="tb"
-            title="Underline"
-            onClick={() => withDoc((d) => toggleInline(d, 'underline'))}
-          >
-            <u>U</u>
-          </button>
-        </span>
-        <span className="topbar-group">
-          {(['left', 'center', 'right'] as const).map((a) => (
-            <button
-              key={a}
-              className="tb"
-              title={`Align ${a}`}
-              onClick={() => selected && setAlign(selected.el, a)}
-              disabled={!selected}
-            >
-              {a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥'}
-            </button>
-          ))}
-        </span>
-        <span className="topbar-group">
-          <button className="tb" title="Undo (Ctrl+Z)" onClick={undo} disabled={!histState.canUndo}>
-            ↶
-          </button>
-          <button className="tb" title="Redo (Ctrl+Y)" onClick={redo} disabled={!histState.canRedo}>
-            ↷
-          </button>
-        </span>
-        <span className="topbar-group">
-          <button
-            className={gridPinned ? 'tb active' : 'tb'}
-            title={`Millimetre grid (${GRID_MINOR_MM} mm, heavier every ${GRID_MAJOR_MM} mm). Shown while dragging either way.`}
-            aria-pressed={gridPinned}
-            onClick={() => setGridPinned((on) => !on)}
-          >
-            Grid
-          </button>
-          <button
-            className={outlineOpen ? 'tb active' : 'tb'}
-            title="The structure of the document, and the fields it can name"
-            aria-label="Structure and fields panel"
-            aria-pressed={outlineOpen}
-            onClick={() => setOutlineOpen((on) => !on)}
-          >
-            <Icon name="structure" size={14} />
-            Panel
-          </button>
-        </span>
-        {/* The percentage was a read-out of a number nobody could change. It is
-            the control now, and pressing it hands the size back to the window. */}
-        <span className="topbar-group zoom-group">
-          <button className="tb" aria-label="Zoom out" title="Zoom out (Ctrl+−)" onClick={() => zoomStep(-1)}>
-            −
-          </button>
-          <button
-            className={manualZoom === null ? 'tb zoom-value fitted' : 'tb zoom-value'}
-            title={
-              manualZoom === null
-                ? 'The page is fitted to the window'
-                : 'Fit the page to the window (Ctrl+0)'
-            }
-            onClick={() => setManualZoom(null)}
-          >
-            {Math.round(zoom * 100)}%
-          </button>
-          <button className="tb" aria-label="Zoom in" title="Zoom in (Ctrl++)" onClick={() => zoomStep(1)}>
-            +
-          </button>
-        </span>
-      </div>
-      {/* Always present, even with nothing selected. It used to appear with the
-          first selection, and appearing is moving: the whole canvas dropped a
-          row under the pointer, so the second click of a double click landed
-          somewhere else and the document never saw it. Editing a field by
-          double-clicking it was impossible for that reason alone. */}
-      <div className="canvas-props" key={selId}>
+  /**
+   * What is selected, and what can be done to it.
+   *
+   * Rendered here and handed to the inspector rather than lifted out into it:
+   * every control below closes over the selection, the live document, the
+   * commands and a dozen other things that belong to this component. Moving the
+   * markup one column to the right should not cost a second copy of the
+   * editor's state to keep in step.
+   *
+   * With nothing selected it is the PAGE that has properties — size, margins,
+   * background, the running head and foot. That is a better answer than an
+   * empty bar, and it is the same set of controls the topbar's Page button
+   * opens, embedded rather than floated.
+   */
+  const renderProperties = (): ReactNode => (
+    <div key={selId}>
         {!selected && (
           <span className="muted">
             Nothing selected — click something on the page, or take it from the panel
@@ -2395,7 +2340,127 @@ export default function CanvasEditor({
           )}
           </>
         )}
+      {!selected && (
+        <div className="inspector-page">
+          <h3 className="inspector-section">Page</h3>
+          <PageSetupPanel
+            embedded
+            setup={pageSetup}
+            overrides={pageOverrides}
+            furniture={bands}
+            onFurniture={toggleFurniture}
+            onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
+            onClose={() => undefined}
+          />
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="canvas-editor">
+      <div className="canvas-topbar">
+        {/* The page, from the document's own @page rule — not a view setting.
+            The menu that used to be here changed the canvas and left the PDF
+            printing something else. */}
+        {/* The page's own controls live in the inspector, where they are what
+            "properties" means when nothing is selected. This is the way to
+            them, not a second copy: a floating card holding the same four
+            controls as the column beside it is two things to keep in step and
+            two things to close. */}
+        <button
+          className="tb"
+          title="Size, orientation, margins and background of the printed page"
+          onClick={() => {
+            // Page properties are what the Properties tab shows with nothing
+            // selected, so asking for them lets go of the selection.
+            select(null)
+            setSideTab('properties')
+            setInspectorOpen(true)
+          }}
+        >
+          Page: {pageSetup.size || 'A4'}
+          {pageSetup.landscape ? ' landscape' : ''}
+        </button>
+        <span className="topbar-group">
+          <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
+            <b>B</b>
+          </button>
+          <button className="tb" title="Italic" onClick={() => withDoc((d) => toggleInline(d, 'italic'))}>
+            <i>I</i>
+          </button>
+          <button
+            className="tb"
+            title="Underline"
+            onClick={() => withDoc((d) => toggleInline(d, 'underline'))}
+          >
+            <u>U</u>
+          </button>
+        </span>
+        <span className="topbar-group">
+          {(['left', 'center', 'right'] as const).map((a) => (
+            <button
+              key={a}
+              className="tb"
+              title={`Align ${a}`}
+              onClick={() => selected && setAlign(selected.el, a)}
+              disabled={!selected}
+            >
+              {a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥'}
+            </button>
+          ))}
+        </span>
+        <span className="topbar-group">
+          <button className="tb" title="Undo (Ctrl+Z)" onClick={undo} disabled={!histState.canUndo}>
+            ↶
+          </button>
+          <button className="tb" title="Redo (Ctrl+Y)" onClick={redo} disabled={!histState.canRedo}>
+            ↷
+          </button>
+        </span>
+        <span className="topbar-group">
+          <button
+            className={gridPinned ? 'tb active' : 'tb'}
+            title={`Millimetre grid (${GRID_MINOR_MM} mm, heavier every ${GRID_MAJOR_MM} mm). Shown while dragging either way.`}
+            aria-pressed={gridPinned}
+            onClick={() => setGridPinned((on) => !on)}
+          >
+            Grid
+          </button>
+          <button
+            className={inspectorOpen ? 'tb active' : 'tb'}
+            title="The structure of the document, and the fields it can name"
+            aria-label="Structure and fields panel"
+            aria-pressed={inspectorOpen}
+            onClick={() => setInspectorOpen((on) => !on)}
+          >
+            <Icon name="structure" size={14} />
+            Panel
+          </button>
+        </span>
+        {/* The percentage was a read-out of a number nobody could change. It is
+            the control now, and pressing it hands the size back to the window. */}
+        <span className="topbar-group zoom-group">
+          <button className="tb" aria-label="Zoom out" title="Zoom out (Ctrl+−)" onClick={() => zoomStep(-1)}>
+            −
+          </button>
+          <button
+            className={manualZoom === null ? 'tb zoom-value fitted' : 'tb zoom-value'}
+            title={
+              manualZoom === null
+                ? 'The page is fitted to the window'
+                : 'Fit the page to the window (Ctrl+0)'
+            }
+            onClick={() => setManualZoom(null)}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button className="tb" aria-label="Zoom in" title="Zoom in (Ctrl++)" onClick={() => zoomStep(1)}>
+            +
+          </button>
+        </span>
       </div>
+
       {/* A structural selection has no focus ring of its own — the caret stays
           with the text — so what is selected is announced instead. */}
       <p className="sr-only" aria-live="polite">
@@ -2740,10 +2805,22 @@ export default function CanvasEditor({
             )}
           </div>
         </div>
-        {outlineOpen && (
-          <OutlinePanel
-            tab={sideTab}
-            onTab={setSideTab}
+        {inspectorOpen ? (
+          <>
+            <Splitter
+              value={inspectorWidth}
+              min={INSPECTOR_MIN}
+              max={INSPECTOR_MAX}
+              defaultValue={INSPECTOR_DEFAULT}
+              label="Resize the inspector"
+              grows="after"
+              onChange={setInspectorWidth}
+            />
+            <InspectorPanel
+              width={inspectorWidth}
+              properties={renderProperties()}
+              tab={sideTab}
+              onTab={setSideTab}
             fields={fields}
             onInsertField={insertField}
             items={outline.items}
@@ -2762,8 +2839,20 @@ export default function CanvasEditor({
             }}
             onToggleHidden={toggleHidden}
             onShowAll={showAllHidden}
-            onClose={() => setOutlineOpen(false)}
-          />
+              onClose={() => setInspectorOpen(false)}
+            />
+          </>
+        ) : (
+          /* Put away, not gone. The strip is also the way back for anybody
+             who does not know the shortcut. */
+          <button
+            className="pane-strip"
+            aria-label="Show the inspector"
+            title="Show the inspector (Ctrl + .)"
+            onClick={() => setInspectorOpen(true)}
+          >
+            <span>INSPECTOR</span>
+          </button>
         )}
       </div>
       {/* The live figure, in viewport coordinates so it follows the cursor

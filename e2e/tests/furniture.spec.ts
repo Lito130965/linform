@@ -3,6 +3,7 @@ import {
   createTemplate,
   enterVisual,
   exampleHtml,
+  inspectorTab,
   latestDraftHtml,
   openTemplate,
   saveDraft,
@@ -95,6 +96,7 @@ test('a footer can be typed into, and is in the structure', async ({ page, reque
   await page.keyboard.type(' — draft')
   await expect(footer).toContainText('draft')
 
+  await inspectorTab(page, 'Structure')
   const outline = page.locator('.canvas-outline .outline-label')
   await expect(outline.filter({ hasText: 'Page header' })).toHaveCount(1)
   await expect(outline.filter({ hasText: 'Page footer' })).toHaveCount(1)
@@ -117,15 +119,17 @@ test('the band itself cannot be nudged, but what is in it can', async ({ page, r
   const frame = page.frameLocator(CANVAS)
 
   await frame.locator('#foot').click()
-  await expect(page.locator('.canvas-props')).toContainText('as tall as the page margin')
-  await expect(page.locator('.canvas-props .box-model')).toHaveCount(0)
+  await expect(page.locator('.inspector-properties')).toContainText('as tall as the page margin')
+  await expect(page.locator('.inspector-properties .box-model')).toHaveCount(0)
   await expect(page.locator('.running-grip')).toHaveCount(0)
 
   // A paragraph inside it keeps its own box.
+  await inspectorTab(page, 'Structure')
   await page.locator('.canvas-outline .outline-row', { hasText: 'Page footer' }).click()
   await page.locator('.insert-tile', { hasText: 'Text' }).click()
   await frame.locator('#foot p').click()
-  await expect(page.locator('.canvas-props .box-model')).toHaveCount(1)
+  await inspectorTab(page, 'Properties')
+  await expect(page.locator('.inspector-properties .box-model')).toHaveCount(1)
 })
 
 test('a Jinja expression is edited in a dialog, not a browser prompt', async ({ page, request }) => {
@@ -149,7 +153,7 @@ test('a Jinja expression is edited in a dialog, not a browser prompt', async ({ 
   // The same dialog from the properties bar, for anyone who does not know that
   // a double click does anything.
   await frame.locator('#line [data-jinja-expr]').click()
-  await page.locator('.canvas-props button', { hasText: 'Expression' }).click()
+  await page.locator('.inspector-properties button', { hasText: 'Expression' }).click()
   await expect(dialog).toBeVisible()
 
   await dialog.getByLabel('Field expression').fill('customer.name')
@@ -187,7 +191,7 @@ test('selecting something does not move the page under the pointer', async ({ pa
   const where = async () => (await page.locator(CANVAS).boundingBox())!.y
   const before = await where()
   await frame.locator('#line').click()
-  await expect(page.locator('.canvas-props .props-kind, .canvas-props .crumbs')).not.toHaveCount(0)
+  await expect(page.locator('.inspector-properties .props-kind, .inspector-properties .crumbs')).not.toHaveCount(0)
   expect(await where()).toBe(before)
 
   // And a table cell, which brings the most controls of any selection.
@@ -229,6 +233,7 @@ test('a header is switched on from the page panel and filled like any block', as
   await page.keyboard.press('Escape')
 
   // Three columns inside it, from the palette.
+  await inspectorTab(page, 'Structure')
   await page.locator('.canvas-outline .outline-row', { hasText: 'Page header' }).click()
   await page.locator('.insert-tile', { hasText: '3 columns' }).click()
   await expect(header.locator('table td')).toHaveCount(3)
@@ -332,7 +337,7 @@ test('styling a footer does not stop it being a footer', async ({ page, request 
   await expect(footer).toHaveAttribute('data-lf-running', 'bottom-left')
 
   await footer.click()
-  await page.locator('.canvas-props select').first().selectOption('monospace')
+  await page.locator('.inspector-properties select').first().selectOption('monospace')
   await expect(footer).toHaveAttribute('data-lf-running', 'bottom-left')
 
   await saveDraft(page, 'aligned the footer')

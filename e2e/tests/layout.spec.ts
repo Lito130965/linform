@@ -102,3 +102,103 @@ test('the preview folds away in one press, and the page re-fits both ways', asyn
   await expect(page.locator('.preview-pane')).toHaveCount(1)
   expect((await canvasColumn(page).boundingBox())!.width).toBeCloseTo(narrow, 0)
 })
+
+test('a selection does not move the page by a pixel', async ({ page, request }) => {
+  // The rule the whole inspector exists to make structural rather than
+  // maintained. Properties used to be a bar above the canvas: it appeared with
+  // the first selection and dropped the page 116 px, so the second click of a
+  // double click landed somewhere else and editing a field by double-clicking
+  // it never worked first time. The bar was then held at a fixed 150 px —
+  // a fifth of the height, kept empty — to stop the layout moving. A side
+  // column can grow and shrink without the page shifting at all.
+  const code = uniqueCode('no-shift')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 15mm }</style>\n' +
+      '<p id="line">Bill to {{ customer }}</p>\n' +
+      '<table id="grid"><tr><td>one</td><td>two</td></tr></table>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  const where = async () => (await frame.locator('#line').boundingBox())!
+  const before = await where()
+
+  // A table brings the most controls of any selection — rows, columns, merge,
+  // borders — so it is the worst case for a panel that reserves height.
+  await frame.locator('#grid td').first().click()
+  await expect(page.locator('.inspector-properties')).toContainText('Cell')
+  const after = await where()
+
+  expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1)
+})
+
+test('the inspector remembers its width and its tab', async ({ page, request }) => {
+  const code = uniqueCode('inspector-memory')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const splitter = page.getByRole('separator', { name: 'Resize the inspector' })
+  const start = (await page.locator('.canvas-outline').boundingBox())!.width
+  await splitter.focus()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  const widened = (await page.locator('.canvas-outline').boundingBox())!.width
+  expect(widened).toBeGreaterThan(start)
+
+  await page.locator('.side-tab', { hasText: 'Structure' }).click()
+
+  await page.reload()
+  await openTemplate(page, code)
+  await enterVisual(page)
+  expect((await page.locator('.canvas-outline').boundingBox())!.width).toBeCloseTo(widened, 0)
+  await expect(page.locator('.side-tab.active')).toHaveText('Structure')
+})
+
+/**
+ * Last in the file on purpose.
+ *
+ * A describe block with its own viewport makes Playwright tear down the browser
+ * context and build another one, and the test that follows such a block in the
+ * same file hangs on its first API call until the test timeout — measured, not
+ * guessed: the same test passes alone and passes when it runs before the block.
+ * Nothing after it, nothing to hang.
+ */
+test.describe('at a width where the page does not fit at full size', () => {
+  // Deliberately narrower than the rest of this file. At 1920 an A4 page fits
+  // at 100 % with the inspector open, and zoom is capped there — so folding a
+  // column could not show up in the read-out however well it worked.
+  test.use({ viewport: { width: 1100, height: 900 } })
+
+  test('the inspector folds away, and the page grows into the space', async ({ page, request }) => {
+    const code = uniqueCode('inspector-fold')
+    await createTemplate(request, code, DOC)
+    await openTemplate(page, code)
+    await enterVisual(page)
+
+    // Widened to its limit first: the page is only scaled down once the column
+    // beside it takes real width, and zoom is capped at 100 % — a form is
+    // authored at its true size and never magnified.
+    await page.getByRole('separator', { name: 'Resize the inspector' }).focus()
+    await page.keyboard.press('End')
+
+    const zoom = page.locator('.zoom-value')
+    await expect(zoom).not.toHaveText('100%')
+    const before = await zoom.textContent()
+
+    await page.keyboard.press('Control+.')
+    await expect(page.locator('.canvas-outline')).toHaveCount(0)
+    await expect(page.locator('.pane-strip', { hasText: 'INSPECTOR' })).toHaveCount(1)
+    // Re-fitted rather than left at the size it had: the column it was sharing
+    // with is gone.
+    await expect(zoom).not.toHaveText(before!)
+
+    await page.keyboard.press('Control+.')
+    await expect(page.locator('.canvas-outline')).toHaveCount(1)
+    await expect(zoom).toHaveText(before!)
+  })
+})

@@ -120,6 +120,9 @@ test('inside a repeat, an array field is offered under the loop’s own name', a
   // is the only way to take the row rather than the cell inside it.
   await page.locator('.side-tab', { hasText: 'Structure' }).click()
   await page.locator('.canvas-outline .outline-row', { hasText: 'Row' }).click()
+  // Picked from the structure, acted on in the properties: they are two tabs of
+  // one column now.
+  await page.locator('.side-tab', { hasText: 'Properties' }).click()
   await page.locator('.convert-actions button', { hasText: 'Repeat' }).click()
   await page.locator('.convert-form input[aria-label="Loop variable name"]').fill('row')
   await page.locator('.convert-form input[aria-label="Array to repeat over"]').fill('items')
