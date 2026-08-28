@@ -1606,6 +1606,8 @@ label {
 .canvas-body {
   flex: 1;
   min-height: 0;
+  /* anchors the inspector when it is drawn over the page */
+  position: relative;
   display: flex;
 }
 
@@ -3331,4 +3333,33 @@ body.focus-mode .sidebar {
 .keys-popover dd {
   margin: 0;
   color: var(--text-muted);
+}
+
+/* ---- the narrow layout ----
+   The inspector drawn over the page rather than beside it. It still points at
+   the page, so it overlays rather than replaces: the row it highlights has to
+   be visible for the highlight to mean anything. */
+.canvas-outline.inspector.overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.3);
+}
+
+/* One of the two, chosen — at this width a column each would leave neither
+   worth looking at. */
+.view-switch {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.view-switch .btn {
+  border-radius: 0;
+}
+
+.view-switch .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }

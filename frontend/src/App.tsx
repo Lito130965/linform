@@ -78,12 +78,12 @@ export default function App() {
       <div className="too-narrow">
         <h1 className="logo">Linform</h1>
         <p>
-          The template editor is built for a wide screen: the visual mode shows a full A4 page
-          beside a live PDF preview.
+          The template editor draws a printed page at its real size, and an A4 sheet is 794px
+          wide before anything is put beside it.
         </p>
         <p className="muted">
-          This window is {width}px. The editor is comfortable from 1280px, and best at 1600px or
-          more.
+          This window is {width}px. A whole page fits from 900px, where the preview becomes a tab
+          and the inspector opens over the page; from 1280px they are columns of their own.
         </p>
         <button className="btn" onClick={() => setNarrowAck(true)}>
           Open it anyway

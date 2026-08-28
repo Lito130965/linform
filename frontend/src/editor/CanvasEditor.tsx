@@ -279,6 +279,7 @@ export default function CanvasEditor({
   onDropFiles,
   focusMode = false,
   onLeaveFocus,
+  overlayInspector = false,
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -310,6 +311,10 @@ export default function CanvasEditor({
    * one, because it covers the navigation and the preview too. */
   focusMode?: boolean
   onLeaveFocus?: () => void
+  /** No width to spare: the inspector is drawn over the page instead of
+   * beside it. It still points at the page, so it is an overlay rather than
+   * something that goes away. */
+  overlayInspector?: boolean
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -420,6 +425,9 @@ export default function CanvasEditor({
   // Read from the canvas document's own listener, bound once at mount.
   const focusRef = useRef(focusMode)
   focusRef.current = focusMode
+  const overlayRef = useRef(overlayInspector)
+  overlayRef.current = overlayInspector
+  const inspectorRef = useRef(false)
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
@@ -1307,6 +1315,20 @@ export default function CanvasEditor({
         endGesture(false)
         return
       }
+      // An inspector drawn over the page closes on Escape — but only once the
+      // key has nothing else to do. Escape in a canvas means "step out of
+      // this", and a laptop-width editor where the first press always shut a
+      // panel would have taken that away everywhere.
+      if (
+        e.key === 'Escape' &&
+        overlayRef.current &&
+        inspectorRef.current &&
+        !body.querySelector('[data-lf-selected]')
+      ) {
+        e.preventDefault()
+        setInspectorOpen(false)
+        return
+      }
       // The current selection is read from the DOM, not from React state: this
       // effect runs once, so the state this closure captured is the state at
       // mount — which is null, forever.
@@ -1562,6 +1584,21 @@ export default function CanvasEditor({
       }
       const body = bodyRef.current
       if (!body) return
+      // Same cascade as inside the canvas: an overlay inspector gives Escape
+      // back to the page whenever the page still has a use for it. Bound here
+      // too because a press with the focus in the panel itself, or on the
+      // toolbar, never reaches the canvas document.
+      if (
+        e.key === 'Escape' &&
+        overlayInspector &&
+        inspectorOpen &&
+        !focusMode &&
+        !body.querySelector('[data-lf-selected]')
+      ) {
+        e.preventDefault()
+        setInspectorOpen(false)
+        return
+      }
       const intent = intentFor(e, body.querySelector('[data-lf-selected]'), body)
       if (!intent) return
       e.preventDefault()
@@ -2160,6 +2197,7 @@ export default function CanvasEditor({
   // Folded by the mode, not instead of the setting: leaving focus mode
   // brings the column back the width it was.
   const inspectorShowing = inspectorOpen && !focusMode
+  inspectorRef.current = inspectorShowing
 
   const renderProperties = (): ReactNode => (
     <div key={selId}>
@@ -2900,7 +2938,34 @@ export default function CanvasEditor({
             )}
           </div>
         </div>
-        {inspectorShowing ? (
+        {inspectorShowing && overlayInspector ? (
+          <InspectorPanel
+            overlay
+            width={INSPECTOR_DEFAULT}
+            properties={renderProperties()}
+            tab={sideTab}
+            onTab={setSideTab}
+            fields={fields}
+            onInsertField={insertField}
+            items={outline.items}
+            selected={selected?.el ?? null}
+            hiddenCount={outline.hidden}
+            isOpen={(el) => outlineIsOpen(el)}
+            isHidden={(el) => el.hasAttribute('data-lf-hidden')}
+            onHover={outlineHover}
+            onSelect={(el) => {
+              select(el)
+              revealInCanvas(el)
+            }}
+            onToggleOpen={(el) => {
+              outlineFolds.current.set(el, !outlineIsOpen(el))
+              setTick((t) => t + 1)
+            }}
+            onToggleHidden={toggleHidden}
+            onShowAll={showAllHidden}
+            onClose={() => setInspectorOpen(false)}
+          />
+        ) : inspectorShowing ? (
           <>
             <Splitter
               value={inspectorShown}

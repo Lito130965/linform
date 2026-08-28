@@ -159,40 +159,6 @@ test('the inspector remembers its width and its tab', async ({ page, request }) 
   await expect(page.locator('.side-tab.active')).toHaveText('Structure')
 })
 
-test('the inspector folds away, and the page grows into the space', async ({ page, request }) => {
-  // Resized inside the test rather than in a describe with its own viewport.
-  // A describe that changes the viewport makes Playwright rebuild the browser
-  // context, and the test that runs after it — in this file or the next one —
-  // hangs on its first API call until the timeout. Measured twice, on two
-  // different victims: layout's own last test, then lifecycle's first.
-  const code = uniqueCode('inspector-fold')
-  await createTemplate(request, code, DOC)
-  await openTemplate(page, code)
-  await enterVisual(page)
-
-  // At 1920 an A4 page fits at 100 % and zoom is capped there, so folding a
-  // column could not show in the read-out however well it worked. Narrow the
-  // window until the page is being scaled.
-  await page.setViewportSize({ width: 1100, height: 900 })
-  await page.getByRole('separator', { name: 'Resize the inspector' }).focus()
-  await page.keyboard.press('End')
-
-  const zoom = page.locator('.zoom-value')
-  await expect(zoom).not.toHaveText('100%')
-  const before = await zoom.textContent()
-
-  await page.keyboard.press('Control+.')
-  await expect(page.locator('.canvas-outline')).toHaveCount(0)
-  await expect(page.locator('.pane-strip', { hasText: 'INSPECTOR' })).toHaveCount(1)
-  // Re-fitted rather than left at the size it had: the column it was sharing
-  // with is gone.
-  await expect(zoom).not.toHaveText(before!)
-
-  await page.keyboard.press('Control+.')
-  await expect(page.locator('.canvas-outline')).toHaveCount(1)
-  await expect(zoom).toHaveText(before!)
-})
-
 test('a tool opens over the page, and the page does not move', async ({ page, request }) => {
   // The rule the flyout exists to make structural. The bottom panel took its
   // height out of the canvas, so opening the blocks re-laid the document out
@@ -300,3 +266,4 @@ test('fit page shows the whole sheet, where fit width shows the top of it', asyn
   // Smaller than fitting the width, or it was not constrained by the height.
   expect(whole.width).toBeLessThan(wide.width)
 })
+

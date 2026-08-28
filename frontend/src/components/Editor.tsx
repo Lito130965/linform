@@ -33,7 +33,7 @@ import Splitter from './Splitter'
 import ToolRail, { TOOL_LABEL, TOOL_TABS, type ToolTab } from './ToolRail'
 import ToolFlyout from './ToolFlyout'
 import Icon from './Icon'
-import { useViewportWidth } from '../layout'
+import { layoutFor, useViewportWidth } from '../layout'
 import {
   getBoolPref,
   getNumPref,
@@ -175,6 +175,15 @@ export default function Editor({
    * a kindness.
    */
   const shellWidth = useViewportWidth()
+  // Below a certain width the columns stop being columns: the preview is a
+  // tab in the canvas topbar, and the inspector is drawn over the page. Two
+  // columns beside an A4 sheet mean neither is worth looking at.
+  const narrow = layoutFor(shellWidth)
+  // Which of the two the pane shows when they cannot both be columns. Its own
+  // state, and not the preview's: a preview that was a column a moment ago must
+  // not become the whole screen the instant the window narrows. The page is
+  // what the editor is for, so that is where it lands.
+  const [narrowView, setNarrowView] = useState<'canvas' | 'preview'>('canvas')
   const maxPreview = Math.max(PREVIEW_MIN, Math.round(shellWidth * 0.6))
   const [previewOpen, setPreviewOpen] = useState(() =>
     getBoolPref(PREF_PREVIEW_OPEN, shellWidth >= 1600),
@@ -184,6 +193,7 @@ export default function Editor({
   )
   useEffect(() => setBoolPref(PREF_PREVIEW_OPEN, previewOpen), [previewOpen])
   useEffect(() => setNumPref(PREF_PREVIEW_WIDTH, previewWidth), [previewWidth])
+  const showingPreview = narrow.previewAsTab ? narrowView === 'preview' : previewOpen
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(() => setNotice(null), 2500)
@@ -745,9 +755,11 @@ export default function Editor({
     }
     if (e.key === '\\') {
       // The preview is half the window; being able to put it away in one
-      // press is what makes giving it that much space reasonable.
+      // press is what makes giving it that much space reasonable. Where it is
+      // a tab rather than a column, the same key swaps which one is showing.
       e.preventDefault()
-      setPreviewOpen((on) => !on)
+      if (narrowRef.current) setNarrowView((v) => (v === 'preview' ? 'canvas' : 'preview'))
+      else setPreviewOpen((on) => !on)
       return
     }
     if (e.key.toLowerCase() !== 's') return
@@ -755,6 +767,8 @@ export default function Editor({
     e.preventDefault()
     void saveRef.current()
   }
+  const narrowRef = useRef(narrow.previewAsTab)
+  narrowRef.current = narrow.previewAsTab
   const keyRef = useRef(onKey)
   keyRef.current = onKey
   useEffect(() => {
@@ -931,16 +945,43 @@ export default function Editor({
           <span className="muted focus-hint">Esc to leave focus mode</span>
         )}
         {/* Pushed to the end of the row: it is about the window rather than
-            about the document, and the two should not read as one list. */}
-        <button
-          className={previewOpen ? 'btn icon-btn active' : 'btn icon-btn'}
-          aria-label="Show or hide the preview"
-          aria-pressed={previewOpen}
-          title="Show or hide the preview (Ctrl + \)"
-          onClick={() => setPreviewOpen((on) => !on)}
-        >
-          <Icon name="panel-right" />
-        </button>
+            about the document, and the two should not read as one list.
+
+            Where the preview is a tab rather than a column, this is the
+            switch between them — and it lives HERE rather than in the canvas
+            topbar, because that topbar belongs to the canvas, which is one
+            of the two things being switched between. Put there, it vanished
+            the moment it was used. */}
+        {narrow.previewAsTab ? (
+          <span className="view-switch" role="tablist" aria-label="Canvas or preview">
+            <button
+              role="tab"
+              aria-selected={!showingPreview}
+              className={showingPreview ? 'btn' : 'btn active'}
+              onClick={() => setNarrowView('canvas')}
+            >
+              Canvas
+            </button>
+            <button
+              role="tab"
+              aria-selected={showingPreview}
+              className={showingPreview ? 'btn active' : 'btn'}
+              onClick={() => setNarrowView('preview')}
+            >
+              Preview
+            </button>
+          </span>
+        ) : (
+          <button
+            className={previewOpen ? 'btn icon-btn active' : 'btn icon-btn'}
+            aria-label="Show or hide the preview"
+            aria-pressed={previewOpen}
+            title="Show or hide the preview (Ctrl + \)"
+            onClick={() => setPreviewOpen((on) => !on)}
+          >
+            <Icon name="panel-right" />
+          </button>
+        )}
       </header>
 
       {error && <div className="error-box">{error}</div>}
@@ -958,7 +999,23 @@ export default function Editor({
             short of, and width is what a 1920 screen has to spare. */}
         <ToolRail tabs={toolTabs} open={toolTab} onOpen={setToolTab} />
         <section className="pane code-pane">
-          {mode === 'code' ? (
+          {narrow.previewAsTab && showingPreview && !focusMode ? (
+            /* One at a time: at this width a column each would leave neither
+               worth looking at. */
+            <PreviewPane
+              html={html}
+              data={parsedData.data}
+              onError={setPreviewError}
+              fixWithAi={
+                assistant?.enabled
+                  ? () => {
+                      setFixError(previewError)
+                      setShowAssistant(true)
+                    }
+                  : undefined
+              }
+            />
+          ) : mode === 'code' ? (
             <CodeMirror
               value={html}
               height="100%"
@@ -989,6 +1046,7 @@ export default function Editor({
               onFurniture={applyFurniture}
               onDropFiles={dropFiles}
               focusMode={focusMode}
+              overlayInspector={narrow.inspectorOverlay}
               onLeaveFocus={() => setFocusMode(false)}
               onScopes={setScopes}
               onChange={handleVisualChange}
@@ -1084,7 +1142,9 @@ export default function Editor({
           )}
         </section>
 
-        {previewOpen && !focusMode ? (
+        {/* Not a column at all when the window is narrow, and not while the
+            page has the screen to itself. */}
+        {narrow.previewAsTab || focusMode ? null : previewOpen ? (
           <>
             <Splitter
               value={previewWidth}

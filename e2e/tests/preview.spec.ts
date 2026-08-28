@@ -21,6 +21,23 @@ const THREE_PAGES =
   '<div class="sheet"><h1>Page two</h1></div>\n' +
   '<div><h1>Page three</h1></div>\n'
 
+/**
+ * Wide enough for the page and its render side by side: at a laptop width they
+ * are two views of one pane, and every test here types into the document while
+ * watching the preview.
+ *
+ * Resized per test rather than declared for the file: a viewport in `test.use`
+ * makes Playwright rebuild the browser context, and whatever runs next — here,
+ * the first test of the next file — hangs on its first API call until the
+ * timeout. Measured twice now, on different victims.
+ */
+async function sideBySide(page: import('@playwright/test').Page) {
+  await page.setViewportSize({ width: 1680, height: 1000 })
+  // The layout follows a resize on the next render, so wait for it to arrive:
+  // clicking the narrow switch as it disappears is a race, and it lost.
+  await expect(page.getByRole('tab', { name: 'Preview' })).toHaveCount(0)
+}
+
 /** The preview renders on a debounce; this waits for one to land. */
 async function rendered(page: import('@playwright/test').Page, act: () => Promise<void>) {
   const response = page.waitForResponse(
@@ -35,6 +52,7 @@ test('the page being read survives a re-render', async ({ page, request }) => {
   const code = uniqueCode('preview-page')
   await createTemplate(request, code, THREE_PAGES)
   await openTemplate(page, code)
+  await sideBySide(page)
   await rendered(page, () => showPreview(page))
 
   const pager = page.locator('.preview-pager')
@@ -63,6 +81,7 @@ test('a document that gets shorter does not leave the reader past its end', asyn
   const code = uniqueCode('preview-shrink')
   await createTemplate(request, code, THREE_PAGES)
   await openTemplate(page, code)
+  await sideBySide(page)
   await rendered(page, () => showPreview(page))
 
   await page.getByRole('button', { name: 'Next page' }).click()
@@ -91,6 +110,7 @@ test('the viewer is asked for its own controls to stay out of the way', async ({
   const code = uniqueCode('preview-chrome')
   await createTemplate(request, code, THREE_PAGES)
   await openTemplate(page, code)
+  await sideBySide(page)
   await rendered(page, () => showPreview(page))
 
   await expect(page.locator('.preview-frame')).toHaveAttribute('src', /toolbar=0/)

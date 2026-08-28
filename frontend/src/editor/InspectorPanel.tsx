@@ -54,6 +54,9 @@ export interface InspectorPanelProps {
   /** In pixels, set by the boundary beside it. A number rather than a CSS
    * rule because it is the author's, and it is remembered. */
   width: number
+  /** Drawn over the page rather than beside it, where there is no width to
+   * spare. Escape puts it away. */
+  overlay?: boolean
   /** Every value this document can name, for the other tab. */
   fields: FieldRow[]
   onInsertField: (expression: string) => void
@@ -78,6 +81,7 @@ export default function InspectorPanel({
   onTab,
   properties,
   width,
+  overlay = false,
   fields,
   onInsertField,
   items,
@@ -104,7 +108,11 @@ export default function InspectorPanel({
     // The class stays `canvas-outline` alongside the new one: it is what the
     // canvas's own layout and half the browser suite address this column by,
     // and renaming it would be a rename for its own sake.
-    <aside className="canvas-outline inspector" aria-label="Inspector" style={{ width }}>
+    <aside
+      className={overlay ? 'canvas-outline inspector overlay' : 'canvas-outline inspector'}
+      aria-label="Inspector"
+      style={{ width }}
+    >
       <header className="outline-head">
         {/* What is in the document, and what could be — two answers to the same
             "what am I working with", so they share one column rather than

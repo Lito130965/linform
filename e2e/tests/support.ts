@@ -177,9 +177,16 @@ export async function openTemplate(page: Page, code: string): Promise<void> {
  * so a test about the preview has to ask for it rather than assume it.
  */
 export async function showPreview(page: Page): Promise<void> {
-  const strip = page.locator('.pane-strip')
-  if ((await strip.count()) > 0) await strip.click()
-  await expect(page.locator('.preview-pane')).toHaveCount(1)
+  // Two shapes, depending on the width. A column that has been put away comes
+  // back from its strip; at a laptop width there is no column at all and the
+  // preview is one of two things the pane can show.
+  const tab = page.getByRole('tab', { name: 'Preview' })
+  if ((await tab.count()) > 0) await tab.click()
+  else {
+    const strip = page.locator('.pane-strip', { hasText: 'PREVIEW' })
+    if ((await strip.count()) > 0) await strip.click()
+  }
+  await expect(page.locator('.preview')).toBeVisible()
 }
 
 /**

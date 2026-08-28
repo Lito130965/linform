@@ -25,9 +25,13 @@ describe('layoutFor', () => {
     expect(l.tooNarrow).toBe(false)
   })
 
-  it('declares itself too narrow below 1000', () => {
-    expect(layoutFor(900).tooNarrow).toBe(true)
-    expect(layoutFor(1000).tooNarrow).toBe(false)
+  it('declares itself too narrow below 900', () => {
+    // Lowered from 1000 once the columns stopped taking width unconditionally:
+    // at 950 the page is whole, and refusing to open was the editor being
+    // careful about a problem it no longer has.
+    expect(layoutFor(899).tooNarrow).toBe(true)
+    expect(layoutFor(900).tooNarrow).toBe(false)
+    expect(layoutFor(950).tooNarrow).toBe(false)
   })
 
   it('does not call an unmeasured window narrow', () => {
@@ -42,15 +46,17 @@ describe('layoutFor', () => {
 
 describe('the narrow arrangements', () => {
   it('keeps both columns while there is room for the page between them', () => {
-    const l = layoutFor(1280)
+    const l = layoutFor(1281)
     expect(l.previewAsTab).toBe(false)
     expect(l.inspectorOverlay).toBe(false)
   })
 
-  it('turns the preview into a tab and the inspector into an overlay below that', () => {
+  it('turns the preview into a tab and the inspector into an overlay at 1280', () => {
     // Two columns beside an A4 page mean neither is worth looking at; one at a
-    // time, chosen, beats both at once and cramped.
-    const l = layoutFor(1279)
+    // time, chosen, beats both at once and cramped. At the boundary rather than
+    // below it: 1280 is the commonest laptop width there is, and the size the
+    // layout was measured for — a whole A4 page at 100 %.
+    const l = layoutFor(1280)
     expect(l.previewAsTab).toBe(true)
     expect(l.inspectorOverlay).toBe(true)
   })
