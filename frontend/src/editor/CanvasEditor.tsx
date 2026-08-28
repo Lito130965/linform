@@ -277,6 +277,8 @@ export default function CanvasEditor({
   onPageSetup,
   onFurniture,
   onDropFiles,
+  focusMode = false,
+  onLeaveFocus,
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -304,6 +306,10 @@ export default function CanvasEditor({
    * where they landed. The canvas knows about the document, not about storage:
    * uploading them and inserting whatever they became is the shell's half */
   onDropFiles?: (files: File[]) => void
+  /** Everything but the page is folded away. Held by the editor around this
+   * one, because it covers the navigation and the preview too. */
+  focusMode?: boolean
+  onLeaveFocus?: () => void
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -338,6 +344,7 @@ export default function CanvasEditor({
     onPageSetup,
     onFurniture,
     onDropFiles,
+    onLeaveFocus,
   })
   callbacksRef.current = {
     onChange,
@@ -347,6 +354,7 @@ export default function CanvasEditor({
     onPageSetup,
     onFurniture,
     onDropFiles,
+    onLeaveFocus,
   }
   // The stylesheet element the canvas injects, kept so a change to the page
   // can be applied without tearing the document down and losing its history.
@@ -387,9 +395,14 @@ export default function CanvasEditor({
    * A manual choice wins until it is given back ("Fit"), and window resizes go
    * on updating the fitted value underneath, so handing it back is instant.
    */
-  const [fitted, setFitted] = useState(1)
-  const [manualZoom, setManualZoom] = useState<number | null>(null)
-  const zoom = manualZoom ?? fitted
+  const [fitWidth, setFitWidth] = useState(1)
+  const [fitPage, setFitPage] = useState(1)
+  // 'width' fills the column with the page; 'page' shows the whole sheet at
+  // once, which is the only way to judge where a break falls. A number is a
+  // size the author chose and neither of those.
+  const [zoomChoice, setZoomChoice] = useState<'width' | 'page' | number>('width')
+  const zoom =
+    typeof zoomChoice === 'number' ? zoomChoice : zoomChoice === 'page' ? fitPage : fitWidth
   // Read from inside the canvas document's own listeners, which are bound once
   // at mount and would otherwise hold the zoom the page had when it opened.
   const zoomRef = useRef(zoom)
@@ -398,11 +411,15 @@ export default function CanvasEditor({
   // selection: right-clicking selects first, so the menu and the properties bar
   // are always talking about the same element.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [keysOpen, setKeysOpen] = useState(false)
   // A file is over the page. Shown, because a drop target that gives no sign
   // it is one is indistinguishable from a page that will refuse the file.
   const [dropping, setDropping] = useState(false)
   const menuRef = useRef(false)
   menuRef.current = menu !== null
+  // Read from the canvas document's own listener, bound once at mount.
+  const focusRef = useRef(focusMode)
+  focusRef.current = focusMode
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
@@ -1138,7 +1155,7 @@ export default function CanvasEditor({
     const onWheel = (e: WheelEvent): void => {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
-      setManualZoom(clampZoom(zoomRef.current * (1 - e.deltaY / 400)))
+      setZoomChoice(clampZoom(zoomRef.current * (1 - e.deltaY / 400)))
     }
     doc.addEventListener('wheel', onWheel, { passive: false })
 
@@ -1270,6 +1287,11 @@ export default function CanvasEditor({
         } else if (forwardToApp(e)) {
           e.preventDefault()
         }
+        return
+      }
+      if (e.key === 'Escape' && focusRef.current) {
+        e.preventDefault()
+        callbacksRef.current.onLeaveFocus?.()
         return
       }
       if (e.key === 'Escape' && menuRef.current) {
@@ -1559,22 +1581,31 @@ export default function CanvasEditor({
     return () => ro.disconnect()
   }, [])
 
-  // ---- fit the page into the available width -----------------------------
+  // ---- fit the page into the space there is ------------------------------
   useEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
     const fit = () => {
       if (pageWidth === null) {
-        setFitted(1)
+        setFitWidth(1)
+        setFitPage(1)
         return
       }
-      setFitted(fitZoom(scroll.clientWidth - CANVAS_GUTTER_PX, pageWidth) / 100)
+      const byWidth = fitZoom(scroll.clientWidth - CANVAS_GUTTER_PX, pageWidth) / 100
+      setFitWidth(byWidth)
+      // The whole sheet: the smaller of the two, since a page that fits the
+      // width and runs off the bottom is not fitted.
+      const byHeight =
+        pageHeight === null
+          ? byWidth
+          : fitZoom(scroll.clientHeight - CANVAS_GUTTER_PX, pageHeight) / 100
+      setFitPage(Math.min(byWidth, byHeight))
     }
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(scroll)
     return () => ro.disconnect()
-  }, [pageWidth])
+  }, [pageWidth, pageHeight])
 
   // ---- zoom ---------------------------------------------------------------
   //
@@ -1594,7 +1625,7 @@ export default function CanvasEditor({
       dir === 1
         ? ZOOM_STOPS.find((stop) => stop > current + 0.005)
         : [...ZOOM_STOPS].reverse().find((stop) => stop < current - 0.005)
-    setManualZoom(next ?? (dir === 1 ? ZOOM_STOPS[ZOOM_STOPS.length - 1] : ZOOM_STOPS[0]))
+    setZoomChoice(next ?? (dir === 1 ? ZOOM_STOPS[ZOOM_STOPS.length - 1] : ZOOM_STOPS[0]))
   }
 
   /** True when a key press was a zoom command, so the caller can stop the
@@ -1602,7 +1633,9 @@ export default function CanvasEditor({
   const zoomKey = (key: string): boolean => {
     if (key === '=' || key === '+') return zoomStep(1), true
     if (key === '-' || key === '_') return zoomStep(-1), true
-    if (key === '0') return setManualZoom(null), true
+    // The whole page, which is what "fit" means when a document has more
+    // than one screenful of height.
+    if (key === '0') return setZoomChoice('page'), true
     return false
   }
 
@@ -2124,6 +2157,9 @@ export default function CanvasEditor({
       ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, bodyWidth - CANVAS_MIN_PX))
       : INSPECTOR_MAX
   const inspectorShown = Math.min(inspectorWidth, inspectorMax)
+  // Folded by the mode, not instead of the setting: leaving focus mode
+  // brings the column back the width it was.
+  const inspectorShowing = inspectorOpen && !focusMode
 
   const renderProperties = (): ReactNode => (
     <div key={selId}>
@@ -2473,19 +2509,61 @@ export default function CanvasEditor({
             −
           </button>
           <button
-            className={manualZoom === null ? 'tb zoom-value fitted' : 'tb zoom-value'}
-            title={
-              manualZoom === null
-                ? 'The page is fitted to the window'
-                : 'Fit the page to the window (Ctrl+0)'
+            className={
+              typeof zoomChoice === 'number' ? 'tb zoom-value' : 'tb zoom-value fitted'
             }
-            onClick={() => setManualZoom(null)}
+            title="Fit the width of the page to the column"
+            onClick={() => setZoomChoice('width')}
           >
             {Math.round(zoom * 100)}%
           </button>
           <button className="tb" aria-label="Zoom in" title="Zoom in (Ctrl++)" onClick={() => zoomStep(1)}>
             +
           </button>
+          {/* Two different questions: "can I read this" and "where does the
+              page end". A form that fits the width can still run three
+              screens deep, and a break you cannot see is a break you find in
+              the PDF. */}
+          <button
+            className={zoomChoice === 'width' ? 'tb active' : 'tb'}
+            onClick={() => setZoomChoice('width')}
+          >
+            Fit width
+          </button>
+          <button
+            className={zoomChoice === 'page' ? 'tb active' : 'tb'}
+            title="Show the whole sheet at once (Ctrl+0)"
+            onClick={() => setZoomChoice('page')}
+          >
+            Fit page
+          </button>
+        </span>
+        {/* The shortcuts, on the bar rather than in a disclosure below it —
+            26 px of chrome above the page, spent on a summary nobody opened
+            twice. Same list, so the hint and the code cannot drift. */}
+        <span className="canvas-keys">
+          <button
+            className={keysOpen ? 'tb active' : 'tb'}
+            aria-expanded={keysOpen}
+            title="What the keyboard does here"
+            onClick={() => setKeysOpen((on) => !on)}
+          >
+            Keyboard
+          </button>
+          {keysOpen && (
+            <div className="keys-popover" role="dialog" aria-label="Keyboard">
+              <dl>
+                {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS, ...EDITOR_SHORTCUTS].map(
+                  (shortcut) => (
+                    <div key={shortcut.keys}>
+                      <dt>{shortcut.keys}</dt>
+                      <dd>{shortcut.does}</dd>
+                    </div>
+                  ),
+                )}
+              </dl>
+            </div>
+          )}
         </span>
       </div>
 
@@ -2497,17 +2575,6 @@ export default function CanvasEditor({
       {/* Closed by default and reachable by Tab. Shortcuts nobody can discover
           are shortcuts nobody has, and the canvas offers no other hint that
           Alt does anything. */}
-      <details className="canvas-keys">
-        <summary>Keyboard</summary>
-        <dl>
-          {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS, ...EDITOR_SHORTCUTS].map((shortcut) => (
-            <div key={shortcut.keys}>
-              <dt>{shortcut.keys}</dt>
-              <dd>{shortcut.does}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
       {/* The page and its structure, side by side. The panel points at the
           canvas — it outlines what a row is about — so it must never be drawn
           over the thing it points at. */}
@@ -2833,7 +2900,7 @@ export default function CanvasEditor({
             )}
           </div>
         </div>
-        {inspectorOpen ? (
+        {inspectorShowing ? (
           <>
             <Splitter
               value={inspectorShown}

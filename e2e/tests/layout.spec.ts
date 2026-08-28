@@ -242,3 +242,61 @@ test('the chosen tool survives a reload, and none is the default', async ({ page
   await openTemplate(page, code)
   await expect(page.locator('.tool-flyout')).toHaveCount(0)
 })
+
+test('focus mode gives the page the screen, and Esc gives it back', async ({ page, request }) => {
+  const code = uniqueCode('focus')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  await openTool(page, 'Insert')
+
+  const column = async () => (await page.locator('.code-pane').boundingBox())!.width
+  const before = await column()
+  await expect(page.locator('.canvas-outline')).toHaveCount(1)
+
+  await page.keyboard.press('Control+Shift+F')
+
+  // The navigation, the inspector and the preview are all folded away; what is
+  // left is the page and the few things a document still needs.
+  await expect(page.locator('.sidebar')).toBeHidden()
+  await expect(page.locator('.canvas-outline')).toHaveCount(0)
+  await expect(page.locator('.preview-pane')).toHaveCount(0)
+  await expect(page.locator('.focus-hint')).toContainText('Esc to leave focus mode')
+  // Either wording: a template with no open draft offers "Save as draft".
+  await expect(page.getByRole('button', { name: /Save/ })).toBeVisible()
+  expect(await column()).toBeGreaterThan(before)
+
+  await page.keyboard.press('Escape')
+
+  // Back exactly as it was: the widths and tabs underneath were never changed,
+  // only hidden.
+  await expect(page.locator('.sidebar')).toBeVisible()
+  await expect(page.locator('.canvas-outline')).toHaveCount(1)
+  await expect(page.locator('.focus-hint')).toHaveCount(0)
+  expect(await column()).toBeCloseTo(before, 0)
+})
+
+test('fit page shows the whole sheet, where fit width shows the top of it', async ({
+  page,
+  request,
+}) => {
+  // Two different questions. A form that fits the width can still run three
+  // screens deep, and a page break you cannot see is one you find in the PDF.
+  const code = uniqueCode('fit-page')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+
+  const sheet = () => page.locator(CANVAS)
+  const viewport = async () => (await page.locator('.canvas-scroll').boundingBox())!
+
+  await page.getByRole('button', { name: 'Fit width', exact: true }).click()
+  const wide = (await sheet().boundingBox())!
+  expect(wide.height).toBeGreaterThan((await viewport()).height)
+
+  await page.getByRole('button', { name: 'Fit page', exact: true }).click()
+  const whole = (await sheet().boundingBox())!
+  expect(whole.height).toBeLessThanOrEqual((await viewport()).height + 1)
+  // Smaller than fitting the width, or it was not constrained by the height.
+  expect(whole.width).toBeLessThan(wide.width)
+})

@@ -145,6 +145,22 @@ export default function Editor({
   // Bumped whenever the open document is replaced, so the canvas is rebuilt
   // around the new one instead of going on showing the old.
   const [canvasNonce, setCanvasNonce] = useState(0)
+  /**
+   * Everything but the page, folded away for a few minutes.
+   *
+   * Deliberately not remembered. A layout is a setting — where the columns
+   * are, how wide, which tab — and it should come back tomorrow. This is a
+   * gesture: the whole sheet in front of you for the length of one problem.
+   * Opening the editor days later to find its panels missing, with no memory
+   * of having asked, is not the same thing.
+   */
+  const [focusMode, setFocusMode] = useState(false)
+  useEffect(() => {
+    // The navigation belongs to the shell around this component, so the one
+    // thing that crosses that line is a class on the body.
+    document.body.classList.toggle('focus-mode', focusMode)
+    return () => document.body.classList.remove('focus-mode')
+  }, [focusMode])
 
   /**
    * How the width is divided between the page and its preview.
@@ -713,23 +729,38 @@ export default function Editor({
   // every keystroke is churn nobody can see and everybody pays for.
   const saveRef = useRef(save)
   saveRef.current = save
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
-      if (e.key === '\\') {
-        // The preview is half the window; being able to put it away in one
-        // press is what makes giving it that much space reasonable.
-        e.preventDefault()
-        setPreviewOpen((on) => !on)
-        return
-      }
-      if (e.key.toLowerCase() !== 's') return
-      // Whatever else happens, not the browser's "save this page as".
+  const onKey = (e: KeyboardEvent): void => {
+    // Escape belongs to focus mode while it is on, and to nothing else here.
+    if (e.key === 'Escape' && focusMode) {
       e.preventDefault()
-      void saveRef.current()
+      setFocusMode(false)
+      return
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    if (e.shiftKey) {
+      if (e.key.toLowerCase() !== 'f') return
+      e.preventDefault()
+      setFocusMode((on) => !on)
+      return
+    }
+    if (e.key === '\\') {
+      // The preview is half the window; being able to put it away in one
+      // press is what makes giving it that much space reasonable.
+      e.preventDefault()
+      setPreviewOpen((on) => !on)
+      return
+    }
+    if (e.key.toLowerCase() !== 's') return
+    // Whatever else happens, not the browser's "save this page as".
+    e.preventDefault()
+    void saveRef.current()
+  }
+  const keyRef = useRef(onKey)
+  keyRef.current = onKey
+  useEffect(() => {
+    const listener = (e: KeyboardEvent): void => keyRef.current(e)
+    document.addEventListener('keydown', listener)
+    return () => document.removeEventListener('keydown', listener)
   }, [])
 
   // Assistant status decides whether the feature is shown at all.
@@ -789,7 +820,7 @@ export default function Editor({
   }, [testData])
 
   return (
-    <div className="editor">
+    <div className={focusMode ? 'editor focus' : 'editor'}>
       <header className="toolbar">
         <div className="template-title">
           <strong>{isScratch ? scratch!.title : (detail?.name ?? code)}</strong>
@@ -896,6 +927,9 @@ export default function Editor({
           </button>
         )}
         {!isScratch && dirty && <span className="dirty-badge">unsaved</span>}
+        {focusMode && (
+          <span className="muted focus-hint">Esc to leave focus mode</span>
+        )}
         {/* Pushed to the end of the row: it is about the window rather than
             about the document, and the two should not read as one list. */}
         <button
@@ -954,6 +988,8 @@ export default function Editor({
               onPageSetup={applyPageSetup}
               onFurniture={applyFurniture}
               onDropFiles={dropFiles}
+              focusMode={focusMode}
+              onLeaveFocus={() => setFocusMode(false)}
               onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
@@ -1048,7 +1084,7 @@ export default function Editor({
           )}
         </section>
 
-        {previewOpen ? (
+        {previewOpen && !focusMode ? (
           <>
             <Splitter
               value={previewWidth}

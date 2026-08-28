@@ -144,12 +144,18 @@ test('the shortcuts are written down where somebody can find them', async ({ pag
   await openTemplate(page, code)
   await enterVisual(page)
 
+  // On the toolbar now, as a popover: the disclosure it replaced cost 26 px
+  // of chrome above the page for a summary nobody opened twice.
   const hint = page.locator('.canvas-keys')
-  await expect(hint.locator('summary')).toBeVisible()
-  await hint.locator('summary').click()
+  await hint.getByRole('button', { name: 'Keyboard' }).click()
   await expect(hint).toContainText('Alt + Enter')
   await expect(hint).toContainText('Esc')
   // Including the ones the canvas does not implement itself: somebody looking
   // for "how do I save" does not know which module answers.
   await expect(hint).toContainText('Ctrl + S')
+  // Every key the layout offers, in the one list anybody reads.
+  await expect(hint).toContainText('Ctrl + \\')
+  await expect(hint).toContainText('Ctrl + .')
+  await expect(hint).toContainText('Ctrl + Shift + F')
+  await expect(hint).toContainText('Ctrl + 0')
 })

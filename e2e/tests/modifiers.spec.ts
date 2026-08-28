@@ -91,7 +91,7 @@ test('the modifiers are written down with the shortcuts', async ({ page, request
   await enterVisual(page)
 
   const hint = page.locator('.canvas-keys')
-  await hint.locator('summary').click()
+  await hint.getByRole('button', { name: 'Keyboard' }).click()
   await expect(hint).toContainText('Shift + drag')
   await expect(hint).toContainText('Alt + drag')
   await expect(hint).toContainText('Ctrl + drag')
