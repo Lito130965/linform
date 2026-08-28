@@ -159,46 +159,36 @@ test('the inspector remembers its width and its tab', async ({ page, request }) 
   await expect(page.locator('.side-tab.active')).toHaveText('Structure')
 })
 
-/**
- * Last in the file on purpose.
- *
- * A describe block with its own viewport makes Playwright tear down the browser
- * context and build another one, and the test that follows such a block in the
- * same file hangs on its first API call until the test timeout — measured, not
- * guessed: the same test passes alone and passes when it runs before the block.
- * Nothing after it, nothing to hang.
- */
-test.describe('at a width where the page does not fit at full size', () => {
-  // Deliberately narrower than the rest of this file. At 1920 an A4 page fits
-  // at 100 % with the inspector open, and zoom is capped there — so folding a
-  // column could not show up in the read-out however well it worked.
-  test.use({ viewport: { width: 1100, height: 900 } })
+test('the inspector folds away, and the page grows into the space', async ({ page, request }) => {
+  // Resized inside the test rather than in a describe with its own viewport.
+  // A describe that changes the viewport makes Playwright rebuild the browser
+  // context, and the test that runs after it — in this file or the next one —
+  // hangs on its first API call until the timeout. Measured twice, on two
+  // different victims: layout's own last test, then lifecycle's first.
+  const code = uniqueCode('inspector-fold')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
 
-  test('the inspector folds away, and the page grows into the space', async ({ page, request }) => {
-    const code = uniqueCode('inspector-fold')
-    await createTemplate(request, code, DOC)
-    await openTemplate(page, code)
-    await enterVisual(page)
+  // At 1920 an A4 page fits at 100 % and zoom is capped there, so folding a
+  // column could not show in the read-out however well it worked. Narrow the
+  // window until the page is being scaled.
+  await page.setViewportSize({ width: 1100, height: 900 })
+  await page.getByRole('separator', { name: 'Resize the inspector' }).focus()
+  await page.keyboard.press('End')
 
-    // Widened to its limit first: the page is only scaled down once the column
-    // beside it takes real width, and zoom is capped at 100 % — a form is
-    // authored at its true size and never magnified.
-    await page.getByRole('separator', { name: 'Resize the inspector' }).focus()
-    await page.keyboard.press('End')
+  const zoom = page.locator('.zoom-value')
+  await expect(zoom).not.toHaveText('100%')
+  const before = await zoom.textContent()
 
-    const zoom = page.locator('.zoom-value')
-    await expect(zoom).not.toHaveText('100%')
-    const before = await zoom.textContent()
+  await page.keyboard.press('Control+.')
+  await expect(page.locator('.canvas-outline')).toHaveCount(0)
+  await expect(page.locator('.pane-strip', { hasText: 'INSPECTOR' })).toHaveCount(1)
+  // Re-fitted rather than left at the size it had: the column it was sharing
+  // with is gone.
+  await expect(zoom).not.toHaveText(before!)
 
-    await page.keyboard.press('Control+.')
-    await expect(page.locator('.canvas-outline')).toHaveCount(0)
-    await expect(page.locator('.pane-strip', { hasText: 'INSPECTOR' })).toHaveCount(1)
-    // Re-fitted rather than left at the size it had: the column it was sharing
-    // with is gone.
-    await expect(zoom).not.toHaveText(before!)
-
-    await page.keyboard.press('Control+.')
-    await expect(page.locator('.canvas-outline')).toHaveCount(1)
-    await expect(zoom).toHaveText(before!)
-  })
+  await page.keyboard.press('Control+.')
+  await expect(page.locator('.canvas-outline')).toHaveCount(1)
+  await expect(zoom).toHaveText(before!)
 })

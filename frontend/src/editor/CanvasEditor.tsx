@@ -108,6 +108,11 @@ import { setAlign, toggleInline } from './text-commands'
 const INSPECTOR_DEFAULT = 288
 const INSPECTOR_MIN = 240
 const INSPECTOR_MAX = 460
+/** The page keeps at least this much, whatever the inspector is set to. A
+ * column that can squeeze the canvas to twenty pixels is not a column with a
+ * maximum, and the zoom read-out then says 100 % over a page nobody can
+ * see — fitZoom answers 100 for an impossible width. */
+const CANVAS_MIN_PX = 360
 
 const EXPR_ATTRS = ['data-jinja-expr', 'data-jinja-for', 'data-jinja-if'] as const
 type ExprAttr = (typeof EXPR_ATTRS)[number]
@@ -302,6 +307,11 @@ export default function CanvasEditor({
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const canvasBodyRef = useRef<HTMLDivElement>(null)
+  // The row holding the page and the inspector. Measured because the
+  // inspector's limit is not a constant: it is whatever leaves the page its
+  // minimum.
+  const [bodyWidth, setBodyWidth] = useState(0)
   const bodyRef = useRef<HTMLElement | null>(null)
   const historyRef = useRef<SnapshotHistory | null>(null)
   const restoringRef = useRef(false)
@@ -1539,6 +1549,16 @@ export default function CanvasEditor({
     return () => document.removeEventListener('keydown', onKeydown)
   })
 
+  useEffect(() => {
+    const el = canvasBodyRef.current
+    if (!el) return
+    const measure = (): void => setBodyWidth(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   // ---- fit the page into the available width -----------------------------
   useEffect(() => {
     const scroll = scrollRef.current
@@ -2097,6 +2117,14 @@ export default function CanvasEditor({
    * empty bar, and it is the same set of controls the topbar's Page button
    * opens, embedded rather than floated.
    */
+  /** What the inspector may take, and what it actually takes. A remembered
+   * width from a wider window must not crush the page on a narrower one. */
+  const inspectorMax =
+    bodyWidth > 0
+      ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, bodyWidth - CANVAS_MIN_PX))
+      : INSPECTOR_MAX
+  const inspectorShown = Math.min(inspectorWidth, inspectorMax)
+
   const renderProperties = (): ReactNode => (
     <div key={selId}>
         {!selected && (
@@ -2483,7 +2511,7 @@ export default function CanvasEditor({
       {/* The page and its structure, side by side. The panel points at the
           canvas — it outlines what a row is about — so it must never be drawn
           over the thing it points at. */}
-      <div className="canvas-body">
+      <div className="canvas-body" ref={canvasBodyRef}>
         {/* The menu is placed in window coordinates, so a scroll would leave it
             hanging over a different element than the one it is about. */}
         <div className="canvas-scroll" ref={scrollRef} onScroll={() => menu && setMenu(null)}>
@@ -2808,16 +2836,16 @@ export default function CanvasEditor({
         {inspectorOpen ? (
           <>
             <Splitter
-              value={inspectorWidth}
+              value={inspectorShown}
               min={INSPECTOR_MIN}
-              max={INSPECTOR_MAX}
+              max={inspectorMax}
               defaultValue={INSPECTOR_DEFAULT}
               label="Resize the inspector"
               grows="after"
               onChange={setInspectorWidth}
             />
             <InspectorPanel
-              width={inspectorWidth}
+              width={inspectorShown}
               properties={renderProperties()}
               tab={sideTab}
               onTab={setSideTab}
