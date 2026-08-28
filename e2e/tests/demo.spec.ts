@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { showPreview } from './support'
+import { openTool, showPreview } from './support'
 
 /**
  * The public shop window.
@@ -48,7 +48,7 @@ test('the assets panel works, against a scratch store of its own', async ({ page
   await page.getByRole('button', { name: 'Assets', exact: true }).click()
 
   await expect(page.locator('.error-box')).toHaveCount(0)
-  await expect(page.locator('.panel-body')).toContainText('no assets uploaded')
+  await expect(page.locator('.tool-flyout')).toContainText('no assets uploaded')
 })
 
 test('the preview still renders a PDF, which is the point of a demo', async ({ page }) => {

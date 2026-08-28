@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test'
 import {
+  closeTool,
   createTemplate,
   enterVisual,
   exampleHtml,
   inspectorTab,
   latestDraftHtml,
   openTemplate,
+  openTool,
   saveDraft,
   uniqueCode,
 } from './support'
@@ -126,7 +128,9 @@ test('the band itself cannot be nudged, but what is in it can', async ({ page, r
   // A paragraph inside it keeps its own box.
   await inspectorTab(page, 'Structure')
   await page.locator('.canvas-outline .outline-row', { hasText: 'Page footer' }).click()
+  await openTool(page, 'Insert')
   await page.locator('.insert-tile', { hasText: 'Text' }).click()
+  await closeTool(page)
   await frame.locator('#foot p').click()
   await inspectorTab(page, 'Properties')
   await expect(page.locator('.inspector-properties .box-model')).toHaveCount(1)
@@ -235,7 +239,9 @@ test('a header is switched on from the page panel and filled like any block', as
   // Three columns inside it, from the palette.
   await inspectorTab(page, 'Structure')
   await page.locator('.canvas-outline .outline-row', { hasText: 'Page header' }).click()
+  await openTool(page, 'Insert')
   await page.locator('.insert-tile', { hasText: '3 columns' }).click()
+  await closeTool(page)
   await expect(header.locator('table td')).toHaveCount(3)
 
   await saveDraft(page, 'a header with three columns')
@@ -359,7 +365,7 @@ test('a page number is a block, and it goes in the footer', async ({ page, reque
   // Put the caret in the footer, then take the preset.
   await frame.locator('#foot').click()
   await page.keyboard.press('End')
-  await page.locator('.panel-tab', { hasText: 'Presets' }).click()
+  await openTool(page, 'Presets')
   await page.locator('.preset-card', { hasText: 'Page number' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.locator('.btn.primary').click()
@@ -385,6 +391,7 @@ test('the palette no longer offers a header or a footer', async ({ page, request
   await openTemplate(page, code)
   await enterVisual(page)
 
+  await openTool(page, 'Insert')
   const tiles = page.locator('.insert-tile')
   await expect(tiles.filter({ hasText: 'Page header' })).toHaveCount(0)
   await expect(tiles.filter({ hasText: 'Page footer' })).toHaveCount(0)

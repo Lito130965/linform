@@ -195,6 +195,37 @@ export async function inspectorTab(
   await page.locator('.side-tab', { hasText: name }).click()
 }
 
+/**
+ * Open one of the tools from the rail.
+ *
+ * A helper rather than a selector at each call site: the panel has moved once
+ * already — from a drawer under the canvas to a flyout over it — and the next
+ * rename should cost one edit rather than five.
+ */
+export async function openTool(
+  page: Page,
+  name: 'Insert' | 'Presets' | 'Assets' | 'Test data' | 'Fields',
+): Promise<void> {
+  // Asked for, not toggled: the rail button shuts the panel when it is already
+  // showing that tool, so a blind click can leave a test with nothing open.
+  const button = page.locator('.tool-button', { hasText: name })
+  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
+  await expect(page.locator('.tool-flyout')).toBeVisible()
+}
+
+/** Put the open tool away.
+ *
+ * The panel is drawn over the left of the page — that is what keeps it from
+ * re-laying the canvas out — so a test that wants to click into the document
+ * afterwards closes it first, exactly as a person would. */
+export async function closeTool(page: Page): Promise<void> {
+  const flyout = page.locator('.tool-flyout')
+  if ((await flyout.count()) > 0) {
+    await page.getByRole('button', { name: 'Close the panel' }).click()
+    await expect(flyout).toHaveCount(0)
+  }
+}
+
 /** Switch to the visual canvas and wait for the iframe document to be ready. */
 export async function enterVisual(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Visual', exact: true }).click()

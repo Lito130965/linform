@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createTemplate, enterVisual, openTemplate, uniqueCode } from './support'
+import { createTemplate, enterVisual, openTemplate, openTool, uniqueCode } from './support'
 
 /**
  * How the editor divides its width.
@@ -191,4 +191,54 @@ test('the inspector folds away, and the page grows into the space', async ({ pag
   await page.keyboard.press('Control+.')
   await expect(page.locator('.canvas-outline')).toHaveCount(1)
   await expect(zoom).toHaveText(before!)
+})
+
+test('a tool opens over the page, and the page does not move', async ({ page, request }) => {
+  // The rule the flyout exists to make structural. The bottom panel took its
+  // height out of the canvas, so opening the blocks re-laid the document out
+  // and the page jumped — at the exact moment somebody is aiming at where a
+  // block should go.
+  const code = uniqueCode('tool-flyout')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  const zoom = await page.locator('.zoom-value').textContent()
+  const before = (await frame.locator('#title').boundingBox())!
+
+  await openTool(page, 'Insert')
+  await expect(page.locator('.insert-tile').first()).toBeVisible()
+  const during = (await frame.locator('#title').boundingBox())!
+  expect(Math.abs(during.x - before.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(during.y - before.y)).toBeLessThanOrEqual(1)
+  await expect(page.locator('.zoom-value')).toHaveText(zoom!)
+
+  // Closing puts nothing back, because nothing was taken.
+  await page.getByRole('button', { name: 'Close the panel' }).click()
+  await expect(page.locator('.tool-flyout')).toHaveCount(0)
+  const after = (await frame.locator('#title').boundingBox())!
+  expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1)
+  await expect(page.locator('.zoom-value')).toHaveText(zoom!)
+})
+
+test('the chosen tool survives a reload, and none is the default', async ({ page, request }) => {
+  const code = uniqueCode('tool-memory')
+  await createTemplate(request, code, DOC)
+  await openTemplate(page, code)
+
+  // Closed to begin with: the page is what the editor is for.
+  await expect(page.locator('.tool-flyout')).toHaveCount(0)
+
+  await openTool(page, 'Presets')
+  await page.reload()
+  await openTemplate(page, code)
+  await expect(page.locator('.tool-flyout')).toContainText('Presets')
+
+  // Pressing the same button again shuts it, and that is remembered too.
+  await page.locator('.tool-button', { hasText: 'Presets' }).click()
+  await expect(page.locator('.tool-flyout')).toHaveCount(0)
+  await page.reload()
+  await openTemplate(page, code)
+  await expect(page.locator('.tool-flyout')).toHaveCount(0)
 })

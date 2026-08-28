@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import { EditorView } from '@codemirror/view'
@@ -30,6 +30,8 @@ import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 import Splitter from './Splitter'
+import ToolRail, { TOOL_LABEL, TOOL_TABS, type ToolTab } from './ToolRail'
+import ToolFlyout from './ToolFlyout'
 import Icon from './Icon'
 import { useViewportWidth } from '../layout'
 import {
@@ -39,6 +41,9 @@ import {
   setNumPref,
   PREF_PREVIEW_OPEN,
   PREF_PREVIEW_WIDTH,
+  PREF_TOOL_TAB,
+  getStringPref,
+  setStringPref,
 } from '../prefs'
 import { describeOp, type Op } from '../assistant/ops'
 import { applyEdit } from '../assistant/edit'
@@ -108,32 +113,20 @@ export default function Editor({
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [presetFor, setPresetFor] = useState<Preset | null>(null)
-  const [panelTab, setPanelTab] = useState<'insert' | 'fields' | 'presets' | 'assets' | 'data'>(
-    'insert',
-  )
+  // Which tool is open, or null for none. Remembered per browser: the panel
+  // somebody works with is a habit, not a per-document decision. Closed is a
+  // real value, and the default — the page is what the editor is for.
+  const [toolTab, setToolTab] = useState<ToolTab | null>(() => {
+    const kept = getStringPref(PREF_TOOL_TAB, 'none', [...TOOL_TABS, 'none'] as const)
+    return kept === 'none' ? null : (kept as ToolTab)
+  })
+  useEffect(() => setStringPref(PREF_TOOL_TAB, toolTab ?? 'none'), [toolTab])
   // Loops in force where the caret is, reported by the canvas. They decide
   // whether `items[].price` can be written here, and under what name.
   const [scopes, setScopes] = useState<LoopScope[]>([])
   // Names the template already uses. Extracted server-side so the parsing
   // matches the engine that will render it.
   const [placeholders, setPlaceholders] = useState<string[]>([])
-  const [panelHeight, setPanelHeight] = useState(220)
-
-  // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
-  // editor or vanishing; the value is otherwise the user's to set.
-  const startPanelResize = (e: ReactMouseEvent) => {
-    e.preventDefault()
-    const startY = e.clientY
-    const startH = panelHeight
-    const onMove = (ev: MouseEvent) =>
-      setPanelHeight(Math.max(80, Math.min(700, startH + (startY - ev.clientY))))
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -188,14 +181,15 @@ export default function Editor({
   // Fields live beside the canvas in Visual mode, where they belong next to the
   // structure. Code mode has no such column, so they get a tab here instead —
   // present exactly where they are not a second copy of something.
-  const panelTabs = (['insert', 'fields', 'presets', 'assets', 'data'] as const).filter(
+  const toolTabs = TOOL_TABS.filter(
     (t) => (t !== 'assets' || assets) && (t !== 'fields' || mode === 'code'),
   )
   useEffect(() => {
-    if (!assets && panelTab === 'assets') setPanelTab('insert')
-    // Leaving Code mode takes the Fields tab with it.
-    if (mode !== 'code' && panelTab === 'fields') setPanelTab('insert')
-  }, [assets, panelTab, mode])
+    // A tool this instance does not have must not stay open because it was
+    // open somewhere else: a demo has no asset store, and Fields has a column
+    // of its own in Visual mode.
+    if (toolTab && !toolTabs.includes(toolTab)) setToolTab(null)
+  }, [toolTab, toolTabs])
   const viewRef = useRef<EditorView | null>(null)
   const canvasApiRef = useRef<CanvasEditorApi | null>(null)
   const htmlRef = useRef('')
@@ -926,6 +920,9 @@ export default function Editor({
       )}
 
       <div className="workspace">
+        {/* Down the side, not across the bottom: height is what an A4 page is
+            short of, and width is what a 1920 screen has to spare. */}
+        <ToolRail tabs={toolTabs} open={toolTab} onOpen={setToolTab} />
         <section className="pane code-pane">
           {mode === 'code' ? (
             <CodeMirror
@@ -964,120 +961,91 @@ export default function Editor({
               }}
             />
           )}
-          <div className="bottom-panels" style={{ maxHeight: panelHeight, height: panelHeight }}>
-            <div
-              className="panel-resize"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize the bottom panel"
-              aria-valuenow={panelHeight}
-              aria-valuemin={80}
-              aria-valuemax={700}
-              tabIndex={0}
-              onMouseDown={startPanelResize}
-              onKeyDown={(e) => {
-                // Keyboard equivalent of the drag, so the panel is not
-                // mouse-only. 24px a step, the same feel as dragging.
-                if (e.key === 'ArrowUp') setPanelHeight((h) => Math.min(700, h + 24))
-                else if (e.key === 'ArrowDown') setPanelHeight((h) => Math.max(80, h - 24))
-                else return
-                e.preventDefault()
-              }}
-              title="Drag to resize"
-            />
-            <div className="panel-tabs">
-              {panelTabs.map((t) => (
-                <button
-                  key={t}
-                  className={panelTab === t ? 'panel-tab active' : 'panel-tab'}
-                  onClick={() => setPanelTab(t)}
-                >
-                  {t === 'insert'
-                    ? 'Insert'
-                    : t === 'fields'
-                      ? 'Fields'
-                    : t === 'presets'
-                      ? 'Presets'
-                      : t === 'assets'
-                        ? 'Assets'
-                        : 'Test data'}
-                </button>
-              ))}
-            </div>
-            <div className="panel-body">
-              {panelTab === 'insert' && <InsertPanel onInsert={insertBlock} />}
-              {panelTab === 'fields' && (
-                <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
-              )}
-              {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
-              {panelTab === 'assets' && <AssetsPanel key={assetsVersion} onInsert={insertText} />}
-              {panelTab === 'data' && (
-                <div className="test-data">
-                  <div className="test-data-head">
-                    <label htmlFor="test-data-json">
-                      Test data (JSON) — preview renders with it
-                    </label>
-                    {/* Made from the template, not the other way round: the
-                        fields go on the page first and the payload follows. Two
-                        buttons because they answer different questions — start
-                        again, or keep what has been adjusted and catch up. */}
-                    <span className="test-data-actions">
-                      <button
-                        className="btn small"
-                        title="Replace this with a fresh sample built from every value the template names"
-                        onClick={() => applySample(generateSample(currentHtml()))}
-                      >
-                        Generate
-                      </button>
-                      <button
-                        className="btn small"
-                        title="Keep what is here and add the values the template names that are missing"
-                        onClick={() => applySample(fillMissing(currentHtml(), testData))}
-                      >
-                        Fill in missing
-                      </button>
-                    </span>
-                  </div>
-                  <textarea
-                    id="test-data-json"
-                    spellCheck={false}
-                    value={testData}
-                    onChange={(e) => setTestData(e.target.value)}
-                  />
-                  {sampleNote && <p className="muted small">{sampleNote}</p>}
-                  {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
-                  {/* Both directions, because both fail quietly: a value the
-                      data does not carry renders as a blank that reads as a
-                      layout problem, and a spare one is usually a field renamed
-                      on one side only. Neither shows up in a preview as
-                      anything but "hmm". */}
-                  {dataCheck && (
-                    <div className="data-check">
-                      {dataCheck.missing.length > 0 && (
-                        <p className="warn">
-                          <strong>{dataCheck.missing.length}</strong> named by the template, not in
-                          the data: <code>{dataCheck.missing.slice(0, 8).join(', ')}</code>
-                          {dataCheck.missing.length > 8 && ' …'}
-                        </p>
-                      )}
-                      {dataCheck.unused.length > 0 && (
-                        <p className="muted small">
-                          <strong>{dataCheck.unused.length}</strong> in the data the template never
-                          reads: <code>{dataCheck.unused.slice(0, 8).join(', ')}</code>
-                          {dataCheck.unused.length > 8 && ' …'}
-                        </p>
-                      )}
-                      {dataCheck.missing.length === 0 && dataCheck.unused.length === 0 && (
-                        <p className="muted small">
-                          The data covers everything the template names, and nothing else.
-                        </p>
-                      )}
-                    </div>
+          {toolTab && (
+            <ToolFlyout
+              title={TOOL_LABEL[toolTab]}
+              hint={
+                toolTab === 'insert'
+                  ? 'lands beside what is selected, or inside it'
+                  : toolTab === 'data'
+                    ? 'the preview renders with it'
+                    : undefined
+              }
+              onClose={() => setToolTab(null)}
+            >
+          {toolTab === 'insert' && <InsertPanel onInsert={insertBlock} />}
+          {toolTab === 'fields' && (
+            <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
+          )}
+          {toolTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
+          {toolTab === 'assets' && <AssetsPanel key={assetsVersion} onInsert={insertText} />}
+          {toolTab === 'data' && (
+            <div className="test-data">
+              <div className="test-data-head">
+                <label htmlFor="test-data-json">
+                  Test data (JSON) — preview renders with it
+                </label>
+                {/* Made from the template, not the other way round: the
+                    fields go on the page first and the payload follows. Two
+                    buttons because they answer different questions — start
+                    again, or keep what has been adjusted and catch up. */}
+                <span className="test-data-actions">
+                  <button
+                    className="btn small"
+                    title="Replace this with a fresh sample built from every value the template names"
+                    onClick={() => applySample(generateSample(currentHtml()))}
+                  >
+                    Generate
+                  </button>
+                  <button
+                    className="btn small"
+                    title="Keep what is here and add the values the template names that are missing"
+                    onClick={() => applySample(fillMissing(currentHtml(), testData))}
+                  >
+                    Fill in missing
+                  </button>
+                </span>
+              </div>
+              <textarea
+                id="test-data-json"
+                spellCheck={false}
+                value={testData}
+                onChange={(e) => setTestData(e.target.value)}
+              />
+              {sampleNote && <p className="muted small">{sampleNote}</p>}
+              {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+              {/* Both directions, because both fail quietly: a value the
+                  data does not carry renders as a blank that reads as a
+                  layout problem, and a spare one is usually a field renamed
+                  on one side only. Neither shows up in a preview as
+                  anything but "hmm". */}
+              {dataCheck && (
+                <div className="data-check">
+                  {dataCheck.missing.length > 0 && (
+                    <p className="warn">
+                      <strong>{dataCheck.missing.length}</strong> named by the template, not in
+                      the data: <code>{dataCheck.missing.slice(0, 8).join(', ')}</code>
+                      {dataCheck.missing.length > 8 && ' …'}
+                    </p>
+                  )}
+                  {dataCheck.unused.length > 0 && (
+                    <p className="muted small">
+                      <strong>{dataCheck.unused.length}</strong> in the data the template never
+                      reads: <code>{dataCheck.unused.slice(0, 8).join(', ')}</code>
+                      {dataCheck.unused.length > 8 && ' …'}
+                    </p>
+                  )}
+                  {dataCheck.missing.length === 0 && dataCheck.unused.length === 0 && (
+                    <p className="muted small">
+                      The data covers everything the template names, and nothing else.
+                    </p>
                   )}
                 </div>
               )}
             </div>
-          </div>
+          )}
+            </ToolFlyout>
+          )}
         </section>
 
         {previewOpen ? (
