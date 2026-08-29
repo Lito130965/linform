@@ -24,6 +24,9 @@
      than for the theme. */
   --paper: #ffffff;
   --paper-ink-muted: #6b7280;
+  /* The lines the canvas draws over a page while something is moved. */
+  --guide-moving: #e2467a;
+  --guide-snap: #2fbf71;
   color-scheme: dark;
 }
 
@@ -1923,31 +1926,50 @@ label {
 /* The line a drag has landed on. Drawn only while it holds it: a guide that
    stays is clutter, a guide that appears at the moment of contact is an
    explanation. */
+/* ---- three kinds of line, three colours ----
+
+   The canvas draws a lot of lines while something is being moved, and they mean
+   different things: the millimetre grid is the paper's own ruling, one pair of
+   lines is where the block IS, and the rest are what it could land on. All
+   three were blue, so telling them apart meant watching which one moved with
+   the pointer. Now:
+
+     blue   — the grid, which belongs to the page rather than to the gesture
+     red    — the block being moved, both ends of both axes
+     green  — something to line up with: faint while it is near, solid when it
+              is caught, and heavier when it is a page margin or a page break,
+              which are stronger statements than another block's edge
+
+   Every one of them goes when the mouse comes up. */
 .snap-guide {
   position: absolute;
   z-index: 10;
   pointer-events: none;
-  background: var(--accent);
+  background: var(--guide-snap);
 }
 
-/* A page margin or a page break is a stronger statement than another element's
-   edge, and a stronger one still than the grid — so it reads that way. */
 .snap-guide.page {
-  background: #e2467a;
-  box-shadow: 0 0 0 0.5px #e2467a;
+  box-shadow: 0 0 0 0.5px var(--guide-snap);
 }
 
 .snap-guide.grid {
-  opacity: 0.5;
+  background: var(--accent);
+  opacity: 0.6;
 }
 
-/* What could be lined up with, while a spacing value is being changed. Faint on
-   purpose: these are candidates, and the one actually caught is drawn over them
-   at full strength. */
+/* Where the block is now. Drawn over the grid and under the line it catches:
+   the catch is the answer, this is the question. */
+.snap-guide.moving {
+  z-index: 11;
+  background: var(--guide-moving);
+  opacity: 0.9;
+}
+
+/* Something within reach. Faint on purpose — a candidate, not a decision. */
 .snap-guide.hint {
   z-index: 9;
-  background: var(--accent);
-  opacity: 0.22;
+  background: var(--guide-snap);
+  opacity: 0.35;
 }
 
 /* The measurement beside the cursor. Fixed, because it follows the pointer

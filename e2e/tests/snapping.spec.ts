@@ -116,7 +116,11 @@ test('holding alt drags past the margin instead of onto it', async ({ page, requ
   const from = await cellRight(frame)
   const finish = await dragColumnEdge(page, frame, margin - from - 3, true)
 
-  await expect(page.locator('.snap-guide')).toHaveCount(0)
+  // Nothing was CAUGHT: the lines that remain are the block's own edges, which
+  // say where it is rather than what it landed on, and with Alt held there are
+  // no targets drawn at all.
+  await expect(page.locator('.snap-guide:not(.moving):not(.hint)')).toHaveCount(0)
+  await expect(page.locator('.snap-guide.hint')).toHaveCount(0)
   await finish()
 
   const landed = await cellRight(frame)
@@ -139,4 +143,43 @@ test('the drag says how big it is, in millimetres', async ({ page, request }) =>
 
   // It belongs to the gesture, so it goes when the gesture does.
   await expect(readout).toHaveCount(0)
+})
+
+test('a drag draws three kinds of line, and leaves none behind', async ({ page, request }) => {
+  // The canvas draws a lot of lines while something is moved, and they mean
+  // different things: the grid is the paper's ruling, one pair is where the
+  // block IS, the rest are what it could land on. All three were the same blue,
+  // so telling them apart meant watching which one moved with the pointer.
+  const code = uniqueCode('guide-colours')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 20mm }</style>\n' +
+      '<div id="anchor" style="width: 63.7mm; height: 12mm; background: #eee"></div>\n' +
+      '<img id="mark" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" ' +
+      'style="position: absolute; left: 10mm; top: 60mm; width: 30mm; height: 20mm">\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  await frame.locator('#mark').click()
+  const start = (await frame.locator('#mark').boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  // Up and to the left, towards the block above it.
+  await page.mouse.move(start.x + start.width / 2 - 40, start.y + start.height / 2 - 120, {
+    steps: 12,
+  })
+
+  // Both ends of both axes, in the colour of the thing being moved.
+  await expect(page.locator('.snap-guide.moving')).toHaveCount(4)
+  // And the grid, which belongs to the page rather than to the gesture.
+  await expect(page.locator('.canvas-grid')).toHaveCount(1)
+
+  await page.mouse.up()
+
+  // Nothing is left drawn on a page that does not have it.
+  await expect(page.locator('.snap-guide')).toHaveCount(0)
+  await expect(page.locator('.canvas-grid')).toHaveCount(0)
 })

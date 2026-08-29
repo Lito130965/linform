@@ -505,6 +505,12 @@ export default function CanvasEditor({
   // could line up with, which is the question somebody nudging a margin is
   // actually asking.
   const [hintLines, setHintLines] = useState<{ axis: 'x' | 'y'; at: number }[]>([])
+  // The edges of the thing being moved, both ends of both axes, drawn while
+  // it moves. Three colours, three meanings: the millimetre grid is the
+  // paper's own ruling, these are where the block is NOW, and the guides are
+  // what it could land on. Told apart at a glance rather than by watching
+  // which line moves with the pointer.
+  const [movingLines, setMovingLines] = useState<{ axis: 'x' | 'y'; at: number }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
   const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
   // Typing at the caret offers something: `{{` the fields, `/` the blocks. Held
@@ -958,6 +964,11 @@ export default function CanvasEditor({
     setGuides([])
     setReadout(null)
     setMoveDrop(null)
+    // Everything the gesture drew goes with it: a guide left on the page
+    // after the mouse is up is a line the document does not have.
+    setMovingLines([])
+    setHintLines([])
+    dragLines.current = { x: [], y: [] }
   }
 
   const startDrag = (spec: {
@@ -1940,7 +1951,63 @@ export default function CanvasEditor({
       rects.push({ left: box.left, right: box.right, top: box.top, bottom: box.bottom })
       if (rects.length >= 300) break
     }
-    return lines.concat(edgeLines(rects, axis))
+    const all = lines.concat(edgeLines(rects, axis))
+    // Kept for the trace below: it needs the same lines the snap uses, and
+    // gathering them twice would read the page's geometry twice.
+    dragLines.current[axis] = all
+    return all
+  }
+
+  const dragLines = useRef<{ x: SnapLine[]; y: SnapLine[] }>({ x: [], y: [] })
+
+  /** How near a target has to be before it is worth drawing. Wider than the
+   * snap itself, so a line appears as the block approaches rather than at the
+   * moment it is already caught — which is too late to aim by. */
+  const NEAR_SCREEN_PX = 24
+
+  /**
+   * Draw where the moved block is, and what it is coming near.
+   *
+   * Called after each move has been applied rather than before: the question
+   * is where the block ACTUALLY is, and only the layout knows that.
+   */
+  const traceDrag = (el: Element | null, altKey = false): void => {
+    if (!el) {
+      setMovingLines([])
+      setHintLines([])
+      return
+    }
+    const box = el.getBoundingClientRect()
+    const edges = {
+      x: [box.left, box.right],
+      y: [box.top, box.bottom],
+    }
+    setMovingLines([
+      { axis: 'x', at: box.left },
+      { axis: 'x', at: box.right },
+      { axis: 'y', at: box.top },
+      { axis: 'y', at: box.bottom },
+    ])
+    // Alt refuses snapping for as long as it is held, so there is nothing to
+    // line up with: drawing targets then would be the canvas offering
+    // something it has just been told not to do.
+    if (altKey) {
+      setHintLines([])
+      return
+    }
+    const near = NEAR_SCREEN_PX / zoomRef.current
+    const shown: { axis: 'x' | 'y'; at: number }[] = []
+    const seen = new Set<string>()
+    for (const axis of ['x', 'y'] as const) {
+      for (const line of dragLines.current[axis]) {
+        if (!edges[axis].some((edge) => Math.abs(line.at - edge) <= near)) continue
+        const key = `${axis}:${Math.round(line.at)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        shown.push({ axis, at: line.at })
+      }
+    }
+    setHintLines(shown)
   }
 
   /** Snap one edge, and remember the line to draw. `keepOther` is for a corner
@@ -2100,6 +2167,7 @@ export default function CanvasEditor({
         const edge = snapEdge(box.right + (ev.clientX - startX) / zoom, lines, 'x', ev.altKey)
         const width = Math.max(8, edge - box.left)
         settleEdge(cell, edge, 'x', width, (px) => setColumnWidth(cell, `${px}px`))
+        traceDrag(cell, ev.altKey)
         readOut(ev, `${toMm(width)} mm wide`)
         setTick((t) => t + 1)
       },
@@ -2119,6 +2187,7 @@ export default function CanvasEditor({
         const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
         const height = Math.max(8, edge - box.top)
         settleEdge(cell, edge, 'y', height, (px) => setRowHeight(cell, `${px}px`))
+        traceDrag(cell, ev.altKey)
         readOut(ev, `${toMm(height)} mm tall`)
         setTick((t) => t + 1)
       },
@@ -2158,6 +2227,7 @@ export default function CanvasEditor({
           : asked
         settleEdge(el, box.left + width, 'x', width, (px) => (el.style.width = `${px}px`))
         settleEdge(el, box.top + height, 'y', height, (px) => (el.style.height = `${px}px`))
+        traceDrag(el, ev.altKey)
         readOut(ev, `${toMm(width)} × ${toMm(height)} mm${ev.shiftKey ? ' · proportional' : ''}`)
         setTick((t) => t + 1)
       },
@@ -2266,6 +2336,7 @@ export default function CanvasEditor({
         const top = snapEdge(box.top + moved.dy, linesY, 'y', ev.altKey, true)
         el.style.left = `${Math.round(startLeft + (left - box.left))}px`
         el.style.top = `${Math.round(startTop + (top - box.top))}px`
+        traceDrag(el, ev.altKey)
         readOut(
           ev,
           `${toMm(left)} × ${toMm(top)} mm from the sheet corner${ev.shiftKey ? ' · one axis' : ''}`,
@@ -2814,6 +2885,18 @@ export default function CanvasEditor({
             )}
             {/* What is there to line up with, faintly, while a value is being
                 changed — and then the one it actually caught, brightly. */}
+            {movingLines.map((line, i) => (
+              <div
+                key={`moving${i}`}
+                aria-hidden="true"
+                className="snap-guide moving"
+                style={
+                  line.axis === 'x'
+                    ? { left: line.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
+                    : { top: line.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                }
+              />
+            ))}
             {hintLines.map((line, i) => (
               <div
                 key={`hint${i}`}
