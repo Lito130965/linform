@@ -1951,11 +1951,20 @@ export default function CanvasEditor({
       rects.push({ left: box.left, right: box.right, top: box.top, bottom: box.bottom })
       if (rects.length >= 300) break
     }
-    const all = lines.concat(edgeLines(rects, axis))
-    // Kept for the trace below: it needs the same lines the snap uses, and
-    // gathering them twice would read the page's geometry twice.
-    dragLines.current[axis] = all
-    return all
+    return lines.concat(edgeLines(rects, axis))
+  }
+
+  /** Both axes at once, and read afresh.
+   *
+   * Gathered once per gesture before, which was wrong twice: a resize
+   * reflows the document, so every target moved while the cached copy said
+   * they had not — and the lines drawn from that copy were of a page that no
+   * longer existed. Reading them per move costs one walk of the page, which
+   * is the same walk the drag has already forced by moving something. */
+  const snapLinesBoth = (dragged: Element | null): { x: SnapLine[]; y: SnapLine[] } => {
+    const both = { x: snapLinesFor('x', dragged), y: snapLinesFor('y', dragged) }
+    dragLines.current = both
+    return both
   }
 
   const dragLines = useRef<{ x: SnapLine[]; y: SnapLine[] }>({ x: [], y: [] })
@@ -1995,16 +2004,28 @@ export default function CanvasEditor({
       setHintLines([])
       return
     }
+    // The NEAREST candidate to each moving edge, and nothing else: at most
+    // four lines on the page. The first version drew every line within
+    // reach, which on a form of forty rows is a second grid — a screen of
+    // hairlines that says nothing about which one you are approaching.
     const near = NEAR_SCREEN_PX / zoomRef.current
     const shown: { axis: 'x' | 'y'; at: number }[] = []
     const seen = new Set<string>()
     for (const axis of ['x', 'y'] as const) {
-      for (const line of dragLines.current[axis]) {
-        if (!edges[axis].some((edge) => Math.abs(line.at - edge) <= near)) continue
-        const key = `${axis}:${Math.round(line.at)}`
+      for (const edge of edges[axis]) {
+        let best: SnapLine | null = null
+        let bestDistance = near
+        for (const line of dragLines.current[axis]) {
+          const distance = Math.abs(line.at - edge)
+          if (distance > bestDistance) continue
+          best = line
+          bestDistance = distance
+        }
+        if (!best) continue
+        const key = `${axis}:${Math.round(best.at)}`
         if (seen.has(key)) continue
         seen.add(key)
-        shown.push({ axis, at: line.at })
+        shown.push({ axis, at: best.at })
       }
     }
     setHintLines(shown)
@@ -2157,13 +2178,13 @@ export default function CanvasEditor({
     const cell = selected.el as HTMLElement
     const box = cell.getBoundingClientRect()
     const startX = e.clientX
-    const lines = snapLinesFor('x', cell)
     startDrag({
       cursor: 'col-resize',
       onMove: (ev) => {
         // The thing being dragged is the column's right EDGE, so that is what
         // is offered to the page margins and to the columns above it. A width
         // has nothing to line up with.
+        const lines = snapLinesBoth(cell).x
         const edge = snapEdge(box.right + (ev.clientX - startX) / zoom, lines, 'x', ev.altKey)
         const width = Math.max(8, edge - box.left)
         settleEdge(cell, edge, 'x', width, (px) => setColumnWidth(cell, `${px}px`))
@@ -2180,10 +2201,10 @@ export default function CanvasEditor({
     const cell = selected.el as HTMLElement
     const box = cell.getBoundingClientRect()
     const startY = e.clientY
-    const lines = snapLinesFor('y', cell)
     startDrag({
       cursor: 'row-resize',
       onMove: (ev) => {
+        const lines = snapLinesBoth(cell).y
         const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
         const height = Math.max(8, edge - box.top)
         settleEdge(cell, edge, 'y', height, (px) => setRowHeight(cell, `${px}px`))
@@ -2203,11 +2224,10 @@ export default function CanvasEditor({
     const box = el.getBoundingClientRect()
     const startX = e.clientX
     const startY = e.clientY
-    const linesX = snapLinesFor('x', el)
-    const linesY = snapLinesFor('y', el)
     startDrag({
       cursor: 'nwse-resize',
       onMove: (ev) => {
+        const { x: linesX, y: linesY } = snapLinesBoth(el)
         const right = snapEdge(box.right + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
         const bottom = snapEdge(
           box.bottom + (ev.clientY - startY) / zoom,
@@ -2321,11 +2341,10 @@ export default function CanvasEditor({
     // positions it; the snap lines are in the canvas's own coordinates, so the
     // move is worked out as a delta between the two.
     const box = el.getBoundingClientRect()
-    const linesX = snapLinesFor('x', el)
-    const linesY = snapLinesFor('y', el)
     startDrag({
       cursor: 'move',
       onMove: (ev) => {
+        const { x: linesX, y: linesY } = snapLinesBoth(el)
         // Shift holds it to one axis: nudging something sideways without
         // losing the vertical placement it already had is most of what moving
         // a stamp or a logo is.
@@ -2889,11 +2908,11 @@ export default function CanvasEditor({
               <div
                 key={`moving${i}`}
                 aria-hidden="true"
-                className="snap-guide moving"
+                className={`snap-guide moving ${line.axis === 'x' ? 'vertical' : 'horizontal'}`}
                 style={
                   line.axis === 'x'
-                    ? { left: line.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
-                    : { top: line.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                    ? { left: line.at * zoom - 1, top: 0, height: sheetHeight * zoom }
+                    : { top: line.at * zoom - 1, left: 0, width: (pageWidth ?? 0) * zoom }
                 }
               />
             ))}
@@ -2901,11 +2920,11 @@ export default function CanvasEditor({
               <div
                 key={`hint${i}`}
                 aria-hidden="true"
-                className="snap-guide hint"
+                className={`snap-guide hint ${line.axis === 'x' ? 'vertical' : 'horizontal'}`}
                 style={
                   line.axis === 'x'
-                    ? { left: line.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
-                    : { top: line.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                    ? { left: line.at * zoom - 1, top: 0, height: sheetHeight * zoom }
+                    : { top: line.at * zoom - 1, left: 0, width: (pageWidth ?? 0) * zoom }
                 }
               />
             ))}
@@ -2913,11 +2932,13 @@ export default function CanvasEditor({
                 <div
                   key={i}
                   aria-hidden="true"
-                  className={`snap-guide ${guide.kind}`}
+                  className={`snap-guide caught ${guide.kind} ${
+                    guide.axis === 'x' ? 'vertical' : 'horizontal'
+                  }`}
                   style={
                     guide.axis === 'x'
-                      ? { left: guide.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
-                      : { top: guide.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                      ? { left: guide.at * zoom - 1.5, top: 0, height: sheetHeight * zoom }
+                      : { top: guide.at * zoom - 1.5, left: 0, width: (pageWidth ?? 0) * zoom }
                   }
                 />
               ))}

@@ -177,6 +177,19 @@ test('a drag draws three kinds of line, and leaves none behind', async ({ page, 
   // And the grid, which belongs to the page rather than to the gesture.
   await expect(page.locator('.canvas-grid')).toHaveCount(1)
 
+  // At most one target per moving edge, and only while it is near one. The
+  // first version drew every line within reach, which on a page of forty rows
+  // is a second grid: a screen of hairlines that says nothing about which one
+  // you are approaching.
+  expect(await page.locator('.snap-guide.hint').count()).toBeLessThanOrEqual(4)
+
+  // Thick enough to be read over the grid rather than lost in it.
+  const width = await page
+    .locator('.snap-guide.moving.vertical')
+    .first()
+    .evaluate((el) => getComputedStyle(el).width)
+  expect(parseFloat(width)).toBeGreaterThanOrEqual(2)
+
   await page.mouse.up()
 
   // Nothing is left drawn on a page that does not have it.

@@ -1948,28 +1948,60 @@ label {
   background: var(--guide-snap);
 }
 
+/* Thick enough to be a line rather than a hair. The grid is a mesh of 5mm
+   squares behind all of this, and a 1px guide of any colour disappears into it
+   — reported exactly that way: "different colours, but they blend". Each of
+   these is 2px, the caught one 3px, and the grid stays thin and faint because
+   it is the background they are read against. */
+.snap-guide.vertical {
+  width: 2px;
+}
+
+.snap-guide.horizontal {
+  height: 2px;
+}
+
+.snap-guide.caught.vertical {
+  width: 3px;
+}
+
+.snap-guide.caught.horizontal {
+  height: 3px;
+}
+
+/* A page margin or a page break is a stronger statement than another block's
+   edge — said with a glow rather than another colour, so the three colours go
+   on meaning three things. */
 .snap-guide.page {
-  box-shadow: 0 0 0 0.5px var(--guide-snap);
+  box-shadow: 0 0 4px 1px var(--guide-snap);
 }
 
 .snap-guide.grid {
   background: var(--accent);
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
-/* Where the block is now. Drawn over the grid and under the line it catches:
-   the catch is the answer, this is the question. */
+/* Where the block is now. Over the grid and under the line it catches: the
+   catch is the answer, this is the question. */
 .snap-guide.moving {
   z-index: 11;
   background: var(--guide-moving);
-  opacity: 0.9;
 }
 
-/* Something within reach. Faint on purpose — a candidate, not a decision. */
+/* Something within reach: a candidate, not a decision. Dashed rather than
+   faint, so it is still readable over the grid while plainly not the answer. */
 .snap-guide.hint {
   z-index: 9;
-  background: var(--guide-snap);
-  opacity: 0.35;
+  background: none;
+  opacity: 0.85;
+}
+
+.snap-guide.hint.vertical {
+  border-left: 2px dashed var(--guide-snap);
+}
+
+.snap-guide.hint.horizontal {
+  border-top: 2px dashed var(--guide-snap);
 }
 
 /* The measurement beside the cursor. Fixed, because it follows the pointer
@@ -2013,12 +2045,12 @@ label {
   background-image:
     repeating-linear-gradient(
       to right,
-      rgba(120, 150, 200, 0.55) 0 1px,
+      rgba(120, 150, 200, 0.38) 0 1px,
       transparent 1px var(--grid-major)
     ),
     repeating-linear-gradient(
       to bottom,
-      rgba(120, 150, 200, 0.55) 0 1px,
+      rgba(120, 150, 200, 0.38) 0 1px,
       transparent 1px var(--grid-major)
     ),
     repeating-linear-gradient(
