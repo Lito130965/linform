@@ -22,10 +22,9 @@ export default function FieldsPanel({
 }) {
   return (
     <div className="fields-panel">
-      <h2 className="panel-heading">
-        Fields
-        <span className="muted"> — click one, or type {'{{'} in the canvas</span>
-      </h2>
+      {/* The hint without the title: whatever shows this panel — the tool
+          flyout, the inspector's tab — has already named it. */}
+      <p className="muted panel-hint">Click one, or type {'{{'} in the canvas</p>
       {rows.length === 0 ? (
         <p className="muted">
           Nothing to offer yet. Put a sample payload in <strong>Test data</strong> and its keys

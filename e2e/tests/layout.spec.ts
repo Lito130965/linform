@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { createTemplate, enterVisual, openTemplate, openTool, uniqueCode } from './support'
+import {
+  createTemplate,
+  enterVisual,
+  exampleHtml,
+  openTemplate,
+  openTool,
+  uniqueCode,
+} from './support'
 
 /**
  * How the editor divides its width.
@@ -267,3 +274,34 @@ test('fit page shows the whole sheet, where fit width shows the top of it', asyn
   expect(whole.width).toBeLessThan(wide.width)
 })
 
+
+test('inserting a block leaves everything above it where it was', async ({ page, request }) => {
+  // Reported from the test server, on the report example: open Insert, take a
+  // Text block, and the whole document jumped down 174 px.
+  //
+  // A running header or footer is a body child like any other, but it is drawn
+  // in a margin band by absolute position — so its rectangle sits in that band,
+  // which reads as "overflowing its page" every time the document grows. The
+  // spacer that answered that went before an element nothing follows in flow,
+  // and pushed the page down instead.
+  const code = uniqueCode('insert-shift')
+  await createTemplate(request, code, exampleHtml('report'))
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  const sheet = async () => (await page.locator(CANVAS).boundingBox())!
+  const titleY = async () => {
+    const box = (await frame.locator('h1').first().boundingBox())!
+    return box.y - (await sheet()).y
+  }
+
+  const before = await titleY()
+  await openTool(page, 'Insert')
+  await page.locator('.insert-tile', { hasText: 'Text' }).click()
+  await expect(frame.locator('body > p').last()).toBeVisible()
+
+  expect(Math.abs((await titleY()) - before)).toBeLessThanOrEqual(1)
+  // And nothing was pushed by a spacer that should never have been there.
+  await expect(frame.locator('[data-lf-spacer]')).toHaveCount(0)
+})

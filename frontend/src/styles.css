@@ -3363,3 +3363,10 @@ body.focus-mode .sidebar {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* A panel's own one-line hint, where the frame around it has already said what
+   it is. */
+.panel-hint {
+  display: block;
+  margin: 0 0 8px;
+}

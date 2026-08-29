@@ -25,6 +25,18 @@ export const TOOL_LABEL: Record<ToolTab, string> = {
   fields: 'Fields',
 }
 
+/** One line under each tool's name, in the panel that opens. Here rather than
+ * inside each panel: the panels are shown in more than one place, and a title
+ * printed by both the frame and its contents reads as a stutter — which is
+ * exactly how it looked. */
+export const TOOL_HINT: Record<ToolTab, string | undefined> = {
+  insert: 'lands beside what is selected, or inside it',
+  presets: 'ready-made Jinja, configured before it lands',
+  assets: 'logos, backgrounds and fonts kept by this instance',
+  data: 'the preview renders with it',
+  fields: undefined,
+}
+
 const TOOL_ICON: Record<ToolTab, IconName> = {
   insert: 'plus-square',
   presets: 'layers',

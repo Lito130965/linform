@@ -18,7 +18,6 @@ export default function PresetPanel({ onInsert }: { onInsert: (preset: Preset) =
   return (
     <div className="preset-panel">
       <div className="preset-head">
-        <h2 className="panel-heading">Presets</h2>
         <button className="btn small" onClick={() => setAdding((v) => !v)}>
           {adding ? 'Close' : '+ Add'}
         </button>

@@ -225,8 +225,18 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
   // it, and every rect read here is read after the shifts above it have already
   // happened. That is what keeps this from needing to know how much it has
   // inserted, and from feeding its own output back into the next pass.
+  const view = doc.defaultView
   for (const child of Array.from(body.children)) {
     if (child.hasAttribute('data-lf-spacer')) continue
+    // Only what is IN the flow. A running header or footer is a body child
+    // like any other, but it is drawn in a margin band by absolute position —
+    // so its rectangle sits in the band it was put in, which reads as
+    // "overflowing its page" every time. The spacer that answered that was
+    // inserted before an element nothing follows in flow, and pushed the whole
+    // document down instead: reported as "the blocks above moved down" the
+    // moment a paragraph was added to a template with a footer.
+    const position = view?.getComputedStyle(child).position ?? 'static'
+    if (position === 'absolute' || position === 'fixed') continue
     const rect = child.getBoundingClientRect()
     if (rect.height === 0) continue
     if (!overflowsItsPage(rect.top, rect.height, geom)) continue

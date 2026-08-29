@@ -30,7 +30,7 @@ import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
 import Splitter from './Splitter'
-import ToolRail, { TOOL_LABEL, TOOL_TABS, type ToolTab } from './ToolRail'
+import ToolRail, { TOOL_HINT, TOOL_LABEL, TOOL_TABS, type ToolTab } from './ToolRail'
 import ToolFlyout from './ToolFlyout'
 import Icon from './Icon'
 import { layoutFor, useViewportWidth } from '../layout'
@@ -1058,13 +1058,7 @@ export default function Editor({
           {toolTab && (
             <ToolFlyout
               title={TOOL_LABEL[toolTab]}
-              hint={
-                toolTab === 'insert'
-                  ? 'lands beside what is selected, or inside it'
-                  : toolTab === 'data'
-                    ? 'the preview renders with it'
-                    : undefined
-              }
+              hint={TOOL_HINT[toolTab]}
               onClose={() => setToolTab(null)}
             >
           {toolTab === 'insert' && <InsertPanel onInsert={insertBlock} />}
