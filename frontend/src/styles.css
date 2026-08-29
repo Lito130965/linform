@@ -18,6 +18,12 @@
   --red: #e5534b;
   --shadow: rgba(0, 0, 0, 0.5);
   --canvas-shell: #14151a;
+  /* The sheet, and ink that reads on it. The same in every theme: a printed
+     page is white whatever the editor around it looks like, so anything drawn
+     ON the page — a margin band, its label — must be coloured for paper rather
+     than for the theme. */
+  --paper: #ffffff;
+  --paper-ink-muted: #6b7280;
   color-scheme: dark;
 }
 
@@ -1935,6 +1941,15 @@ label {
   opacity: 0.5;
 }
 
+/* What could be lined up with, while a spacing value is being changed. Faint on
+   purpose: these are candidates, and the one actually caught is drawn over them
+   at full strength. */
+.snap-guide.hint {
+  z-index: 9;
+  background: var(--accent);
+  opacity: 0.22;
+}
+
 /* The measurement beside the cursor. Fixed, because it follows the pointer
    rather than the sheet. */
 .drag-readout {
@@ -2767,9 +2782,111 @@ label {
   gap: 6px;
 }
 
-.border-sides .tb {
-  min-width: 22px;
-  padding: 2px 5px;
+/* The side picker: a square, with a strip to press along each edge and one
+   button in the middle for all four. Sized to be hit with a pointer without
+   taking a row of the panel. */
+.border-picker {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+}
+
+.border-side,
+.border-all {
+  position: absolute;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* The strip is the target; the line inside it is what the strip means, so a
+   1px rule stays clickable. */
+.border-side > span,
+.border-all > span {
+  display: block;
+  background: var(--text-muted);
+  border-radius: 1px;
+}
+
+.border-side.top,
+.border-side.bottom {
+  left: 9px;
+  right: 9px;
+  height: 12px;
+}
+
+.border-side.left,
+.border-side.right {
+  top: 9px;
+  bottom: 9px;
+  width: 12px;
+}
+
+.border-side.top {
+  top: 0;
+}
+.border-side.bottom {
+  bottom: 0;
+}
+.border-side.left {
+  left: 0;
+}
+.border-side.right {
+  right: 0;
+}
+
+.border-side.top > span,
+.border-side.bottom > span {
+  height: 2px;
+  margin-top: 5px;
+}
+
+.border-side.left > span,
+.border-side.right > span {
+  width: 2px;
+  height: 100%;
+  margin-left: 5px;
+}
+
+/* A side that is actually ruled says so, so the square answers "which edges
+   have a border" as well as "which am I changing". */
+.border-side.ruled > span {
+  background: var(--text);
+}
+
+.border-side.chosen > span,
+.border-picker:has(.border-all.chosen) .border-side > span {
+  background: var(--accent);
+}
+
+.border-all {
+  left: 13px;
+  top: 13px;
+  width: 20px;
+  height: 20px;
+}
+
+.border-all > span {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--text-muted);
+  background: none;
+  border-radius: 2px;
+}
+
+.border-all.chosen > span {
+  border-color: var(--accent);
+}
+
+.border-side:focus-visible,
+.border-all:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .border-control select {
@@ -2867,16 +2984,23 @@ label {
 /* The bands a header and a footer occupy on every page. Filled, because this
    is paper margin rather than page content: anything drawn here would be
    overprinting the furniture. */
+/* The band between two sheets is the page MARGIN, and a margin is paper. It
+   was painted with the shell colour, which in the dark theme is nearly black —
+   so a running footer, printed in the document's own dark ink, was drawn dark
+   on dark and could not be read at all. Reported from the test server, and
+   visible on any header or footer in that theme.
+
+   Paper here, therefore, with its own label in an ink that survives on it: the
+   band shows what prints, so it has to look like what it prints on. */
 .sheet-band {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding-right: 6px;
-  background: var(--canvas-shell);
-  color: var(--text-muted);
+  background: var(--paper);
+  color: var(--paper-ink-muted);
   font: 9px/1 system-ui, sans-serif;
   letter-spacing: 0.3px;
-  opacity: 0.92;
 }
 
 .sheet-band.foot {

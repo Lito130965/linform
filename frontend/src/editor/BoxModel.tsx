@@ -29,6 +29,7 @@ export default function BoxModel({
   onApply,
   onAdjusting,
   onGesture,
+  onSettle,
 }: {
   /** the selected element, read for both its inline and its computed values */
   el: HTMLElement
@@ -47,6 +48,11 @@ export default function BoxModel({
    * separate from the above, since a value typed and confirmed is a decision of
    * its own and deserves a step of its own */
   onGesture: (active: boolean) => void
+  /** Offered a value that has just been applied, and answers with the one
+   * to keep. The canvas uses it to pull an edge onto a line it is near —
+   * the same lines a drag snaps to, at the same distance on screen. It
+   * returns what it was given when nothing was in reach. */
+  onSettle?: (property: string, mm: number) => number
 }) {
   const computed = view.getComputedStyle(el)
   // What is in the boxes while they are being typed in. Committed values leave
@@ -86,6 +92,9 @@ export default function BoxModel({
   }
 
   const nudge = (property: string, by: number): void => {
+    // Deliberately not settled. An arrow key is somebody asking for exactly
+    // one step, and a snap that quietly turned 5 into 4.8 would make the key
+    // useless for the one job it has.
     const next = Math.round((currentMm(property) + by) * 10) / 10
     setTyping((all) => ({ ...all, [property]: String(next) }))
     onApply(property, `${next}mm`)
@@ -105,9 +114,14 @@ export default function BoxModel({
       e.preventDefault()
       // Half a millimetre per pixel: fine enough to land on a value, coarse
       // enough to cross a page margin without dragging across the room.
-      const next = Math.round((active.from + dx * 0.5) * 10) / 10
+      const asked = Math.round((active.from + dx * 0.5) * 10) / 10
+      onApply(active.property, `${asked}mm`)
+      // Applied first, then settled: what the canvas needs in order to snap
+      // is where this value actually put the edge, which only the layout
+      // knows. The same order the drag handles use.
+      const next = onSettle ? onSettle(active.property, asked) : asked
+      if (next !== asked) onApply(active.property, `${next}mm`)
       setTyping((all) => ({ ...all, [active.property]: String(next) }))
-      onApply(active.property, `${next}mm`)
     }
     const up = () => {
       const active = scrub.current

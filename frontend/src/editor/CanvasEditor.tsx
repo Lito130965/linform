@@ -500,6 +500,11 @@ export default function CanvasEditor({
   const hoverRef = useRef<Element | null>(null)
   // Lines a drag has landed on, drawn while it holds them.
   const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
+  // Everything it COULD land on, drawn faintly while a spacing value is being
+  // adjusted. The ruler alone says how far something moved; these say what it
+  // could line up with, which is the question somebody nudging a margin is
+  // actually asking.
+  const [hintLines, setHintLines] = useState<{ axis: 'x' | 'y'; at: number }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
   const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
   // Typing at the caret offers something: `{{` the fields, `/` the blocks. Held
@@ -1959,6 +1964,95 @@ export default function CanvasEditor({
     return snapped
   }
 
+  /**
+   * Pull a spacing value onto a line the edge it moves is near.
+   *
+   * The same lines a drag snaps to — page margins, page breaks, the edges and
+   * centres of every other block — and the same distance on screen, so the pull
+   * feels identical whether the sheet is at 40 % or at 100 %. Until now
+   * scrubbing a margin was the one way to move something that had no help at
+   * all: the ruler appeared, and nothing to line up against.
+   *
+   * How a property moves an edge is LEARNED rather than encoded. `margin-top`
+   * moves the top edge down; `padding-left` moves the content but not the box;
+   * `margin-bottom` on a block in flow moves nothing of its own at all. Writing
+   * those rules down would be keeping a copy of the box model in this file, so
+   * instead the first change of a gesture is measured: how far the edge moved
+   * per millimetre asked for. A property that moves nothing has a ratio of zero
+   * and is left alone.
+   */
+  const spacingGesture = useRef<{
+    property: string
+    startEdge: number
+    startMm: number
+    lines: { x: SnapLine[]; y: SnapLine[] }
+  } | null>(null)
+
+  const edgeFor = (rect: DOMRect, property: string): number => {
+    if (property.includes('top')) return rect.top
+    if (property.includes('left')) return rect.left
+    if (property.includes('right') || property === 'width') return rect.right
+    return rect.bottom
+  }
+
+  /** The lines worth showing: every page edge, break and block edge, with
+   * duplicates dropped — a cell edge and its row's edge are one line to the
+   * eye — and capped, because a page of forty rows has hundreds of them and a
+   * screen full of hairlines helps nobody. */
+  const showLines = (el: HTMLElement): void => {
+    const seen = new Set<string>()
+    const out: { axis: 'x' | 'y'; at: number }[] = []
+    for (const axis of ['x', 'y'] as const) {
+      for (const line of snapLinesFor(axis, el)) {
+        const key = `${axis}:${Math.round(line.at)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({ axis, at: line.at })
+        if (out.length >= 80) break
+      }
+    }
+    setHintLines(out)
+  }
+
+  const settleSpacing = (property: string, mm: number): number => {
+    const body = bodyRef.current
+    const el = selected?.el as HTMLElement | undefined
+    if (!body || !el) return mm
+    const axis: 'x' | 'y' = /top|bottom|height/.test(property) ? 'y' : 'x'
+    const edge = edgeFor(el.getBoundingClientRect(), property)
+
+    let gesture = spacingGesture.current
+    if (!gesture || gesture.property !== property) {
+      // Gathered once per gesture: this reads the geometry of every element on
+      // the page, and a target that moves while you reach for it is worse than
+      // no target.
+      gesture = {
+        property,
+        startEdge: edge,
+        startMm: mm,
+        lines: { x: snapLinesFor('x', el), y: snapLinesFor('y', el) },
+      }
+      spacingGesture.current = gesture
+      return mm
+    }
+
+    const askedBy = mm - gesture.startMm
+    const movedBy = edge - gesture.startEdge
+    // Millimetres per pixel of edge movement. Too small a sample says nothing
+    // yet; a property that moves this edge not at all never will.
+    if (Math.abs(askedBy) < 0.4 || Math.abs(movedBy) < 1) return mm
+    const mmPerPx = askedBy / movedBy
+
+    const { value: snapped, line } = snapTo(edge, gesture.lines[axis], {
+      threshold: SNAP_SCREEN_PX / zoom,
+      gridStep: GRID_MINOR_MM * PX_PER_MM,
+    })
+    setGuides(line ? [{ axis, at: line.at, kind: line.kind }] : [])
+    if (!line) return mm
+    const corrected = Math.round((mm + (snapped - edge) * mmPerPx) * 10) / 10
+    return Number.isFinite(corrected) ? corrected : mm
+  }
+
   /** The live figure beside the cursor. Printed work is measured work, and
    * pixels are a unit nobody using this program needs. */
   const readOut = (ev: MouseEvent, text: string): void =>
@@ -2271,8 +2365,25 @@ export default function CanvasEditor({
                 width: isCell ? 'Column width' : 'Width',
                 height: isCell ? 'Row height' : 'Height',
               }}
-              onAdjusting={setAdjusting}
-              onGesture={(active) => (active ? beginGesture() : endGesture(true))}
+              onAdjusting={(active) => {
+                setAdjusting(active)
+                if (active) showLines(selected.el as HTMLElement)
+                else {
+                  setGuides([])
+                  setHintLines([])
+                }
+              }}
+              onGesture={(active) => {
+                if (active) beginGesture()
+                else {
+                  endGesture(true)
+                  // The lines were gathered for this gesture and the page
+                  // has moved since; the next one measures again.
+                  spacingGesture.current = null
+                  setGuides([])
+                }
+              }}
+              onSettle={settleSpacing}
               onApply={(prop, value) => {
                 // Width and height on a cell mean the column and the row, so a
                 // change grows the whole one rather than one lopsided cell.
@@ -2701,6 +2812,20 @@ export default function CanvasEditor({
                 ))}
               </ul>
             )}
+            {/* What is there to line up with, faintly, while a value is being
+                changed — and then the one it actually caught, brightly. */}
+            {hintLines.map((line, i) => (
+              <div
+                key={`hint${i}`}
+                aria-hidden="true"
+                className="snap-guide hint"
+                style={
+                  line.axis === 'x'
+                    ? { left: line.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
+                    : { top: line.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                }
+              />
+            ))}
             {guides.map((guide, i) => (
                 <div
                   key={i}
