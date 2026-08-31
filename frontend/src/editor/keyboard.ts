@@ -130,7 +130,12 @@ export function intentFor(
 export const EDITOR_SHORTCUTS: { keys: string; does: string }[] = [
   { keys: 'Ctrl + Z / Ctrl + Y', does: 'undo, redo' },
   { keys: 'Ctrl + S', does: 'save the draft — from the canvas too' },
-  { keys: 'Ctrl + + / − / 0', does: 'zoom the page in, out, back to fitting the window' },
+  { keys: 'Ctrl + \\', does: 'show or hide the preview' },
+  { keys: 'Ctrl + .', does: 'show or hide the inspector' },
+  { keys: 'Ctrl + Shift + F', does: 'focus mode: the page and nothing else' },
+  { keys: 'Esc', does: 'leave focus mode' },
+  { keys: 'Ctrl + + / −', does: 'zoom the page in and out' },
+  { keys: 'Ctrl + 0', does: 'fit the whole page in the window' },
 ]
 
 /** The shortcuts, in one place, so the hint in the UI and the documentation

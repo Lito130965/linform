@@ -22,6 +22,12 @@ dependencies = [
     # system libraries, so the container stays as light as WeasyPrint left it.
     "segno>=1.6",
     "python-barcode>=0.15",
+    # Reading back what WeasyPrint produced. The preview paginates the document
+    # itself so that typing on page three does not throw the reader to page one,
+    # and it needs a page count to do it. Pure Python, no system libraries — the
+    # same bargain as the two above, and the alternative was counting pages by
+    # scanning PDF bytes by hand.
+    "pypdf>=4.0",
     # Metrics exposition. A dependency rather than a hand-rolled text format:
     # histograms and the Prometheus format have enough edge cases (bucket
     # accumulation, label escaping) that reimplementing them would be a
@@ -33,7 +39,6 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "httpx>=0.27",
-    "pypdf>=4.0",
 ]
 
 [build-system]

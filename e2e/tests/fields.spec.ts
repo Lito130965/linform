@@ -3,7 +3,9 @@ import {
   createTemplate,
   enterVisual,
   latestDraftHtml,
+  closeTool,
   openTemplate,
+  openTool,
   saveDraft,
   uniqueCode,
 } from './support'
@@ -34,9 +36,12 @@ const DATA = JSON.stringify({
 
 /** Put a payload in Test data, which is where the field list comes from. */
 async function setTestData(page: import('@playwright/test').Page, json: string) {
-  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await openTool(page, 'Test data')
   await page.locator('#test-data-json').fill(json)
-  // Fields live beside the canvas now, not in the drawer.
+  // Put the tool away: it is drawn over the left of the page, and everything
+  // after this clicks into the document.
+  await closeTool(page)
+  // Fields live beside the canvas, in the inspector.
   await page.locator('.side-tab', { hasText: 'Fields' }).click()
 }
 
@@ -120,6 +125,9 @@ test('inside a repeat, an array field is offered under the loop’s own name', a
   // is the only way to take the row rather than the cell inside it.
   await page.locator('.side-tab', { hasText: 'Structure' }).click()
   await page.locator('.canvas-outline .outline-row', { hasText: 'Row' }).click()
+  // Picked from the structure, acted on in the properties: they are two tabs of
+  // one column now.
+  await page.locator('.side-tab', { hasText: 'Properties' }).click()
   await page.locator('.convert-actions button', { hasText: 'Repeat' }).click()
   await page.locator('.convert-form input[aria-label="Loop variable name"]').fill('row')
   await page.locator('.convert-form input[aria-label="Array to repeat over"]').fill('items')
@@ -180,7 +188,7 @@ test('the payload is generated from the template, not typed before it', async ({
   )
   await openTemplate(page, code)
 
-  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await openTool(page, 'Test data')
   await page.getByRole('button', { name: 'Generate', exact: true }).click()
 
   const generated = JSON.parse(await page.locator('#test-data-json').inputValue())
@@ -196,7 +204,7 @@ test('the payload is generated from the template, not typed before it', async ({
   await page.keyboard.press('Control+End')
   await page.keyboard.type('<p>{{ signed_by }}</p>')
 
-  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await openTool(page, 'Test data')
   await page.getByRole('button', { name: 'Fill in missing' }).click()
 
   const filled = JSON.parse(await page.locator('#test-data-json').inputValue())
@@ -304,7 +312,7 @@ test('the test data says what it is missing and what nobody reads', async ({ pag
       '<p>{{ number }} for {{ customer.name }}</p>\n',
   )
   await openTemplate(page, code)
-  await page.locator('.panel-tab', { hasText: 'Test data' }).click()
+  await openTool(page, 'Test data')
   await page.locator('#test-data-json').fill('{"number": "INV-1", "legacy": "x"}')
 
   const check = page.locator('.data-check')

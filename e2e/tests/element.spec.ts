@@ -36,7 +36,9 @@ test('one edge can be ruled without ruling the other three', async ({ page, requ
   const frame = page.frameLocator(CANVAS)
 
   await frame.locator('#line').click()
-  await page.locator('.border-sides button[aria-label="bottom edge"]').click()
+  // The side picker is a square with an edge to press, the way a spreadsheet
+  // draws it; the letters T/R/B/L it replaced were a puzzle before a line.
+  await page.locator('.border-picker button[aria-label="bottom edge"]').click()
   await page.locator('select[aria-label="Border style"]').selectOption('solid')
   await page.locator('input[aria-label="Border width"]').fill('2px')
   await page.keyboard.press('Enter')

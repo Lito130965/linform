@@ -1,3 +1,4 @@
+import io
 import time
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
@@ -64,6 +65,33 @@ async def render_measured(
     return pdf
 
 
+def _page_count(pdf: bytes) -> int:
+    """How many pages the render came to.
+
+    For the editor's preview, which paginates the document itself so that
+    typing on page three does not throw the reader back to page one. Cheap
+    enough to do on every ad-hoc render — pypdf reads the trailer, not the
+    content — and this endpoint is already the expensive one by an order of
+    magnitude.
+
+    Never raises: a page count is a convenience beside the PDF, and a document
+    that rendered must not fail to be delivered because it could not be
+    counted. One page is the honest fallback — there is a PDF, after all.
+
+    That fallback is also why pypdf is a RUNTIME dependency and not a test one.
+    It was a test one first, and this returned 1 for every document in the
+    shipped image while every backend test passed: the failure a broad `except`
+    buys is silence. The browser suite runs against the built image and caught
+    it, which is the only reason it is not still true.
+    """
+    try:
+        import pypdf
+
+        return max(1, len(pypdf.PdfReader(io.BytesIO(pdf)).pages))
+    except Exception:
+        return 1
+
+
 @router.post("/render", dependencies=[Depends(require_render)])
 async def render_ad_hoc(
     body: AdHocRenderRequest,
@@ -96,7 +124,11 @@ async def render_ad_hoc(
         raise HTTPException(status_code=504, detail=str(exc))
     except RenderError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    return Response(content=pdf, media_type="application/pdf")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"X-Linform-Pages": str(_page_count(pdf))},
+    )
 
 
 async def _render_version(

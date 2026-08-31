@@ -18,6 +18,15 @@
   --red: #e5534b;
   --shadow: rgba(0, 0, 0, 0.5);
   --canvas-shell: #14151a;
+  /* The sheet, and ink that reads on it. The same in every theme: a printed
+     page is white whatever the editor around it looks like, so anything drawn
+     ON the page — a margin band, its label — must be coloured for paper rather
+     than for the theme. */
+  --paper: #ffffff;
+  --paper-ink-muted: #6b7280;
+  /* The lines the canvas draws over a page while something is moved. */
+  --guide-moving: #e2467a;
+  --guide-snap: #2fbf71;
   color-scheme: dark;
 }
 
@@ -321,16 +330,91 @@ select:focus {
 }
 
 .pane {
-  flex: 1;
-  /* was 0: the panes used to collapse to nothing under a fixed-width panel
-     instead of holding a usable width */
-  min-width: 320px;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
+/* The page takes what is left. It used to share the width evenly with the
+   preview, which put an A4 sheet at 70 % on a 1920 screen: half the shell,
+   less a fixed structure panel, is 570 px for a 794 px page. */
 .code-pane {
-  border-right: 1px solid var(--border);
+  flex: 1;
+  min-width: 420px;
+  position: relative;
+}
+
+/* The preview's width is the author's to set, so it is a number rather than a
+   share — set inline from the remembered preference. */
+.preview-pane {
+  flex: none;
+  min-width: 0;
+}
+
+/* The boundary between two columns. Wide enough to hit with a pointer, drawn
+   as a line so it reads as an edge rather than as a gap. */
+.splitter {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--border);
+  border: none;
+  padding: 0;
+}
+
+.splitter:hover,
+.splitter:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+
+/* While a splitter is being dragged the pointer must not be swallowed by the
+   canvas iframe the moment it crosses the boundary. */
+body.splitting {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.splitting iframe {
+  pointer-events: none;
+}
+
+/* A column put away. It keeps its name, sideways, because a panel that
+   vanishes without trace is a feature the next person never finds. */
+.pane-strip {
+  flex: none;
+  width: 36px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.pane-strip:hover {
+  color: var(--text);
+}
+
+.pane-strip span {
+  writing-mode: vertical-rl;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+/* An icon-only control in the document toolbar. */
+.btn.icon-btn {
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn.icon-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .code-pane > :first-child {
@@ -339,48 +423,10 @@ select:focus {
   overflow: auto;
 }
 
-.bottom-panels {
-  position: relative;
-  border-top: 1px solid var(--border);
-  padding: 10px 12px 12px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  flex-shrink: 0;
-}
 
-/* Drag handle along the panel's top edge. */
-.panel-resize {
-  position: absolute;
-  top: -3px;
-  left: 0;
-  right: 0;
-  height: 7px;
-  cursor: ns-resize;
-  z-index: 5;
-}
 
-.panel-resize::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 3px;
-  width: 36px;
-  height: 3px;
-  border-radius: 2px;
-  transform: translateX(-50%);
-  background: var(--border);
-}
 
-.panel-resize:hover::after {
-  background: var(--accent);
-}
 
-.panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
 
 label {
   display: block;
@@ -422,7 +468,10 @@ label {
 
 .preview-header {
   display: flex;
-  justify-content: space-between;
+  /* Was space-between, for two items. There are four now — title, pager,
+     freshness, strict — and the pager belongs beside the title rather than
+     wherever an even distribution puts it. */
+  gap: 12px;
   align-items: center;
   padding: 8px 12px;
   background: var(--bg-panel);
@@ -1226,34 +1275,9 @@ label {
   margin-top: 12px;
 }
 
-/* ---- bottom panel tabs ---- */
 
-.panel-tabs {
-  display: flex;
-  gap: 2px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
 
-.panel-tab {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 4px 12px;
-  font-size: 12px;
-  margin-bottom: -1px;
-}
 
-.panel-tab:hover {
-  color: var(--text);
-}
-
-.panel-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
 
 .preset-head {
   display: flex;
@@ -1591,6 +1615,8 @@ label {
 .canvas-body {
   flex: 1;
   min-height: 0;
+  /* anchors the inspector when it is drawn over the page */
+  position: relative;
   display: flex;
 }
 
@@ -1748,48 +1774,11 @@ label {
   text-decoration: line-through;
 }
 
-/* ---- canvas element properties bar ---- */
 
-.canvas-props {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 5px 12px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-}
 
-.canvas-props .props-kind {
-  color: var(--accent);
-  font-weight: 600;
-}
 
-.canvas-props .prop {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 12px;
-}
 
-.canvas-props .prop input,
-.canvas-props .prop select {
-  padding: 3px 6px;
-  font-size: 12px;
-}
 
-.canvas-props .prop input:not([type='color']) {
-  width: 64px;
-}
-
-.canvas-props .prop input[type='color'] {
-  width: 28px;
-  height: 24px;
-  padding: 1px;
-}
 
 .color-control {
   display: inline-flex;
@@ -1937,22 +1926,87 @@ label {
 /* The line a drag has landed on. Drawn only while it holds it: a guide that
    stays is clutter, a guide that appears at the moment of contact is an
    explanation. */
+/* ---- three kinds of line, three colours ----
+
+   The canvas draws a lot of lines while something is being moved, and they mean
+   different things: the millimetre grid is the paper's own ruling, one pair of
+   lines is where the block IS, and the rest are what it could land on. All
+   three were blue, so telling them apart meant watching which one moved with
+   the pointer. Now:
+
+     blue   — the grid, which belongs to the page rather than to the gesture
+     red    — the block being moved, both ends of both axes
+     green  — something to line up with: faint while it is near, solid when it
+              is caught, and heavier when it is a page margin or a page break,
+              which are stronger statements than another block's edge
+
+   Every one of them goes when the mouse comes up. */
 .snap-guide {
   position: absolute;
   z-index: 10;
   pointer-events: none;
-  background: var(--accent);
+  background: var(--guide-snap);
 }
 
-/* A page margin or a page break is a stronger statement than another element's
-   edge, and a stronger one still than the grid — so it reads that way. */
+/* Thick enough to be a line rather than a hair. The grid is a mesh of 5mm
+   squares behind all of this, and a 1px guide of any colour disappears into it
+   — reported exactly that way: "different colours, but they blend". Each of
+   these is 2px, the caught one 3px, and the grid stays thin and faint because
+   it is the background they are read against.
+
+   NOTE: `.moving` and `.hint` are TEMPORARILY not drawn at all — see
+   DRAG_GUIDES_ENABLED in editor/CanvasEditor.tsx. The rules are kept because
+   the switch is meant to go back on; the grid and the caught line are what is
+   on screen today. */
+.snap-guide.vertical {
+  width: 2px;
+}
+
+.snap-guide.horizontal {
+  height: 2px;
+}
+
+.snap-guide.caught.vertical {
+  width: 3px;
+}
+
+.snap-guide.caught.horizontal {
+  height: 3px;
+}
+
+/* A page margin or a page break is a stronger statement than another block's
+   edge — said with a glow rather than another colour, so the three colours go
+   on meaning three things. */
 .snap-guide.page {
-  background: #e2467a;
-  box-shadow: 0 0 0 0.5px #e2467a;
+  box-shadow: 0 0 4px 1px var(--guide-snap);
 }
 
 .snap-guide.grid {
-  opacity: 0.5;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+/* Where the block is now. Over the grid and under the line it catches: the
+   catch is the answer, this is the question. */
+.snap-guide.moving {
+  z-index: 11;
+  background: var(--guide-moving);
+}
+
+/* Something within reach: a candidate, not a decision. Dashed rather than
+   faint, so it is still readable over the grid while plainly not the answer. */
+.snap-guide.hint {
+  z-index: 9;
+  background: none;
+  opacity: 0.85;
+}
+
+.snap-guide.hint.vertical {
+  border-left: 2px dashed var(--guide-snap);
+}
+
+.snap-guide.hint.horizontal {
+  border-top: 2px dashed var(--guide-snap);
 }
 
 /* The measurement beside the cursor. Fixed, because it follows the pointer
@@ -1996,12 +2050,12 @@ label {
   background-image:
     repeating-linear-gradient(
       to right,
-      rgba(120, 150, 200, 0.55) 0 1px,
+      rgba(120, 150, 200, 0.38) 0 1px,
       transparent 1px var(--grid-major)
     ),
     repeating-linear-gradient(
       to bottom,
-      rgba(120, 150, 200, 0.55) 0 1px,
+      rgba(120, 150, 200, 0.38) 0 1px,
       transparent 1px var(--grid-major)
     ),
     repeating-linear-gradient(
@@ -2787,9 +2841,111 @@ label {
   gap: 6px;
 }
 
-.border-sides .tb {
-  min-width: 22px;
-  padding: 2px 5px;
+/* The side picker: a square, with a strip to press along each edge and one
+   button in the middle for all four. Sized to be hit with a pointer without
+   taking a row of the panel. */
+.border-picker {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+}
+
+.border-side,
+.border-all {
+  position: absolute;
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* The strip is the target; the line inside it is what the strip means, so a
+   1px rule stays clickable. */
+.border-side > span,
+.border-all > span {
+  display: block;
+  background: var(--text-muted);
+  border-radius: 1px;
+}
+
+.border-side.top,
+.border-side.bottom {
+  left: 9px;
+  right: 9px;
+  height: 12px;
+}
+
+.border-side.left,
+.border-side.right {
+  top: 9px;
+  bottom: 9px;
+  width: 12px;
+}
+
+.border-side.top {
+  top: 0;
+}
+.border-side.bottom {
+  bottom: 0;
+}
+.border-side.left {
+  left: 0;
+}
+.border-side.right {
+  right: 0;
+}
+
+.border-side.top > span,
+.border-side.bottom > span {
+  height: 2px;
+  margin-top: 5px;
+}
+
+.border-side.left > span,
+.border-side.right > span {
+  width: 2px;
+  height: 100%;
+  margin-left: 5px;
+}
+
+/* A side that is actually ruled says so, so the square answers "which edges
+   have a border" as well as "which am I changing". */
+.border-side.ruled > span {
+  background: var(--text);
+}
+
+.border-side.chosen > span,
+.border-picker:has(.border-all.chosen) .border-side > span {
+  background: var(--accent);
+}
+
+.border-all {
+  left: 13px;
+  top: 13px;
+  width: 20px;
+  height: 20px;
+}
+
+.border-all > span {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--text-muted);
+  background: none;
+  border-radius: 2px;
+}
+
+.border-all.chosen > span {
+  border-color: var(--accent);
+}
+
+.border-side:focus-visible,
+.border-all:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .border-control select {
@@ -2853,24 +3009,6 @@ label {
   z-index: 30;
 }
 
-/* One row, always, whether or not anything is selected.
-
-   Appearing is moving, and so is growing: this bar used to appear with the
-   first selection and to wrap to a second row on a wide selection, and either
-   way the canvas dropped under the pointer. The second click of a double click
-   then landed somewhere else entirely — which is why editing a field by
-   double-clicking it never worked on the first try. Crowded controls scroll
-   sideways instead. */
-.canvas-props {
-  /* The height of the bar with something selected — the box-model editor is
-     the tall part of it. Held whether or not anything is: a bar that appears
-     and grows moves the canvas under the pointer, and the number is guarded by
-     a browser test that clicks and checks the page did not move. */
-  min-height: 150px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
 
 .page-furniture {
   display: flex;
@@ -2905,16 +3043,23 @@ label {
 /* The bands a header and a footer occupy on every page. Filled, because this
    is paper margin rather than page content: anything drawn here would be
    overprinting the furniture. */
+/* The band between two sheets is the page MARGIN, and a margin is paper. It
+   was painted with the shell colour, which in the dark theme is nearly black —
+   so a running footer, printed in the document's own dark ink, was drawn dark
+   on dark and could not be read at all. Reported from the test server, and
+   visible on any header or footer in that theme.
+
+   Paper here, therefore, with its own label in an ink that survives on it: the
+   band shows what prints, so it has to look like what it prints on. */
 .sheet-band {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   padding-right: 6px;
-  background: var(--canvas-shell);
-  color: var(--text-muted);
+  background: var(--paper);
+  color: var(--paper-ink-muted);
   font: 9px/1 system-ui, sans-serif;
   letter-spacing: 0.3px;
-  opacity: 0.92;
 }
 
 .sheet-band.foot {
@@ -3122,4 +3267,289 @@ label {
 .undo-change {
   margin-top: 6px;
   align-self: flex-start;
+}
+
+/* The preview's own header: what it is, where you are in it, and how fresh it
+   is. The pager exists because every render replaces the document and the
+   built-in viewer would otherwise start again at page one. */
+.preview-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-pager .muted {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.preview-freshness {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.preview-title {
+  font-weight: 600;
+}
+
+/* ---- the inspector ----
+   Properties, structure and fields in one column beside the page. The width is
+   set inline from the remembered preference, so the rule must not fight it. */
+.canvas-outline.inspector {
+  width: auto;
+  flex: none;
+}
+
+.inspector-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 16px;
+  font-size: 12px;
+}
+
+/* Sections, so a column of controls reads as groups rather than as a list of
+   inputs. */
+.inspector-section {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.inspector-properties .crumbs {
+  flex-wrap: wrap;
+}
+
+.inspector-properties .prop,
+.inspector-properties label.prop {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inspector-properties .prop input,
+.inspector-properties .prop select {
+  min-width: 0;
+  flex: 1;
+}
+
+.inspector-properties .topbar-group,
+.inspector-properties .el-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Embedded in the column rather than floating over the page: no card, no
+   shadow, no absolute position. */
+.page-setup.embedded {
+  position: static;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  background: none;
+  width: auto;
+  min-width: 0;
+}
+
+/* ---- the tool rail ----
+   52 px down the left of the workspace. Width is the dimension a wide screen
+   has to spare; height is the one an A4 page is short of, which is what the
+   bottom panel took 220 px of. */
+.tool-rail {
+  flex: none;
+  width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 2px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+
+.tool-button {
+  appearance: none;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 2px 6px;
+  font: inherit;
+  font-size: 8px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.tool-button:hover {
+  color: var(--text);
+}
+
+.tool-button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+
+/* ---- the panel a tool opens ----
+   Over the page, never beside it: taking width would re-lay the canvas out and
+   move the page under the pointer, at the exact moment somebody is aiming at
+   where a block should go. */
+.tool-flyout {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 320px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  box-shadow: 6px 0 24px rgba(0, 0, 0, 0.28);
+}
+
+.tool-flyout-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tool-flyout-head .panel-heading {
+  margin: 0;
+}
+
+.tool-flyout-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px 14px;
+}
+
+/* The test-data box was sized for a short, wide drawer; in a tall column it
+   should use the height it now has. */
+.tool-flyout-body .test-data,
+.tool-flyout-body .test-data textarea {
+  height: auto;
+  min-height: 220px;
+}
+
+/* ---- focus mode ----
+   Everything but the page, folded away. A gesture for the length of one
+   problem, so nothing here is remembered: the widths and tabs underneath are
+   untouched and come straight back. */
+body.focus-mode .sidebar {
+  display: none;
+}
+
+.editor.focus .toolbar {
+  padding: 4px 12px;
+  gap: 8px;
+}
+
+/* What a document still needs while the page has the screen: what it is,
+   which mode, saving it, the panel toggles, and the way out. */
+.editor.focus .toolbar select,
+.editor.focus .toolbar .comment-input,
+.editor.focus .toolbar .btn.publish,
+.editor.focus .toolbar .template-code {
+  display: none;
+}
+
+.focus-hint {
+  margin-left: auto;
+}
+
+/* ---- the keyboard popover ----
+   On the bar instead of a disclosure below it: that cost 26 px of chrome
+   above the page for a summary nobody opened twice. */
+.canvas-keys {
+  position: relative;
+  margin-left: auto;
+}
+
+.keys-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  width: 460px;
+  max-width: 70vw;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+.keys-popover dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  font-size: 12px;
+}
+
+.keys-popover dl > div {
+  display: contents;
+}
+
+.keys-popover dt {
+  white-space: nowrap;
+  color: var(--accent);
+  font-family: var(--mono, ui-monospace, monospace);
+}
+
+.keys-popover dd {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* ---- the narrow layout ----
+   The inspector drawn over the page rather than beside it. It still points at
+   the page, so it overlays rather than replaces: the row it highlights has to
+   be visible for the highlight to mean anything. */
+.canvas-outline.inspector.overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  box-shadow: -6px 0 24px rgba(0, 0, 0, 0.3);
+}
+
+/* One of the two, chosen — at this width a column each would leave neither
+   worth looking at. */
+.view-switch {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.view-switch .btn {
+  border-radius: 0;
+}
+
+.view-switch .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* A panel's own one-line hint, where the frame around it has already said what
+   it is. */
+.panel-hint {
+  display: block;
+  margin: 0 0 8px;
 }

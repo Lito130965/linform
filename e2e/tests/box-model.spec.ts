@@ -144,3 +144,52 @@ test('the millimetre grid can be turned on over the sheet', async ({ page, reque
   await page.getByRole('button', { name: 'Grid' }).click()
   await expect(page.locator('.canvas-grid')).toHaveCount(0)
 })
+
+test('a spacing being changed lands on what it is near', async ({ page, request }) => {
+  // Dragging a block has had guides and snapping since the canvas was built;
+  // scrubbing a margin — the other way to move something — had a ruler and
+  // nothing to line up against. It is the same question either way: where does
+  // this edge want to be.
+  const code = uniqueCode('box-snap')
+  await createTemplate(
+    request,
+    code,
+    '<style>@page { size: A4; margin: 20mm }</style>\n' +
+      '<div id="anchor" style="width: 63.7mm; height: 10mm; background: #eee"></div>\n' +
+      '<p id="mover">Move me</p>\n',
+  )
+  await openTemplate(page, code)
+  await enterVisual(page)
+  const frame = page.frameLocator(CANVAS)
+
+  await frame.locator('#mover').click()
+  const input = page.getByLabel('Margin left', { exact: true })
+
+  // Reaching for the number is enough to bring the ruler up.
+  //
+  // The lines of everything ELSE on the page came up with it for a while, and
+  // are temporarily off — see DRAG_GUIDES_ENABLED in editor/CanvasEditor.tsx.
+  // The snapping below is the half that stayed, and is what this test is about.
+  await input.focus()
+  await expect(page.locator('.canvas-grid')).toHaveCount(1)
+
+  // Scrub right until the edge catches something that is not the grid. The
+  // anchor is 63.7mm wide, so its centre is at 31.85mm — a number nobody would
+  // land on by hand.
+  const box = (await input.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  let caught = ''
+  for (let dx = 4; dx <= 140 && !caught; dx += 4) {
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2)
+    const centre = page.locator('.snap-guide.center')
+    if ((await centre.count()) > 0) caught = await input.inputValue()
+  }
+  await page.mouse.up()
+  expect(caught, 'the scrub never caught the block centre').toBe('31.9')
+
+  // Letting go of the field puts both away: they are help while adjusting, not
+  // decoration.
+  await input.blur()
+  await expect(page.locator('.snap-guide')).toHaveCount(0)
+})

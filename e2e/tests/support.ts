@@ -138,7 +138,20 @@ export async function latestDraftHtml(api: APIRequestContext, code: string): Pro
  * and Playwright's strict mode rightly refuses to guess between them.
  */
 export async function goToTab(page: Page, tab: 'Templates' | 'Examples' | 'Settings'): Promise<void> {
-  await page.locator('.nav-item', { hasText: tab }).click()
+  // The navigation is a rail on a narrow window, and folds to one whenever a
+  // document is open. Its toggle is how anybody gets back to the list, so a
+  // test that wants a tab asks for it the same way.
+  //
+  // Tried rather than tested for: an absent item can equally mean the shell has
+  // not finished booting, and pressing the toggle then CLOSES a sidebar that
+  // was about to appear.
+  const item = page.locator('.nav-item', { hasText: tab })
+  try {
+    await item.click({ timeout: 4000 })
+  } catch {
+    await page.locator('.sidebar-toggle').click()
+    await item.click()
+  }
 }
 
 /** Open a stored template in the editor, waiting until its content is loaded. */
@@ -153,6 +166,71 @@ export async function openTemplate(page: Page, code: string): Promise<void> {
   // The toolbar carries the template code once the editor has it.
   await expect(page.locator('.template-code')).toContainText(code)
   await expect(page.locator('.cm-content')).toBeVisible()
+}
+
+/**
+ * Make sure the preview column is open.
+ *
+ * Below a 1600 px window the editor starts with the preview put away: a column
+ * narrower than the page it renders costs more than it shows, and it is one key
+ * press back. Most of this suite runs at 1280 (Playwright's Desktop Chrome),
+ * so a test about the preview has to ask for it rather than assume it.
+ */
+export async function showPreview(page: Page): Promise<void> {
+  // Two shapes, depending on the width. A column that has been put away comes
+  // back from its strip; at a laptop width there is no column at all and the
+  // preview is one of two things the pane can show.
+  const tab = page.getByRole('tab', { name: 'Preview' })
+  if ((await tab.count()) > 0) await tab.click()
+  else {
+    const strip = page.locator('.pane-strip', { hasText: 'PREVIEW' })
+    if ((await strip.count()) > 0) await strip.click()
+  }
+  await expect(page.locator('.preview')).toBeVisible()
+}
+
+/**
+ * Show one of the inspector's tabs.
+ *
+ * The column opens on Properties — what is selected, or the page when nothing
+ * is — so anything about the structure or the fields has to ask for its tab.
+ */
+export async function inspectorTab(
+  page: Page,
+  name: 'Properties' | 'Structure' | 'Fields',
+): Promise<void> {
+  await page.locator('.side-tab', { hasText: name }).click()
+}
+
+/**
+ * Open one of the tools from the rail.
+ *
+ * A helper rather than a selector at each call site: the panel has moved once
+ * already — from a drawer under the canvas to a flyout over it — and the next
+ * rename should cost one edit rather than five.
+ */
+export async function openTool(
+  page: Page,
+  name: 'Insert' | 'Presets' | 'Assets' | 'Test data' | 'Fields',
+): Promise<void> {
+  // Asked for, not toggled: the rail button shuts the panel when it is already
+  // showing that tool, so a blind click can leave a test with nothing open.
+  const button = page.locator('.tool-button', { hasText: name })
+  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
+  await expect(page.locator('.tool-flyout')).toBeVisible()
+}
+
+/** Put the open tool away.
+ *
+ * The panel is drawn over the left of the page — that is what keeps it from
+ * re-laying the canvas out — so a test that wants to click into the document
+ * afterwards closes it first, exactly as a person would. */
+export async function closeTool(page: Page): Promise<void> {
+  const flyout = page.locator('.tool-flyout')
+  if ((await flyout.count()) > 0) {
+    await page.getByRole('button', { name: 'Close the panel' }).click()
+    await expect(flyout).toHaveCount(0)
+  }
 }
 
 /** Switch to the visual canvas and wait for the iframe document to be ready. */

@@ -6,6 +6,7 @@ import {
   goToTab,
   openTemplate,
   saveDraft,
+  showPreview,
   templateDetail,
   uniqueCode,
 } from './support'
@@ -139,6 +140,9 @@ test('the live preview produces a PDF', async ({ page, request }) => {
   const code = uniqueCode('preview')
   await createTemplate(request, code, exampleHtml('certificate'))
   await openTemplate(page, code)
+  // At this width the preview starts put away; this test is about what it
+  // does once it is open.
+  await showPreview(page)
 
   // The preview pane renders through the same endpoint the consumer calls;
   // waiting on the response proves the whole path works from the browser.

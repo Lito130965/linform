@@ -41,7 +41,7 @@ export default function AssetsPanel({ onInsert }: { onInsert: (text: string) => 
   return (
     <div className="assets-panel">
       <label>
-        Assets — click to place one where the caret is
+        <span className="muted panel-hint">Click one to place it where the caret is</span>
         <button
           className="btn small"
           onClick={() => fileRef.current?.click()}

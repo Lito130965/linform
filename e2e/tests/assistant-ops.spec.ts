@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
-import { createTemplate, enterVisual, latestDraftHtml, openTemplate, saveDraft, uniqueCode } from './support'
+import {
+  createTemplate,
+  enterVisual,
+  inspectorTab,
+  latestDraftHtml,
+  openTemplate,
+  saveDraft,
+  uniqueCode,
+} from './support'
 
 /**
  * The assistant asking the editor to do something, rather than writing markup.
@@ -95,6 +103,7 @@ test('a footer asked for by the assistant is the footer the editor makes', async
 
   const footer = page.frameLocator(CANVAS).locator('div[style*="running(lf-footer)"]')
   await expect(footer).toHaveAttribute('data-lf-running', 'bottom-center')
+  await inspectorTab(page, 'Structure')
   await expect(
     page.locator('.canvas-outline .outline-label').filter({ hasText: 'Page footer' }),
   ).toHaveCount(1)

@@ -90,10 +90,6 @@ const NOTES: Record<string, string> = {
 export default function InsertPanel({ onInsert }: { onInsert: (id: string) => void }) {
   return (
     <div className="insert-panel">
-      <h2 className="panel-heading">
-        Insert
-        <span className="muted"> — lands beside what is selected, or inside it</span>
-      </h2>
       <div className="insert-grid">
         {BLOCKS.map((block) => (
           <button

@@ -27,6 +27,11 @@ export type IconName =
   | 'eye'
   | 'eye-off'
   | 'structure'
+  | 'panel-right'
+  | 'plus-square'
+  | 'layers'
+  | 'image'
+  | 'braces'
 
 const PATHS: Record<IconName, JSX.Element> = {
   menu: (
@@ -84,6 +89,42 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M6.4 7.9A16.6 16.6 0 0 0 2 12s3.6 6.5 10 6.5a10 10 0 0 0 3.6-.7" />
       <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
       <line x1="3" y1="3" x2="21" y2="21" />
+    </>
+  ),
+  /* The four tools of the rail. Outlines rather than solid shapes, to sit
+     beside the icons already here without shouting over them. */
+  'plus-square': (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="12" y1="8" x2="12" y2="16" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+    </>
+  ),
+  layers: (
+    <>
+      <polygon points="12 2 22 8 12 14 2 8" />
+      <polyline points="2 14 12 20 22 14" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="M4 18l5-5 4 4 3-3 4 4" />
+    </>
+  ),
+  braces: (
+    <>
+      <path d="M8 4c-2 0-2 3-2 4s0 4-2 4c2 0 2 3 2 4s0 4 2 4" />
+      <path d="M16 4c2 0 2 3 2 4s0 4 2 4c-2 0-2 3-2 4s0 4-2 4" />
+    </>
+  ),
+  /* A pane docked to the right edge: the shape every editor uses for "show or
+     hide the panel on that side". */
+  'panel-right': (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <line x1="15" y1="4" x2="15" y2="20" />
     </>
   ),
   structure: (

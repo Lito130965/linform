@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openTool, showPreview } from './support'
 
 /**
  * The public shop window.
@@ -47,12 +48,15 @@ test('the assets panel works, against a scratch store of its own', async ({ page
   await page.getByRole('button', { name: 'Assets', exact: true }).click()
 
   await expect(page.locator('.error-box')).toHaveCount(0)
-  await expect(page.locator('.panel-body')).toContainText('no assets uploaded')
+  await expect(page.locator('.tool-flyout')).toContainText('no assets uploaded')
 })
 
 test('the preview still renders a PDF, which is the point of a demo', async ({ page }) => {
   await page.goto('/')
   await page.locator('.example-card', { hasText: 'Invoice' }).click()
+  // At this width the preview starts put away; this test is about what it does
+  // once it is open.
+  await showPreview(page)
 
   const response = await page.waitForResponse(
     (r) => r.url().includes('/api/render') && r.request().method() === 'POST',

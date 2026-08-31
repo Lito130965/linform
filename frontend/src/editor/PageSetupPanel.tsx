@@ -39,6 +39,7 @@ export default function PageSetupPanel({
   onFurniture,
   onChange,
   onClose,
+  embedded = false,
 }: {
   setup: PageSetup
   /** Sides a later @page rule wins, and what set them. */
@@ -48,12 +49,18 @@ export default function PageSetupPanel({
   onFurniture: (edge: 'top' | 'bottom', on: boolean) => void
   onChange: (next: PageSetup) => void
   onClose: () => void
+  /** Shown in a column rather than floating over the page. A popover has to
+   * be dismissible by clicking away and by Escape; a panel that is simply
+   * part of the layout must do neither, or Escape in the canvas would keep
+   * closing something that was never open. */
+  embedded?: boolean
 }) {
   const ref = useRef<HTMLDivElement | null>(null)
 
   // Click away or press Escape: a popover that has to be dismissed by finding
   // its own button again is a popover that stays open.
   useEffect(() => {
+    if (embedded) return
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose()
     }
@@ -66,7 +73,7 @@ export default function PageSetupPanel({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, embedded])
 
   const [linked, setLinked] = useState(
     setup.margin.top === setup.margin.bottom && setup.margin.left === setup.margin.right,
@@ -86,7 +93,12 @@ export default function PageSetupPanel({
   }
 
   return (
-    <div className="page-setup" ref={ref} role="dialog" aria-label="Page setup">
+    <div
+      className={embedded ? 'page-setup embedded' : 'page-setup'}
+      ref={ref}
+      role={embedded ? undefined : 'dialog'}
+      aria-label={embedded ? undefined : 'Page setup'}
+    >
       <label className="prop">
         Size
         <select

@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test'
-import { createTemplate, enterVisual, openTemplate, uniqueCode } from './support'
+import {
+  createTemplate,
+  enterVisual,
+  inspectorTab,
+  openTemplate,
+  openTool,
+  uniqueCode,
+} from './support'
 
 /**
  * Putting a block into another block, and taking it back out.
@@ -29,7 +36,9 @@ test('the palette puts a block inside the container that is selected', async ({ 
 
   // Selected from the structure panel, so the click cannot be read as aiming at
   // the paragraph inside it.
+  await inspectorTab(page, 'Structure')
   await page.locator('.canvas-outline .outline-row', { hasText: 'Block' }).first().click()
+  await openTool(page, 'Insert')
   await page.locator('.insert-tile', { hasText: 'Heading' }).click()
 
   await expect(frame.locator('#card h2')).toHaveCount(1)

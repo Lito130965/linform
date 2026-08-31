@@ -57,6 +57,44 @@ def test_render_multipage(client):
     assert len(PdfReader(BytesIO(resp.content)).pages) > 1
 
 
+def test_ad_hoc_render_says_how_many_pages_it_came_to(client):
+    """The editor's preview paginates the document itself, so that typing on
+    page three does not throw the reader back to page one. It needs the count,
+    and reading it from the bytes in the browser would mean shipping a PDF
+    parser to do what the renderer already knows."""
+    one = client.post("/api/render", json={"html": "<p>one page</p>", "data": {}})
+    assert one.headers["X-Linform-Pages"] == "1"
+
+    src = (
+        "<style>@page { size: A4 } .item { page-break-inside: avoid }</style>"
+        "{% for i in items %}<p class='item'>Row {{ i }}</p>{% endfor %}"
+    )
+    many = client.post("/api/render", json={"html": src, "data": {"items": list(range(200))}})
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    counted = len(PdfReader(BytesIO(many.content)).pages)
+    assert counted > 1
+    assert many.headers["X-Linform-Pages"] == str(counted)
+
+
+def test_render_by_code_carries_no_page_count(db_client):
+    """Deliberately only on the preview endpoint. What consumers get is a PDF
+    and its bytes; counting pages on every production render would be work done
+    for a reader who is not there."""
+    db_client.post("/api/templates", json={"code": "counted", "name": "Counted"})
+    draft = db_client.post(
+        "/api/templates/counted/drafts",
+        json={"html_content": "<p>{{ who }}</p>", "comment": "seed"},
+    ).json()
+    db_client.post(f"/api/templates/counted/drafts/{draft['id']}/publish")
+
+    resp = db_client.post("/api/render/counted", json={"who": "world"})
+    assert resp.status_code == 200
+    assert "X-Linform-Pages" not in resp.headers
+
+
 def test_render_missing_placeholder_is_422(client):
     resp = client.post("/api/render", json={"html": "<p>{{ absent }}</p>", "data": {}})
     assert resp.status_code == 422

@@ -5,6 +5,7 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from 'react'
 import { cleanPastedHtml } from '../docx/clean-paste'
 import { fitZoom } from '../layout'
@@ -62,7 +63,19 @@ import {
   usablePageHeight,
   type PageGeometry,
 } from './pagination'
-import OutlinePanel, { type SideTab } from './OutlinePanel'
+import InspectorPanel, { SIDE_TABS, type SideTab } from './InspectorPanel'
+import Splitter from '../components/Splitter'
+import {
+  getBoolPref,
+  getNumPref,
+  getStringPref,
+  setBoolPref,
+  setNumPref,
+  setStringPref,
+  PREF_INSPECTOR_OPEN,
+  PREF_INSPECTOR_TAB,
+  PREF_INSPECTOR_WIDTH,
+} from '../prefs'
 import { CROWDED, outlineOf, selectableChildren, type OutlineItem } from './outline'
 import { describeRemoved, sanitizeHtml } from './sanitize'
 import {
@@ -90,6 +103,38 @@ import { setAlign, toggleInline } from './text-commands'
  * kept in sync for placeholders. Shared by the double-click and the keyboard
  * path, because "the mouse can do one more thing than the keyboard" is how an
  * editor stops being usable without one. */
+/** The inspector's column: wide enough for a spacing box and a colour, and
+ * capped where it would start taking width from the page it describes. */
+const INSPECTOR_DEFAULT = 288
+const INSPECTOR_MIN = 240
+const INSPECTOR_MAX = 460
+/** The page keeps at least this much, whatever the inspector is set to. A
+ * column that can squeeze the canvas to twenty pixels is not a column with a
+ * maximum, and the zoom read-out then says 100 % over a page nobody can
+ * see — fitZoom answers 100 for an impossible width. */
+const CANVAS_MIN_PX = 360
+
+/**
+ * TEMPORARILY DISABLED — the drawn guides, not the snapping.
+ *
+ * Turned off at the author's request after trying it on the test server: on
+ * a real form the extra lines were more to read than they were worth, even
+ * cut down to the nearest one per edge and drawn in their own colours. The
+ * millimetre grid stays, and so does the single line that says what an edge
+ * actually caught — both of those predate this and were never the problem.
+ *
+ * Snapping itself is untouched: values still fall onto page margins, page
+ * breaks and the edges and centres of other blocks, from a drag and from the
+ * spacing boxes alike. Only the drawing is off.
+ *
+ * Flipping this back to true restores the lot — the code, the styles and the
+ * two browser tests marked with this constant's name are all still here.
+ */
+// Typed as a boolean rather than left to infer `false`: as a literal type it
+// would make everything below the checks unreachable code, which is a
+// warning about a switch working exactly as intended.
+const DRAG_GUIDES_ENABLED: boolean = false
+
 const EXPR_ATTRS = ['data-jinja-expr', 'data-jinja-for', 'data-jinja-if'] as const
 type ExprAttr = (typeof EXPR_ATTRS)[number]
 
@@ -201,8 +246,18 @@ function paginate(body: HTMLElement, geom: PageGeometry | null): void {
   // it, and every rect read here is read after the shifts above it have already
   // happened. That is what keeps this from needing to know how much it has
   // inserted, and from feeding its own output back into the next pass.
+  const view = doc.defaultView
   for (const child of Array.from(body.children)) {
     if (child.hasAttribute('data-lf-spacer')) continue
+    // Only what is IN the flow. A running header or footer is a body child
+    // like any other, but it is drawn in a margin band by absolute position —
+    // so its rectangle sits in the band it was put in, which reads as
+    // "overflowing its page" every time. The spacer that answered that was
+    // inserted before an element nothing follows in flow, and pushed the whole
+    // document down instead: reported as "the blocks above moved down" the
+    // moment a paragraph was added to a template with a footer.
+    const position = view?.getComputedStyle(child).position ?? 'static'
+    if (position === 'absolute' || position === 'fixed') continue
     const rect = child.getBoundingClientRect()
     if (rect.height === 0) continue
     if (!overflowsItsPage(rect.top, rect.height, geom)) continue
@@ -253,7 +308,9 @@ export default function CanvasEditor({
   onPageSetup,
   onFurniture,
   onDropFiles,
-  compact = false,
+  focusMode = false,
+  onLeaveFocus,
+  overlayInspector = false,
 }: {
   /** protected body HTML with canvas asset URLs */
   initialBody: string
@@ -281,11 +338,22 @@ export default function CanvasEditor({
    * where they landed. The canvas knows about the document, not about storage:
    * uploading them and inserting whatever they became is the shell's half */
   onDropFiles?: (files: File[]) => void
-  /** the window is tight enough that panels cost more than they give */
-  compact?: boolean
+  /** Everything but the page is folded away. Held by the editor around this
+   * one, because it covers the navigation and the preview too. */
+  focusMode?: boolean
+  onLeaveFocus?: () => void
+  /** No width to spare: the inspector is drawn over the page instead of
+   * beside it. It still points at the page, so it is an overlay rather than
+   * something that goes away. */
+  overlayInspector?: boolean
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const canvasBodyRef = useRef<HTMLDivElement>(null)
+  // The row holding the page and the inspector. Measured because the
+  // inspector's limit is not a constant: it is whatever leaves the page its
+  // minimum.
+  const [bodyWidth, setBodyWidth] = useState(0)
   const bodyRef = useRef<HTMLElement | null>(null)
   const historyRef = useRef<SnapshotHistory | null>(null)
   const restoringRef = useRef(false)
@@ -312,6 +380,7 @@ export default function CanvasEditor({
     onPageSetup,
     onFurniture,
     onDropFiles,
+    onLeaveFocus,
   })
   callbacksRef.current = {
     onChange,
@@ -321,6 +390,7 @@ export default function CanvasEditor({
     onPageSetup,
     onFurniture,
     onDropFiles,
+    onLeaveFocus,
   }
   // The stylesheet element the canvas injects, kept so a change to the page
   // can be applied without tearing the document down and losing its history.
@@ -343,7 +413,6 @@ export default function CanvasEditor({
     }),
     [canvasStyles],
   )
-  const [pageSetupOpen, setPageSetupOpen] = useState(false)
   // The expression being edited, in a dialog rather than a window prompt: a
   // prompt cannot be styled, cannot show what the expression is for, and on a
   // second monitor opens somewhere the user is not looking.
@@ -362,9 +431,14 @@ export default function CanvasEditor({
    * A manual choice wins until it is given back ("Fit"), and window resizes go
    * on updating the fitted value underneath, so handing it back is instant.
    */
-  const [fitted, setFitted] = useState(1)
-  const [manualZoom, setManualZoom] = useState<number | null>(null)
-  const zoom = manualZoom ?? fitted
+  const [fitWidth, setFitWidth] = useState(1)
+  const [fitPage, setFitPage] = useState(1)
+  // 'width' fills the column with the page; 'page' shows the whole sheet at
+  // once, which is the only way to judge where a break falls. A number is a
+  // size the author chose and neither of those.
+  const [zoomChoice, setZoomChoice] = useState<'width' | 'page' | number>('width')
+  const zoom =
+    typeof zoomChoice === 'number' ? zoomChoice : zoomChoice === 'page' ? fitPage : fitWidth
   // Read from inside the canvas document's own listeners, which are bound once
   // at mount and would otherwise hold the zoom the page had when it opened.
   const zoomRef = useRef(zoom)
@@ -373,11 +447,18 @@ export default function CanvasEditor({
   // selection: right-clicking selects first, so the menu and the properties bar
   // are always talking about the same element.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [keysOpen, setKeysOpen] = useState(false)
   // A file is over the page. Shown, because a drop target that gives no sign
   // it is one is indistinguishable from a page that will refuse the file.
   const [dropping, setDropping] = useState(false)
   const menuRef = useRef(false)
   menuRef.current = menu !== null
+  // Read from the canvas document's own listener, bound once at mount.
+  const focusRef = useRef(focusMode)
+  focusRef.current = focusMode
+  const overlayRef = useRef(overlayInspector)
+  overlayRef.current = overlayInspector
+  const inspectorRef = useRef(false)
   const [frameHeight, setFrameHeight] = useState(400)
   const [selected, setSelected] = useState<{ el: Element; kind: NodeKind } | null>(null)
   const [histState, setHistState] = useState({ canUndo: false, canRedo: false })
@@ -387,8 +468,21 @@ export default function CanvasEditor({
   const [selId, setSelId] = useState(0)
   // The structure panel. Open by default where there is room for it: a panel
   // nobody knows about answers nobody's question.
-  const [outlineOpen, setOutlineOpen] = useState(!compact)
-  const [sideTab, setSideTab] = useState<SideTab>('structure')
+  // Open by default at any width. It used to follow `compact` — the panel was
+  // an extra then, and hiding it on a laptop bought the page some room. It
+  // holds the properties now, so a closed inspector means clicking a block and
+  // finding nowhere to set its margins: the controls were in a bar above the
+  // canvas before, always there whatever the width.
+  const [inspectorOpen, setInspectorOpen] = useState(() => getBoolPref(PREF_INSPECTOR_OPEN, true))
+  const [inspectorWidth, setInspectorWidth] = useState(() =>
+    getNumPref(PREF_INSPECTOR_WIDTH, INSPECTOR_DEFAULT, INSPECTOR_MIN, INSPECTOR_MAX),
+  )
+  const [sideTab, setSideTab] = useState<SideTab>(() =>
+    getStringPref(PREF_INSPECTOR_TAB, 'properties', SIDE_TABS),
+  )
+  useEffect(() => setBoolPref(PREF_INSPECTOR_OPEN, inspectorOpen), [inspectorOpen])
+  useEffect(() => setNumPref(PREF_INSPECTOR_WIDTH, inspectorWidth), [inspectorWidth])
+  useEffect(() => setStringPref(PREF_INSPECTOR_TAB, sideTab), [sideTab])
   // Which containers the panel has been told to open or close. A WeakMap rather
   // than the document, because opening a twisty is not an edit: writing it into
   // the DOM would put a mutation burst — repaginate, re-measure, re-export —
@@ -427,6 +521,17 @@ export default function CanvasEditor({
   const hoverRef = useRef<Element | null>(null)
   // Lines a drag has landed on, drawn while it holds them.
   const [guides, setGuides] = useState<{ axis: 'x' | 'y'; at: number; kind: SnapKind }[]>([])
+  // Everything it COULD land on, drawn faintly while a spacing value is being
+  // adjusted. The ruler alone says how far something moved; these say what it
+  // could line up with, which is the question somebody nudging a margin is
+  // actually asking.
+  const [hintLines, setHintLines] = useState<{ axis: 'x' | 'y'; at: number }[]>([])
+  // The edges of the thing being moved, both ends of both axes, drawn while
+  // it moves. Three colours, three meanings: the millimetre grid is the
+  // paper's own ruling, these are where the block is NOW, and the guides are
+  // what it could land on. Told apart at a glance rather than by watching
+  // which line moves with the pointer.
+  const [movingLines, setMovingLines] = useState<{ axis: 'x' | 'y'; at: number }[]>([])
   // The live measurement beside the cursor, in viewport coordinates.
   const [readout, setReadout] = useState<{ left: number; top: number; text: string } | null>(null)
   // Typing at the caret offers something: `{{` the fields, `/` the blocks. Held
@@ -618,7 +723,12 @@ export default function CanvasEditor({
         prepareFragment(node)
         if (edge === 'top') body.prepend(node)
         else body.append(node)
-        select(node)
+        // Deliberately NOT selected. Turning a band on is a page-level act, and
+        // the switch that does it lives in the page properties — which are what
+        // the inspector shows when nothing is selected. Selecting the new
+        // element took that panel away under the pointer, height control and
+        // all. The band is drawn in its margin and can be clicked like anything
+        // else.
       }
     } else if (!on && existing) {
       existing.remove()
@@ -759,7 +869,7 @@ export default function CanvasEditor({
 
   const outline = useMemo(() => {
     const body = bodyRef.current
-    if (!body || !outlineOpen) return { items: [] as OutlineItem[], hidden: 0 }
+    if (!body || !inspectorOpen) return { items: [] as OutlineItem[], hidden: 0 }
     return {
       items: outlineOf(body, outlineIsOpen),
       // Read off the document rather than kept beside it: the attribute IS the
@@ -768,7 +878,7 @@ export default function CanvasEditor({
       hidden: body.querySelectorAll('[data-lf-hidden]').length,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, selId, outlineOpen])
+  }, [tick, selId, inspectorOpen])
 
   /** Bring an element into view in the canvas. Selecting something from the
    * panel and watching nothing happen — because it is two pages down — reads as
@@ -842,7 +952,7 @@ export default function CanvasEditor({
   // opening whatever it is buried inside. The panel scrolls to it itself.
   useEffect(() => {
     const body = bodyRef.current
-    if (!selected || !body || !outlineOpen) return
+    if (!selected || !body || !inspectorOpen) return
     let changed = false
     for (let p = selected.el.parentElement; p && p !== body; p = p.parentElement) {
       if (outlineFolds.current.get(p) !== true) {
@@ -851,7 +961,7 @@ export default function CanvasEditor({
       }
     }
     if (changed) setTick((t) => t + 1)
-  }, [selId, outlineOpen, selected])
+  }, [selId, inspectorOpen, selected])
 
   /** Begin a gesture: remember what to return to, and hold history open. */
   const beginGesture = (): void => {
@@ -875,6 +985,11 @@ export default function CanvasEditor({
     setGuides([])
     setReadout(null)
     setMoveDrop(null)
+    // Everything the gesture drew goes with it: a guide left on the page
+    // after the mouse is up is a line the document does not have.
+    setMovingLines([])
+    setHintLines([])
+    dragLines.current = { x: [], y: [] }
   }
 
   const startDrag = (spec: {
@@ -1095,7 +1210,7 @@ export default function CanvasEditor({
     const onWheel = (e: WheelEvent): void => {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
-      setManualZoom(clampZoom(zoomRef.current * (1 - e.deltaY / 400)))
+      setZoomChoice(clampZoom(zoomRef.current * (1 - e.deltaY / 400)))
     }
     doc.addEventListener('wheel', onWheel, { passive: false })
 
@@ -1229,6 +1344,11 @@ export default function CanvasEditor({
         }
         return
       }
+      if (e.key === 'Escape' && focusRef.current) {
+        e.preventDefault()
+        callbacksRef.current.onLeaveFocus?.()
+        return
+      }
       if (e.key === 'Escape' && menuRef.current) {
         e.preventDefault()
         setMenu(null)
@@ -1240,6 +1360,20 @@ export default function CanvasEditor({
       if (e.key === 'Escape' && gestureRef.current) {
         e.preventDefault()
         endGesture(false)
+        return
+      }
+      // An inspector drawn over the page closes on Escape — but only once the
+      // key has nothing else to do. Escape in a canvas means "step out of
+      // this", and a laptop-width editor where the first press always shut a
+      // panel would have taken that away everywhere.
+      if (
+        e.key === 'Escape' &&
+        overlayRef.current &&
+        inspectorRef.current &&
+        !body.querySelector('[data-lf-selected]')
+      ) {
+        e.preventDefault()
+        setInspectorOpen(false)
         return
       }
       // The current selection is read from the DOM, not from React state: this
@@ -1463,6 +1597,13 @@ export default function CanvasEditor({
         e.preventDefault()
         return
       }
+      // The inspector is a column the author can put away; the page is what
+      // they came for.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key === '.') {
+        e.preventDefault()
+        setInspectorOpen((on) => !on)
+        return
+      }
       // Before the guard below: a gesture can be started from a control that
       // holds the focus — scrubbing a spacing box is one — and Escape has to
       // reach it there too.
@@ -1490,6 +1631,21 @@ export default function CanvasEditor({
       }
       const body = bodyRef.current
       if (!body) return
+      // Same cascade as inside the canvas: an overlay inspector gives Escape
+      // back to the page whenever the page still has a use for it. Bound here
+      // too because a press with the focus in the panel itself, or on the
+      // toolbar, never reaches the canvas document.
+      if (
+        e.key === 'Escape' &&
+        overlayInspector &&
+        inspectorOpen &&
+        !focusMode &&
+        !body.querySelector('[data-lf-selected]')
+      ) {
+        e.preventDefault()
+        setInspectorOpen(false)
+        return
+      }
       const intent = intentFor(e, body.querySelector('[data-lf-selected]'), body)
       if (!intent) return
       e.preventDefault()
@@ -1499,22 +1655,41 @@ export default function CanvasEditor({
     return () => document.removeEventListener('keydown', onKeydown)
   })
 
-  // ---- fit the page into the available width -----------------------------
+  useEffect(() => {
+    const el = canvasBodyRef.current
+    if (!el) return
+    const measure = (): void => setBodyWidth(el.clientWidth)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // ---- fit the page into the space there is ------------------------------
   useEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
     const fit = () => {
       if (pageWidth === null) {
-        setFitted(1)
+        setFitWidth(1)
+        setFitPage(1)
         return
       }
-      setFitted(fitZoom(scroll.clientWidth - CANVAS_GUTTER_PX, pageWidth) / 100)
+      const byWidth = fitZoom(scroll.clientWidth - CANVAS_GUTTER_PX, pageWidth) / 100
+      setFitWidth(byWidth)
+      // The whole sheet: the smaller of the two, since a page that fits the
+      // width and runs off the bottom is not fitted.
+      const byHeight =
+        pageHeight === null
+          ? byWidth
+          : fitZoom(scroll.clientHeight - CANVAS_GUTTER_PX, pageHeight) / 100
+      setFitPage(Math.min(byWidth, byHeight))
     }
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(scroll)
     return () => ro.disconnect()
-  }, [pageWidth])
+  }, [pageWidth, pageHeight])
 
   // ---- zoom ---------------------------------------------------------------
   //
@@ -1534,7 +1709,7 @@ export default function CanvasEditor({
       dir === 1
         ? ZOOM_STOPS.find((stop) => stop > current + 0.005)
         : [...ZOOM_STOPS].reverse().find((stop) => stop < current - 0.005)
-    setManualZoom(next ?? (dir === 1 ? ZOOM_STOPS[ZOOM_STOPS.length - 1] : ZOOM_STOPS[0]))
+    setZoomChoice(next ?? (dir === 1 ? ZOOM_STOPS[ZOOM_STOPS.length - 1] : ZOOM_STOPS[0]))
   }
 
   /** True when a key press was a zoom command, so the caller can stop the
@@ -1542,7 +1717,9 @@ export default function CanvasEditor({
   const zoomKey = (key: string): boolean => {
     if (key === '=' || key === '+') return zoomStep(1), true
     if (key === '-' || key === '_') return zoomStep(-1), true
-    if (key === '0') return setManualZoom(null), true
+    // The whole page, which is what "fit" means when a document has more
+    // than one screenful of height.
+    if (key === '0') return setZoomChoice('page'), true
     return false
   }
 
@@ -1798,6 +1975,85 @@ export default function CanvasEditor({
     return lines.concat(edgeLines(rects, axis))
   }
 
+  /** Both axes at once, and read afresh.
+   *
+   * Gathered once per gesture before, which was wrong twice: a resize
+   * reflows the document, so every target moved while the cached copy said
+   * they had not — and the lines drawn from that copy were of a page that no
+   * longer existed. Reading them per move costs one walk of the page, which
+   * is the same walk the drag has already forced by moving something. */
+  const snapLinesBoth = (dragged: Element | null): { x: SnapLine[]; y: SnapLine[] } => {
+    const both = { x: snapLinesFor('x', dragged), y: snapLinesFor('y', dragged) }
+    dragLines.current = both
+    return both
+  }
+
+  const dragLines = useRef<{ x: SnapLine[]; y: SnapLine[] }>({ x: [], y: [] })
+
+  /** How near a target has to be before it is worth drawing. Wider than the
+   * snap itself, so a line appears as the block approaches rather than at the
+   * moment it is already caught — which is too late to aim by. */
+  const NEAR_SCREEN_PX = 24
+
+  /**
+   * Draw where the moved block is, and what it is coming near.
+   *
+   * Called after each move has been applied rather than before: the question
+   * is where the block ACTUALLY is, and only the layout knows that.
+   */
+  const traceDrag = (el: Element | null, altKey = false): void => {
+    // See DRAG_GUIDES_ENABLED: the lines are off, the snapping is not.
+    if (!DRAG_GUIDES_ENABLED) return
+    if (!el) {
+      setMovingLines([])
+      setHintLines([])
+      return
+    }
+    const box = el.getBoundingClientRect()
+    const edges = {
+      x: [box.left, box.right],
+      y: [box.top, box.bottom],
+    }
+    setMovingLines([
+      { axis: 'x', at: box.left },
+      { axis: 'x', at: box.right },
+      { axis: 'y', at: box.top },
+      { axis: 'y', at: box.bottom },
+    ])
+    // Alt refuses snapping for as long as it is held, so there is nothing to
+    // line up with: drawing targets then would be the canvas offering
+    // something it has just been told not to do.
+    if (altKey) {
+      setHintLines([])
+      return
+    }
+    // The NEAREST candidate to each moving edge, and nothing else: at most
+    // four lines on the page. The first version drew every line within
+    // reach, which on a form of forty rows is a second grid — a screen of
+    // hairlines that says nothing about which one you are approaching.
+    const near = NEAR_SCREEN_PX / zoomRef.current
+    const shown: { axis: 'x' | 'y'; at: number }[] = []
+    const seen = new Set<string>()
+    for (const axis of ['x', 'y'] as const) {
+      for (const edge of edges[axis]) {
+        let best: SnapLine | null = null
+        let bestDistance = near
+        for (const line of dragLines.current[axis]) {
+          const distance = Math.abs(line.at - edge)
+          if (distance > bestDistance) continue
+          best = line
+          bestDistance = distance
+        }
+        if (!best) continue
+        const key = `${axis}:${Math.round(best.at)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        shown.push({ axis, at: best.at })
+      }
+    }
+    setHintLines(shown)
+  }
+
   /** Snap one edge, and remember the line to draw. `keepOther` is for a corner
    * drag, where the second axis must not wipe the first axis's guide. */
   const snapEdge = (
@@ -1817,6 +2073,96 @@ export default function CanvasEditor({
       keepOther ? previous.filter((g) => g.axis !== axis).concat(drawn) : drawn,
     )
     return snapped
+  }
+
+  /**
+   * Pull a spacing value onto a line the edge it moves is near.
+   *
+   * The same lines a drag snaps to — page margins, page breaks, the edges and
+   * centres of every other block — and the same distance on screen, so the pull
+   * feels identical whether the sheet is at 40 % or at 100 %. Until now
+   * scrubbing a margin was the one way to move something that had no help at
+   * all: the ruler appeared, and nothing to line up against.
+   *
+   * How a property moves an edge is LEARNED rather than encoded. `margin-top`
+   * moves the top edge down; `padding-left` moves the content but not the box;
+   * `margin-bottom` on a block in flow moves nothing of its own at all. Writing
+   * those rules down would be keeping a copy of the box model in this file, so
+   * instead the first change of a gesture is measured: how far the edge moved
+   * per millimetre asked for. A property that moves nothing has a ratio of zero
+   * and is left alone.
+   */
+  const spacingGesture = useRef<{
+    property: string
+    startEdge: number
+    startMm: number
+    lines: { x: SnapLine[]; y: SnapLine[] }
+  } | null>(null)
+
+  const edgeFor = (rect: DOMRect, property: string): number => {
+    if (property.includes('top')) return rect.top
+    if (property.includes('left')) return rect.left
+    if (property.includes('right') || property === 'width') return rect.right
+    return rect.bottom
+  }
+
+  /** The lines worth showing: every page edge, break and block edge, with
+   * duplicates dropped — a cell edge and its row's edge are one line to the
+   * eye — and capped, because a page of forty rows has hundreds of them and a
+   * screen full of hairlines helps nobody. */
+  const showLines = (el: HTMLElement): void => {
+    if (!DRAG_GUIDES_ENABLED) return
+    const seen = new Set<string>()
+    const out: { axis: 'x' | 'y'; at: number }[] = []
+    for (const axis of ['x', 'y'] as const) {
+      for (const line of snapLinesFor(axis, el)) {
+        const key = `${axis}:${Math.round(line.at)}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({ axis, at: line.at })
+        if (out.length >= 80) break
+      }
+    }
+    setHintLines(out)
+  }
+
+  const settleSpacing = (property: string, mm: number): number => {
+    const body = bodyRef.current
+    const el = selected?.el as HTMLElement | undefined
+    if (!body || !el) return mm
+    const axis: 'x' | 'y' = /top|bottom|height/.test(property) ? 'y' : 'x'
+    const edge = edgeFor(el.getBoundingClientRect(), property)
+
+    let gesture = spacingGesture.current
+    if (!gesture || gesture.property !== property) {
+      // Gathered once per gesture: this reads the geometry of every element on
+      // the page, and a target that moves while you reach for it is worse than
+      // no target.
+      gesture = {
+        property,
+        startEdge: edge,
+        startMm: mm,
+        lines: { x: snapLinesFor('x', el), y: snapLinesFor('y', el) },
+      }
+      spacingGesture.current = gesture
+      return mm
+    }
+
+    const askedBy = mm - gesture.startMm
+    const movedBy = edge - gesture.startEdge
+    // Millimetres per pixel of edge movement. Too small a sample says nothing
+    // yet; a property that moves this edge not at all never will.
+    if (Math.abs(askedBy) < 0.4 || Math.abs(movedBy) < 1) return mm
+    const mmPerPx = askedBy / movedBy
+
+    const { value: snapped, line } = snapTo(edge, gesture.lines[axis], {
+      threshold: SNAP_SCREEN_PX / zoom,
+      gridStep: GRID_MINOR_MM * PX_PER_MM,
+    })
+    setGuides(line ? [{ axis, at: line.at, kind: line.kind }] : [])
+    if (!line) return mm
+    const corrected = Math.round((mm + (snapped - edge) * mmPerPx) * 10) / 10
+    return Number.isFinite(corrected) ? corrected : mm
   }
 
   /** The live figure beside the cursor. Printed work is measured work, and
@@ -1856,16 +2202,17 @@ export default function CanvasEditor({
     const cell = selected.el as HTMLElement
     const box = cell.getBoundingClientRect()
     const startX = e.clientX
-    const lines = snapLinesFor('x', cell)
     startDrag({
       cursor: 'col-resize',
       onMove: (ev) => {
         // The thing being dragged is the column's right EDGE, so that is what
         // is offered to the page margins and to the columns above it. A width
         // has nothing to line up with.
+        const lines = snapLinesBoth(cell).x
         const edge = snapEdge(box.right + (ev.clientX - startX) / zoom, lines, 'x', ev.altKey)
         const width = Math.max(8, edge - box.left)
         settleEdge(cell, edge, 'x', width, (px) => setColumnWidth(cell, `${px}px`))
+        traceDrag(cell, ev.altKey)
         readOut(ev, `${toMm(width)} mm wide`)
         setTick((t) => t + 1)
       },
@@ -1878,13 +2225,14 @@ export default function CanvasEditor({
     const cell = selected.el as HTMLElement
     const box = cell.getBoundingClientRect()
     const startY = e.clientY
-    const lines = snapLinesFor('y', cell)
     startDrag({
       cursor: 'row-resize',
       onMove: (ev) => {
+        const lines = snapLinesBoth(cell).y
         const edge = snapEdge(box.bottom + (ev.clientY - startY) / zoom, lines, 'y', ev.altKey)
         const height = Math.max(8, edge - box.top)
         settleEdge(cell, edge, 'y', height, (px) => setRowHeight(cell, `${px}px`))
+        traceDrag(cell, ev.altKey)
         readOut(ev, `${toMm(height)} mm tall`)
         setTick((t) => t + 1)
       },
@@ -1900,11 +2248,10 @@ export default function CanvasEditor({
     const box = el.getBoundingClientRect()
     const startX = e.clientX
     const startY = e.clientY
-    const linesX = snapLinesFor('x', el)
-    const linesY = snapLinesFor('y', el)
     startDrag({
       cursor: 'nwse-resize',
       onMove: (ev) => {
+        const { x: linesX, y: linesY } = snapLinesBoth(el)
         const right = snapEdge(box.right + (ev.clientX - startX) / zoom, linesX, 'x', ev.altKey)
         const bottom = snapEdge(
           box.bottom + (ev.clientY - startY) / zoom,
@@ -1924,6 +2271,7 @@ export default function CanvasEditor({
           : asked
         settleEdge(el, box.left + width, 'x', width, (px) => (el.style.width = `${px}px`))
         settleEdge(el, box.top + height, 'y', height, (px) => (el.style.height = `${px}px`))
+        traceDrag(el, ev.altKey)
         readOut(ev, `${toMm(width)} × ${toMm(height)} mm${ev.shiftKey ? ' · proportional' : ''}`)
         setTick((t) => t + 1)
       },
@@ -2017,11 +2365,10 @@ export default function CanvasEditor({
     // positions it; the snap lines are in the canvas's own coordinates, so the
     // move is worked out as a delta between the two.
     const box = el.getBoundingClientRect()
-    const linesX = snapLinesFor('x', el)
-    const linesY = snapLinesFor('y', el)
     startDrag({
       cursor: 'move',
       onMove: (ev) => {
+        const { x: linesX, y: linesY } = snapLinesBoth(el)
         // Shift holds it to one axis: nudging something sideways without
         // losing the vertical placement it already had is most of what moving
         // a stamp or a logo is.
@@ -2032,6 +2379,7 @@ export default function CanvasEditor({
         const top = snapEdge(box.top + moved.dy, linesY, 'y', ev.altKey, true)
         el.style.left = `${Math.round(startLeft + (left - box.left))}px`
         el.style.top = `${Math.round(startTop + (top - box.top))}px`
+        traceDrag(el, ev.altKey)
         readOut(
           ev,
           `${toMm(left)} × ${toMm(top)} mm from the sheet corner${ev.shiftKey ? ' · one axis' : ''}`,
@@ -2043,117 +2391,34 @@ export default function CanvasEditor({
 
   const stageWidth = pageWidth === null ? undefined : pageWidth * zoom
 
-  return (
-    <div className="canvas-editor">
-      <div className="canvas-topbar">
-        {/* The page, from the document's own @page rule — not a view setting.
-            The menu that used to be here changed the canvas and left the PDF
-            printing something else. */}
-        <span className="page-setup-host">
-          <button
-            className={pageSetupOpen ? 'tb active' : 'tb'}
-            aria-expanded={pageSetupOpen}
-            title="Size, orientation, margins and background of the printed page"
-            onClick={() => setPageSetupOpen((on) => !on)}
-          >
-            Page: {pageSetup.size || 'A4'}
-            {pageSetup.landscape ? ' landscape' : ''}
-          </button>
-          {pageSetupOpen && (
-            <PageSetupPanel
-              setup={pageSetup}
-              overrides={pageOverrides}
-              furniture={bands}
-              onFurniture={toggleFurniture}
-              onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
-              onClose={() => setPageSetupOpen(false)}
-            />
-          )}
-        </span>
-        <span className="topbar-group">
-          <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
-            <b>B</b>
-          </button>
-          <button className="tb" title="Italic" onClick={() => withDoc((d) => toggleInline(d, 'italic'))}>
-            <i>I</i>
-          </button>
-          <button
-            className="tb"
-            title="Underline"
-            onClick={() => withDoc((d) => toggleInline(d, 'underline'))}
-          >
-            <u>U</u>
-          </button>
-        </span>
-        <span className="topbar-group">
-          {(['left', 'center', 'right'] as const).map((a) => (
-            <button
-              key={a}
-              className="tb"
-              title={`Align ${a}`}
-              onClick={() => selected && setAlign(selected.el, a)}
-              disabled={!selected}
-            >
-              {a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥'}
-            </button>
-          ))}
-        </span>
-        <span className="topbar-group">
-          <button className="tb" title="Undo (Ctrl+Z)" onClick={undo} disabled={!histState.canUndo}>
-            ↶
-          </button>
-          <button className="tb" title="Redo (Ctrl+Y)" onClick={redo} disabled={!histState.canRedo}>
-            ↷
-          </button>
-        </span>
-        <span className="topbar-group">
-          <button
-            className={gridPinned ? 'tb active' : 'tb'}
-            title={`Millimetre grid (${GRID_MINOR_MM} mm, heavier every ${GRID_MAJOR_MM} mm). Shown while dragging either way.`}
-            aria-pressed={gridPinned}
-            onClick={() => setGridPinned((on) => !on)}
-          >
-            Grid
-          </button>
-          <button
-            className={outlineOpen ? 'tb active' : 'tb'}
-            title="The structure of the document, and the fields it can name"
-            aria-label="Structure and fields panel"
-            aria-pressed={outlineOpen}
-            onClick={() => setOutlineOpen((on) => !on)}
-          >
-            <Icon name="structure" size={14} />
-            Panel
-          </button>
-        </span>
-        {/* The percentage was a read-out of a number nobody could change. It is
-            the control now, and pressing it hands the size back to the window. */}
-        <span className="topbar-group zoom-group">
-          <button className="tb" aria-label="Zoom out" title="Zoom out (Ctrl+−)" onClick={() => zoomStep(-1)}>
-            −
-          </button>
-          <button
-            className={manualZoom === null ? 'tb zoom-value fitted' : 'tb zoom-value'}
-            title={
-              manualZoom === null
-                ? 'The page is fitted to the window'
-                : 'Fit the page to the window (Ctrl+0)'
-            }
-            onClick={() => setManualZoom(null)}
-          >
-            {Math.round(zoom * 100)}%
-          </button>
-          <button className="tb" aria-label="Zoom in" title="Zoom in (Ctrl++)" onClick={() => zoomStep(1)}>
-            +
-          </button>
-        </span>
-      </div>
-      {/* Always present, even with nothing selected. It used to appear with the
-          first selection, and appearing is moving: the whole canvas dropped a
-          row under the pointer, so the second click of a double click landed
-          somewhere else and the document never saw it. Editing a field by
-          double-clicking it was impossible for that reason alone. */}
-      <div className="canvas-props" key={selId}>
+  /**
+   * What is selected, and what can be done to it.
+   *
+   * Rendered here and handed to the inspector rather than lifted out into it:
+   * every control below closes over the selection, the live document, the
+   * commands and a dozen other things that belong to this component. Moving the
+   * markup one column to the right should not cost a second copy of the
+   * editor's state to keep in step.
+   *
+   * With nothing selected it is the PAGE that has properties — size, margins,
+   * background, the running head and foot. That is a better answer than an
+   * empty bar, and it is the same set of controls the topbar's Page button
+   * opens, embedded rather than floated.
+   */
+  /** What the inspector may take, and what it actually takes. A remembered
+   * width from a wider window must not crush the page on a narrower one. */
+  const inspectorMax =
+    bodyWidth > 0
+      ? Math.max(INSPECTOR_MIN, Math.min(INSPECTOR_MAX, bodyWidth - CANVAS_MIN_PX))
+      : INSPECTOR_MAX
+  const inspectorShown = Math.min(inspectorWidth, inspectorMax)
+  // Folded by the mode, not instead of the setting: leaving focus mode
+  // brings the column back the width it was.
+  const inspectorShowing = inspectorOpen && !focusMode
+  inspectorRef.current = inspectorShowing
+
+  const renderProperties = (): ReactNode => (
+    <div key={selId}>
         {!selected && (
           <span className="muted">
             Nothing selected — click something on the page, or take it from the panel
@@ -2214,8 +2479,25 @@ export default function CanvasEditor({
                 width: isCell ? 'Column width' : 'Width',
                 height: isCell ? 'Row height' : 'Height',
               }}
-              onAdjusting={setAdjusting}
-              onGesture={(active) => (active ? beginGesture() : endGesture(true))}
+              onAdjusting={(active) => {
+                setAdjusting(active)
+                if (active) showLines(selected.el as HTMLElement)
+                else {
+                  setGuides([])
+                  setHintLines([])
+                }
+              }}
+              onGesture={(active) => {
+                if (active) beginGesture()
+                else {
+                  endGesture(true)
+                  // The lines were gathered for this gesture and the page
+                  // has moved since; the next one measures again.
+                  spacingGesture.current = null
+                  setGuides([])
+                }
+              }}
+              onSettle={settleSpacing}
               onApply={(prop, value) => {
                 // Width and height on a cell mean the column and the row, so a
                 // change grows the whole one rather than one lopsided cell.
@@ -2395,7 +2677,169 @@ export default function CanvasEditor({
           )}
           </>
         )}
+      {!selected && (
+        <div className="inspector-page">
+          <h3 className="inspector-section">Page</h3>
+          <PageSetupPanel
+            embedded
+            setup={pageSetup}
+            overrides={pageOverrides}
+            furniture={bands}
+            onFurniture={toggleFurniture}
+            onChange={(next) => callbacksRef.current.onPageSetup?.(next)}
+            onClose={() => undefined}
+          />
+        </div>
+      )}
+    </div>
+  )
+
+  return (
+    <div className="canvas-editor">
+      <div className="canvas-topbar">
+        {/* The page, from the document's own @page rule — not a view setting.
+            The menu that used to be here changed the canvas and left the PDF
+            printing something else. */}
+        {/* The page's own controls live in the inspector, where they are what
+            "properties" means when nothing is selected. This is the way to
+            them, not a second copy: a floating card holding the same four
+            controls as the column beside it is two things to keep in step and
+            two things to close. */}
+        <button
+          className="tb"
+          title="Size, orientation, margins and background of the printed page"
+          onClick={() => {
+            // Page properties are what the Properties tab shows with nothing
+            // selected, so asking for them lets go of the selection.
+            select(null)
+            setSideTab('properties')
+            setInspectorOpen(true)
+          }}
+        >
+          Page: {pageSetup.size || 'A4'}
+          {pageSetup.landscape ? ' landscape' : ''}
+        </button>
+        <span className="topbar-group">
+          <button className="tb" title="Bold" onClick={() => withDoc((d) => toggleInline(d, 'bold'))}>
+            <b>B</b>
+          </button>
+          <button className="tb" title="Italic" onClick={() => withDoc((d) => toggleInline(d, 'italic'))}>
+            <i>I</i>
+          </button>
+          <button
+            className="tb"
+            title="Underline"
+            onClick={() => withDoc((d) => toggleInline(d, 'underline'))}
+          >
+            <u>U</u>
+          </button>
+        </span>
+        <span className="topbar-group">
+          {(['left', 'center', 'right'] as const).map((a) => (
+            <button
+              key={a}
+              className="tb"
+              title={`Align ${a}`}
+              onClick={() => selected && setAlign(selected.el, a)}
+              disabled={!selected}
+            >
+              {a === 'left' ? '⇤' : a === 'center' ? '↔' : '⇥'}
+            </button>
+          ))}
+        </span>
+        <span className="topbar-group">
+          <button className="tb" title="Undo (Ctrl+Z)" onClick={undo} disabled={!histState.canUndo}>
+            ↶
+          </button>
+          <button className="tb" title="Redo (Ctrl+Y)" onClick={redo} disabled={!histState.canRedo}>
+            ↷
+          </button>
+        </span>
+        <span className="topbar-group">
+          <button
+            className={gridPinned ? 'tb active' : 'tb'}
+            title={`Millimetre grid (${GRID_MINOR_MM} mm, heavier every ${GRID_MAJOR_MM} mm). Shown while dragging either way.`}
+            aria-pressed={gridPinned}
+            onClick={() => setGridPinned((on) => !on)}
+          >
+            Grid
+          </button>
+          <button
+            className={inspectorOpen ? 'tb active' : 'tb'}
+            title="The structure of the document, and the fields it can name"
+            aria-label="Structure and fields panel"
+            aria-pressed={inspectorOpen}
+            onClick={() => setInspectorOpen((on) => !on)}
+          >
+            <Icon name="structure" size={14} />
+            Panel
+          </button>
+        </span>
+        {/* The percentage was a read-out of a number nobody could change. It is
+            the control now, and pressing it hands the size back to the window. */}
+        <span className="topbar-group zoom-group">
+          <button className="tb" aria-label="Zoom out" title="Zoom out (Ctrl+−)" onClick={() => zoomStep(-1)}>
+            −
+          </button>
+          <button
+            className={
+              typeof zoomChoice === 'number' ? 'tb zoom-value' : 'tb zoom-value fitted'
+            }
+            title="Fit the width of the page to the column"
+            onClick={() => setZoomChoice('width')}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button className="tb" aria-label="Zoom in" title="Zoom in (Ctrl++)" onClick={() => zoomStep(1)}>
+            +
+          </button>
+          {/* Two different questions: "can I read this" and "where does the
+              page end". A form that fits the width can still run three
+              screens deep, and a break you cannot see is a break you find in
+              the PDF. */}
+          <button
+            className={zoomChoice === 'width' ? 'tb active' : 'tb'}
+            onClick={() => setZoomChoice('width')}
+          >
+            Fit width
+          </button>
+          <button
+            className={zoomChoice === 'page' ? 'tb active' : 'tb'}
+            title="Show the whole sheet at once (Ctrl+0)"
+            onClick={() => setZoomChoice('page')}
+          >
+            Fit page
+          </button>
+        </span>
+        {/* The shortcuts, on the bar rather than in a disclosure below it —
+            26 px of chrome above the page, spent on a summary nobody opened
+            twice. Same list, so the hint and the code cannot drift. */}
+        <span className="canvas-keys">
+          <button
+            className={keysOpen ? 'tb active' : 'tb'}
+            aria-expanded={keysOpen}
+            title="What the keyboard does here"
+            onClick={() => setKeysOpen((on) => !on)}
+          >
+            Keyboard
+          </button>
+          {keysOpen && (
+            <div className="keys-popover" role="dialog" aria-label="Keyboard">
+              <dl>
+                {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS, ...EDITOR_SHORTCUTS].map(
+                  (shortcut) => (
+                    <div key={shortcut.keys}>
+                      <dt>{shortcut.keys}</dt>
+                      <dd>{shortcut.does}</dd>
+                    </div>
+                  ),
+                )}
+              </dl>
+            </div>
+          )}
+        </span>
       </div>
+
       {/* A structural selection has no focus ring of its own — the caret stays
           with the text — so what is selected is announced instead. */}
       <p className="sr-only" aria-live="polite">
@@ -2404,21 +2848,10 @@ export default function CanvasEditor({
       {/* Closed by default and reachable by Tab. Shortcuts nobody can discover
           are shortcuts nobody has, and the canvas offers no other hint that
           Alt does anything. */}
-      <details className="canvas-keys">
-        <summary>Keyboard</summary>
-        <dl>
-          {[...CANVAS_SHORTCUTS, ...CANVAS_MODIFIERS, ...EDITOR_SHORTCUTS].map((shortcut) => (
-            <div key={shortcut.keys}>
-              <dt>{shortcut.keys}</dt>
-              <dd>{shortcut.does}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
       {/* The page and its structure, side by side. The panel points at the
           canvas — it outlines what a row is about — so it must never be drawn
           over the thing it points at. */}
-      <div className="canvas-body">
+      <div className="canvas-body" ref={canvasBodyRef}>
         {/* The menu is placed in window coordinates, so a scroll would leave it
             hanging over a different element than the one it is about. */}
         <div className="canvas-scroll" ref={scrollRef} onScroll={() => menu && setMenu(null)}>
@@ -2493,15 +2926,43 @@ export default function CanvasEditor({
                 ))}
               </ul>
             )}
+            {/* What is there to line up with, faintly, while a value is being
+                changed — and then the one it actually caught, brightly. */}
+            {movingLines.map((line, i) => (
+              <div
+                key={`moving${i}`}
+                aria-hidden="true"
+                className={`snap-guide moving ${line.axis === 'x' ? 'vertical' : 'horizontal'}`}
+                style={
+                  line.axis === 'x'
+                    ? { left: line.at * zoom - 1, top: 0, height: sheetHeight * zoom }
+                    : { top: line.at * zoom - 1, left: 0, width: (pageWidth ?? 0) * zoom }
+                }
+              />
+            ))}
+            {hintLines.map((line, i) => (
+              <div
+                key={`hint${i}`}
+                aria-hidden="true"
+                className={`snap-guide hint ${line.axis === 'x' ? 'vertical' : 'horizontal'}`}
+                style={
+                  line.axis === 'x'
+                    ? { left: line.at * zoom - 1, top: 0, height: sheetHeight * zoom }
+                    : { top: line.at * zoom - 1, left: 0, width: (pageWidth ?? 0) * zoom }
+                }
+              />
+            ))}
             {guides.map((guide, i) => (
                 <div
                   key={i}
                   aria-hidden="true"
-                  className={`snap-guide ${guide.kind}`}
+                  className={`snap-guide caught ${guide.kind} ${
+                    guide.axis === 'x' ? 'vertical' : 'horizontal'
+                  }`}
                   style={
                     guide.axis === 'x'
-                      ? { left: guide.at * zoom, top: 0, height: sheetHeight * zoom, width: 1 }
-                      : { top: guide.at * zoom, left: 0, width: (pageWidth ?? 0) * zoom, height: 1 }
+                      ? { left: guide.at * zoom - 1.5, top: 0, height: sheetHeight * zoom }
+                      : { top: guide.at * zoom - 1.5, left: 0, width: (pageWidth ?? 0) * zoom }
                   }
                 />
               ))}
@@ -2740,8 +3201,11 @@ export default function CanvasEditor({
             )}
           </div>
         </div>
-        {outlineOpen && (
-          <OutlinePanel
+        {inspectorShowing && overlayInspector ? (
+          <InspectorPanel
+            overlay
+            width={INSPECTOR_DEFAULT}
+            properties={renderProperties()}
             tab={sideTab}
             onTab={setSideTab}
             fields={fields}
@@ -2762,8 +3226,56 @@ export default function CanvasEditor({
             }}
             onToggleHidden={toggleHidden}
             onShowAll={showAllHidden}
-            onClose={() => setOutlineOpen(false)}
+            onClose={() => setInspectorOpen(false)}
           />
+        ) : inspectorShowing ? (
+          <>
+            <Splitter
+              value={inspectorShown}
+              min={INSPECTOR_MIN}
+              max={inspectorMax}
+              defaultValue={INSPECTOR_DEFAULT}
+              label="Resize the inspector"
+              grows="after"
+              onChange={setInspectorWidth}
+            />
+            <InspectorPanel
+              width={inspectorShown}
+              properties={renderProperties()}
+              tab={sideTab}
+              onTab={setSideTab}
+            fields={fields}
+            onInsertField={insertField}
+            items={outline.items}
+            selected={selected?.el ?? null}
+            hiddenCount={outline.hidden}
+            isOpen={(el) => outlineIsOpen(el)}
+            isHidden={(el) => el.hasAttribute('data-lf-hidden')}
+            onHover={outlineHover}
+            onSelect={(el) => {
+              select(el)
+              revealInCanvas(el)
+            }}
+            onToggleOpen={(el) => {
+              outlineFolds.current.set(el, !outlineIsOpen(el))
+              setTick((t) => t + 1)
+            }}
+            onToggleHidden={toggleHidden}
+            onShowAll={showAllHidden}
+              onClose={() => setInspectorOpen(false)}
+            />
+          </>
+        ) : (
+          /* Put away, not gone. The strip is also the way back for anybody
+             who does not know the shortcut. */
+          <button
+            className="pane-strip"
+            aria-label="Show the inspector"
+            title="Show the inspector (Ctrl + .)"
+            onClick={() => setInspectorOpen(true)}
+          >
+            <span>INSPECTOR</span>
+          </button>
         )}
       </div>
       {/* The live figure, in viewport coordinates so it follows the cursor

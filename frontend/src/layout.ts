@@ -12,12 +12,32 @@ import { useEffect, useState } from 'react'
 export const OVERLAY_PANELS_BELOW = 1600
 /** The template list folds to a rail; the toggle still opens it. */
 export const COLLAPSE_SIDEBAR_BELOW = 1200
-/** Below this even a folded sidebar plus two panes cannot hold a usable canvas. */
-export const TOO_NARROW_BELOW = 1000
+/** Below this even a folded sidebar plus two panes cannot hold a usable
+ * canvas. Lowered from 1000: the columns no longer take width
+ * unconditionally — at this size the preview is a tab and the inspector is
+ * drawn over the page — so a window that used to be refused now holds a
+ * whole A4 sheet. */
+export const TOO_NARROW_BELOW = 900
+
+/** At or below this width the preview stops being a column of its own and
+ * becomes a tab in the canvas topbar. Two columns beside an A4 page mean
+ * neither is worth looking at; one at a time, chosen, beats both at once and
+ * cramped.
+ *
+ * At the boundary rather than below it: 1280 is the commonest laptop width
+ * there is, and it is the width the measurements were drawn for — a whole
+ * A4 page at 100 % with 1144 px of canvas. */
+export const PREVIEW_AS_TAB_AT = 1280
+/** The inspector stops reserving width and opens over the canvas instead. It
+ * still points at the page — that is what the panel is for — so it is drawn as
+ * an overlay rather than dropped. */
+export const INSPECTOR_OVERLAY_AT = 1280
 
 export interface LayoutMode {
   overlayPanels: boolean
   collapseSidebar: boolean
+  previewAsTab: boolean
+  inspectorOverlay: boolean
   tooNarrow: boolean
 }
 
@@ -25,6 +45,11 @@ export function layoutFor(width: number): LayoutMode {
   return {
     overlayPanels: width < OVERLAY_PANELS_BELOW,
     collapseSidebar: width < COLLAPSE_SIDEBAR_BELOW,
+    // Both of these share a threshold today and are still two fields: they are
+    // two decisions that happen to agree, and a later measurement can move one
+    // without the other having to be untangled from it.
+    previewAsTab: width > 0 && width <= PREVIEW_AS_TAB_AT,
+    inspectorOverlay: width > 0 && width <= INSPECTOR_OVERLAY_AT,
     // A width of zero is not a narrow window, it is a window that has not been
     // measured — a tab opened in the background, or a page the browser
     // prerendered. Treating it as narrow puts "this window is 0px, open it

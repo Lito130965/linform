@@ -58,27 +58,46 @@ export default function BorderControl({
   return (
     <span className="border-control">
       <span className="cc-label">Border</span>
-      <span className="topbar-group border-sides">
-        <button
-          className={chosen === 'all' ? 'tb active' : 'tb'}
-          title="All four edges"
-          aria-pressed={chosen === 'all'}
-          onClick={() => setChosen('all')}
-        >
-          All
-        </button>
+      {/* A square with a side to press on each edge, the way every spreadsheet
+          has drawn this for thirty years. The letters it replaces — T, R, B, L,
+          All — were a puzzle to solve before you could rule a line: five words
+          in a language of their own, describing a shape that can simply be
+          shown. The middle button is all four.
+
+          Each side shows whether it currently HAS a border, so the square is
+          also the answer to "which edges are ruled" — which no arrangement of
+          letters was ever going to give. */}
+      <span
+        className="border-picker"
+        role="group"
+        aria-label="Which edges to change"
+      >
         {SIDES.map((side) => (
           <button
             key={side}
-            className={chosen !== 'all' && chosen.includes(side) ? 'tb active' : 'tb'}
+            className={
+              'border-side ' +
+              side +
+              (chosen !== 'all' && chosen.includes(side) ? ' chosen' : '') +
+              (current[side].style !== 'none' && current[side].width !== '0px' ? ' ruled' : '')
+            }
             title={`The ${side} edge`}
             aria-label={`${side} edge`}
-            aria-pressed={chosen !== 'all' && chosen.includes(side)}
+            aria-pressed={chosen === 'all' || chosen.includes(side)}
             onClick={() => toggle(side)}
           >
-            {side[0].toUpperCase()}
+            <span aria-hidden="true" />
           </button>
         ))}
+        <button
+          className={chosen === 'all' ? 'border-all chosen' : 'border-all'}
+          title="All four edges"
+          aria-label="All four edges"
+          aria-pressed={chosen === 'all'}
+          onClick={() => setChosen('all')}
+        >
+          <span aria-hidden="true" />
+        </button>
       </span>
 
       <select

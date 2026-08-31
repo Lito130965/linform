@@ -4,6 +4,7 @@ import {
   enterVisual,
   latestDraftHtml,
   openTemplate,
+  openTool,
   saveDraft,
   uniqueCode,
 } from './support'
@@ -37,6 +38,7 @@ test('a block inserted with a cell selected lands in that cell', async ({ page, 
   await frame.locator('#flag').click()
 
   // The palette is the same path a preset takes into the document.
+  await openTool(page, 'Insert')
   await page.locator('.insert-tile', { hasText: 'Text' }).click()
 
   await expect(frame.locator('#flag p')).toHaveCount(1)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as htmlLang } from '@codemirror/lang-html'
 import { EditorView } from '@codemirror/view'
@@ -29,8 +29,30 @@ import CanvasEditor, { type CanvasEditorApi } from '../editor/CanvasEditor'
 import { fieldRows, type LoopScope } from '../editor/fields'
 import { describeRemoved, scanForExecutableMarkup } from '../editor/sanitize'
 import AssistantPanel from './AssistantPanel'
+import Splitter from './Splitter'
+import ToolRail, { TOOL_HINT, TOOL_LABEL, TOOL_TABS, type ToolTab } from './ToolRail'
+import ToolFlyout from './ToolFlyout'
+import Icon from './Icon'
+import { layoutFor, useViewportWidth } from '../layout'
+import {
+  getBoolPref,
+  getNumPref,
+  setBoolPref,
+  setNumPref,
+  PREF_PREVIEW_OPEN,
+  PREF_PREVIEW_WIDTH,
+  PREF_TOOL_TAB,
+  getStringPref,
+  setStringPref,
+} from '../prefs'
 import { describeOp, type Op } from '../assistant/ops'
 import { applyEdit } from '../assistant/edit'
+
+/** The preview's column: its default width, and the narrowest it is worth
+ * drawing. Narrower than this and the rendered page is a thumbnail nobody
+ * can check anything against. */
+const PREVIEW_DEFAULT = 560
+const PREVIEW_MIN = 360
 
 const STARTER_TEMPLATE = `<style>
   @page {
@@ -91,32 +113,20 @@ export default function Editor({
   const [showHistory, setShowHistory] = useState(false)
   const [showAssistant, setShowAssistant] = useState(false)
   const [presetFor, setPresetFor] = useState<Preset | null>(null)
-  const [panelTab, setPanelTab] = useState<'insert' | 'fields' | 'presets' | 'assets' | 'data'>(
-    'insert',
-  )
+  // Which tool is open, or null for none. Remembered per browser: the panel
+  // somebody works with is a habit, not a per-document decision. Closed is a
+  // real value, and the default — the page is what the editor is for.
+  const [toolTab, setToolTab] = useState<ToolTab | null>(() => {
+    const kept = getStringPref(PREF_TOOL_TAB, 'none', [...TOOL_TABS, 'none'] as const)
+    return kept === 'none' ? null : (kept as ToolTab)
+  })
+  useEffect(() => setStringPref(PREF_TOOL_TAB, toolTab ?? 'none'), [toolTab])
   // Loops in force where the caret is, reported by the canvas. They decide
   // whether `items[].price` can be written here, and under what name.
   const [scopes, setScopes] = useState<LoopScope[]>([])
   // Names the template already uses. Extracted server-side so the parsing
   // matches the engine that will render it.
   const [placeholders, setPlaceholders] = useState<string[]>([])
-  const [panelHeight, setPanelHeight] = useState(220)
-
-  // Drag the panel's top edge to resize it. Bounds keep it from swallowing the
-  // editor or vanishing; the value is otherwise the user's to set.
-  const startPanelResize = (e: ReactMouseEvent) => {
-    e.preventDefault()
-    const startY = e.clientY
-    const startH = panelHeight
-    const onMove = (ev: MouseEvent) =>
-      setPanelHeight(Math.max(80, Math.min(700, startH + (startY - ev.clientY))))
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-  }
   const [assistant, setAssistant] = useState<AssistantStatus | null>(null)
   const [fixError, setFixError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -135,6 +145,55 @@ export default function Editor({
   // Bumped whenever the open document is replaced, so the canvas is rebuilt
   // around the new one instead of going on showing the old.
   const [canvasNonce, setCanvasNonce] = useState(0)
+  /**
+   * Everything but the page, folded away for a few minutes.
+   *
+   * Deliberately not remembered. A layout is a setting — where the columns
+   * are, how wide, which tab — and it should come back tomorrow. This is a
+   * gesture: the whole sheet in front of you for the length of one problem.
+   * Opening the editor days later to find its panels missing, with no memory
+   * of having asked, is not the same thing.
+   */
+  const [focusMode, setFocusMode] = useState(false)
+  useEffect(() => {
+    // The navigation belongs to the shell around this component, so the one
+    // thing that crosses that line is a class on the body.
+    document.body.classList.toggle('focus-mode', focusMode)
+    return () => document.body.classList.remove('focus-mode')
+  }, [focusMode])
+
+  /**
+   * How the width is divided between the page and its preview.
+   *
+   * Both panes used to be `flex: 1` — an even split with nothing to grab —
+   * which is why an A4 page came out at 70 % on a 1920 screen. Where the
+   * space goes is the author's business: a form being laid out wants the
+   * page, a form being checked wants the render.
+   *
+   * Below 1600 the preview starts put away rather than squeezing the page to
+   * nothing. It is one key press back, and a column too narrow to read is not
+   * a kindness.
+   */
+  const shellWidth = useViewportWidth()
+  // Below a certain width the columns stop being columns: the preview is a
+  // tab in the canvas topbar, and the inspector is drawn over the page. Two
+  // columns beside an A4 sheet mean neither is worth looking at.
+  const narrow = layoutFor(shellWidth)
+  // Which of the two the pane shows when they cannot both be columns. Its own
+  // state, and not the preview's: a preview that was a column a moment ago must
+  // not become the whole screen the instant the window narrows. The page is
+  // what the editor is for, so that is where it lands.
+  const [narrowView, setNarrowView] = useState<'canvas' | 'preview'>('canvas')
+  const maxPreview = Math.max(PREVIEW_MIN, Math.round(shellWidth * 0.6))
+  const [previewOpen, setPreviewOpen] = useState(() =>
+    getBoolPref(PREF_PREVIEW_OPEN, shellWidth >= 1600),
+  )
+  const [previewWidth, setPreviewWidth] = useState(() =>
+    getNumPref(PREF_PREVIEW_WIDTH, PREVIEW_DEFAULT, PREVIEW_MIN, 2000),
+  )
+  useEffect(() => setBoolPref(PREF_PREVIEW_OPEN, previewOpen), [previewOpen])
+  useEffect(() => setNumPref(PREF_PREVIEW_WIDTH, previewWidth), [previewWidth])
+  const showingPreview = narrow.previewAsTab ? narrowView === 'preview' : previewOpen
   useEffect(() => {
     if (!notice) return
     const t = setTimeout(() => setNotice(null), 2500)
@@ -148,14 +207,15 @@ export default function Editor({
   // Fields live beside the canvas in Visual mode, where they belong next to the
   // structure. Code mode has no such column, so they get a tab here instead —
   // present exactly where they are not a second copy of something.
-  const panelTabs = (['insert', 'fields', 'presets', 'assets', 'data'] as const).filter(
+  const toolTabs = TOOL_TABS.filter(
     (t) => (t !== 'assets' || assets) && (t !== 'fields' || mode === 'code'),
   )
   useEffect(() => {
-    if (!assets && panelTab === 'assets') setPanelTab('insert')
-    // Leaving Code mode takes the Fields tab with it.
-    if (mode !== 'code' && panelTab === 'fields') setPanelTab('insert')
-  }, [assets, panelTab, mode])
+    // A tool this instance does not have must not stay open because it was
+    // open somewhere else: a demo has no asset store, and Fields has a column
+    // of its own in Visual mode.
+    if (toolTab && !toolTabs.includes(toolTab)) setToolTab(null)
+  }, [toolTab, toolTabs])
   const viewRef = useRef<EditorView | null>(null)
   const canvasApiRef = useRef<CanvasEditorApi | null>(null)
   const htmlRef = useRef('')
@@ -679,16 +739,42 @@ export default function Editor({
   // every keystroke is churn nobody can see and everybody pays for.
   const saveRef = useRef(save)
   saveRef.current = save
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
-      if (e.key.toLowerCase() !== 's') return
-      // Whatever else happens, not the browser's "save this page as".
+  const onKey = (e: KeyboardEvent): void => {
+    // Escape belongs to focus mode while it is on, and to nothing else here.
+    if (e.key === 'Escape' && focusMode) {
       e.preventDefault()
-      void saveRef.current()
+      setFocusMode(false)
+      return
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+    if (e.shiftKey) {
+      if (e.key.toLowerCase() !== 'f') return
+      e.preventDefault()
+      setFocusMode((on) => !on)
+      return
+    }
+    if (e.key === '\\') {
+      // The preview is half the window; being able to put it away in one
+      // press is what makes giving it that much space reasonable. Where it is
+      // a tab rather than a column, the same key swaps which one is showing.
+      e.preventDefault()
+      if (narrowRef.current) setNarrowView((v) => (v === 'preview' ? 'canvas' : 'preview'))
+      else setPreviewOpen((on) => !on)
+      return
+    }
+    if (e.key.toLowerCase() !== 's') return
+    // Whatever else happens, not the browser's "save this page as".
+    e.preventDefault()
+    void saveRef.current()
+  }
+  const narrowRef = useRef(narrow.previewAsTab)
+  narrowRef.current = narrow.previewAsTab
+  const keyRef = useRef(onKey)
+  keyRef.current = onKey
+  useEffect(() => {
+    const listener = (e: KeyboardEvent): void => keyRef.current(e)
+    document.addEventListener('keydown', listener)
+    return () => document.removeEventListener('keydown', listener)
   }, [])
 
   // Assistant status decides whether the feature is shown at all.
@@ -748,7 +834,7 @@ export default function Editor({
   }, [testData])
 
   return (
-    <div className="editor">
+    <div className={focusMode ? 'editor focus' : 'editor'}>
       <header className="toolbar">
         <div className="template-title">
           <strong>{isScratch ? scratch!.title : (detail?.name ?? code)}</strong>
@@ -855,6 +941,47 @@ export default function Editor({
           </button>
         )}
         {!isScratch && dirty && <span className="dirty-badge">unsaved</span>}
+        {focusMode && (
+          <span className="muted focus-hint">Esc to leave focus mode</span>
+        )}
+        {/* Pushed to the end of the row: it is about the window rather than
+            about the document, and the two should not read as one list.
+
+            Where the preview is a tab rather than a column, this is the
+            switch between them — and it lives HERE rather than in the canvas
+            topbar, because that topbar belongs to the canvas, which is one
+            of the two things being switched between. Put there, it vanished
+            the moment it was used. */}
+        {narrow.previewAsTab ? (
+          <span className="view-switch" role="tablist" aria-label="Canvas or preview">
+            <button
+              role="tab"
+              aria-selected={!showingPreview}
+              className={showingPreview ? 'btn' : 'btn active'}
+              onClick={() => setNarrowView('canvas')}
+            >
+              Canvas
+            </button>
+            <button
+              role="tab"
+              aria-selected={showingPreview}
+              className={showingPreview ? 'btn active' : 'btn'}
+              onClick={() => setNarrowView('preview')}
+            >
+              Preview
+            </button>
+          </span>
+        ) : (
+          <button
+            className={previewOpen ? 'btn icon-btn active' : 'btn icon-btn'}
+            aria-label="Show or hide the preview"
+            aria-pressed={previewOpen}
+            title="Show or hide the preview (Ctrl + \)"
+            onClick={() => setPreviewOpen((on) => !on)}
+          >
+            <Icon name="panel-right" />
+          </button>
+        )}
       </header>
 
       {error && <div className="error-box">{error}</div>}
@@ -868,8 +995,27 @@ export default function Editor({
       )}
 
       <div className="workspace">
+        {/* Down the side, not across the bottom: height is what an A4 page is
+            short of, and width is what a 1920 screen has to spare. */}
+        <ToolRail tabs={toolTabs} open={toolTab} onOpen={setToolTab} />
         <section className="pane code-pane">
-          {mode === 'code' ? (
+          {narrow.previewAsTab && showingPreview && !focusMode ? (
+            /* One at a time: at this width a column each would leave neither
+               worth looking at. */
+            <PreviewPane
+              html={html}
+              data={parsedData.data}
+              onError={setPreviewError}
+              fixWithAi={
+                assistant?.enabled
+                  ? () => {
+                      setFixError(previewError)
+                      setShowAssistant(true)
+                    }
+                  : undefined
+              }
+            />
+          ) : mode === 'code' ? (
             <CodeMirror
               value={html}
               height="100%"
@@ -895,11 +1041,13 @@ export default function Editor({
               canvasStyles={splitRef.current?.styles ?? ''}
               arrayHints={parseHints(testData).arrays.map((a) => a.name)}
               onSanitized={setSanitizeWarning}
-              compact={overlayPanels}
               fields={fields}
               onPageSetup={applyPageSetup}
               onFurniture={applyFurniture}
               onDropFiles={dropFiles}
+              focusMode={focusMode}
+              overlayInspector={narrow.inspectorOverlay}
+              onLeaveFocus={() => setFocusMode(false)}
               onScopes={setScopes}
               onChange={handleVisualChange}
               onReady={(api) => {
@@ -907,137 +1055,132 @@ export default function Editor({
               }}
             />
           )}
-          <div className="bottom-panels" style={{ maxHeight: panelHeight, height: panelHeight }}>
-            <div
-              className="panel-resize"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize the bottom panel"
-              aria-valuenow={panelHeight}
-              aria-valuemin={80}
-              aria-valuemax={700}
-              tabIndex={0}
-              onMouseDown={startPanelResize}
-              onKeyDown={(e) => {
-                // Keyboard equivalent of the drag, so the panel is not
-                // mouse-only. 24px a step, the same feel as dragging.
-                if (e.key === 'ArrowUp') setPanelHeight((h) => Math.min(700, h + 24))
-                else if (e.key === 'ArrowDown') setPanelHeight((h) => Math.max(80, h - 24))
-                else return
-                e.preventDefault()
-              }}
-              title="Drag to resize"
-            />
-            <div className="panel-tabs">
-              {panelTabs.map((t) => (
-                <button
-                  key={t}
-                  className={panelTab === t ? 'panel-tab active' : 'panel-tab'}
-                  onClick={() => setPanelTab(t)}
-                >
-                  {t === 'insert'
-                    ? 'Insert'
-                    : t === 'fields'
-                      ? 'Fields'
-                    : t === 'presets'
-                      ? 'Presets'
-                      : t === 'assets'
-                        ? 'Assets'
-                        : 'Test data'}
-                </button>
-              ))}
-            </div>
-            <div className="panel-body">
-              {panelTab === 'insert' && <InsertPanel onInsert={insertBlock} />}
-              {panelTab === 'fields' && (
-                <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
-              )}
-              {panelTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
-              {panelTab === 'assets' && <AssetsPanel key={assetsVersion} onInsert={insertText} />}
-              {panelTab === 'data' && (
-                <div className="test-data">
-                  <div className="test-data-head">
-                    <label htmlFor="test-data-json">
-                      Test data (JSON) — preview renders with it
-                    </label>
-                    {/* Made from the template, not the other way round: the
-                        fields go on the page first and the payload follows. Two
-                        buttons because they answer different questions — start
-                        again, or keep what has been adjusted and catch up. */}
-                    <span className="test-data-actions">
-                      <button
-                        className="btn small"
-                        title="Replace this with a fresh sample built from every value the template names"
-                        onClick={() => applySample(generateSample(currentHtml()))}
-                      >
-                        Generate
-                      </button>
-                      <button
-                        className="btn small"
-                        title="Keep what is here and add the values the template names that are missing"
-                        onClick={() => applySample(fillMissing(currentHtml(), testData))}
-                      >
-                        Fill in missing
-                      </button>
-                    </span>
-                  </div>
-                  <textarea
-                    id="test-data-json"
-                    spellCheck={false}
-                    value={testData}
-                    onChange={(e) => setTestData(e.target.value)}
-                  />
-                  {sampleNote && <p className="muted small">{sampleNote}</p>}
-                  {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
-                  {/* Both directions, because both fail quietly: a value the
-                      data does not carry renders as a blank that reads as a
-                      layout problem, and a spare one is usually a field renamed
-                      on one side only. Neither shows up in a preview as
-                      anything but "hmm". */}
-                  {dataCheck && (
-                    <div className="data-check">
-                      {dataCheck.missing.length > 0 && (
-                        <p className="warn">
-                          <strong>{dataCheck.missing.length}</strong> named by the template, not in
-                          the data: <code>{dataCheck.missing.slice(0, 8).join(', ')}</code>
-                          {dataCheck.missing.length > 8 && ' …'}
-                        </p>
-                      )}
-                      {dataCheck.unused.length > 0 && (
-                        <p className="muted small">
-                          <strong>{dataCheck.unused.length}</strong> in the data the template never
-                          reads: <code>{dataCheck.unused.slice(0, 8).join(', ')}</code>
-                          {dataCheck.unused.length > 8 && ' …'}
-                        </p>
-                      )}
-                      {dataCheck.missing.length === 0 && dataCheck.unused.length === 0 && (
-                        <p className="muted small">
-                          The data covers everything the template names, and nothing else.
-                        </p>
-                      )}
-                    </div>
+          {toolTab && (
+            <ToolFlyout
+              title={TOOL_LABEL[toolTab]}
+              hint={TOOL_HINT[toolTab]}
+              onClose={() => setToolTab(null)}
+            >
+          {toolTab === 'insert' && <InsertPanel onInsert={insertBlock} />}
+          {toolTab === 'fields' && (
+            <FieldsPanel rows={fields} onInsert={insertPlaceholder} />
+          )}
+          {toolTab === 'presets' && <PresetPanel onInsert={setPresetFor} />}
+          {toolTab === 'assets' && <AssetsPanel key={assetsVersion} onInsert={insertText} />}
+          {toolTab === 'data' && (
+            <div className="test-data">
+              <div className="test-data-head">
+                <label htmlFor="test-data-json">
+                  Test data (JSON) — preview renders with it
+                </label>
+                {/* Made from the template, not the other way round: the
+                    fields go on the page first and the payload follows. Two
+                    buttons because they answer different questions — start
+                    again, or keep what has been adjusted and catch up. */}
+                <span className="test-data-actions">
+                  <button
+                    className="btn small"
+                    title="Replace this with a fresh sample built from every value the template names"
+                    onClick={() => applySample(generateSample(currentHtml()))}
+                  >
+                    Generate
+                  </button>
+                  <button
+                    className="btn small"
+                    title="Keep what is here and add the values the template names that are missing"
+                    onClick={() => applySample(fillMissing(currentHtml(), testData))}
+                  >
+                    Fill in missing
+                  </button>
+                </span>
+              </div>
+              <textarea
+                id="test-data-json"
+                spellCheck={false}
+                value={testData}
+                onChange={(e) => setTestData(e.target.value)}
+              />
+              {sampleNote && <p className="muted small">{sampleNote}</p>}
+              {parsedData.error && <div className="error-box small">{parsedData.error}</div>}
+              {/* Both directions, because both fail quietly: a value the
+                  data does not carry renders as a blank that reads as a
+                  layout problem, and a spare one is usually a field renamed
+                  on one side only. Neither shows up in a preview as
+                  anything but "hmm". */}
+              {dataCheck && (
+                <div className="data-check">
+                  {dataCheck.missing.length > 0 && (
+                    <p className="warn">
+                      <strong>{dataCheck.missing.length}</strong> named by the template, not in
+                      the data: <code>{dataCheck.missing.slice(0, 8).join(', ')}</code>
+                      {dataCheck.missing.length > 8 && ' …'}
+                    </p>
+                  )}
+                  {dataCheck.unused.length > 0 && (
+                    <p className="muted small">
+                      <strong>{dataCheck.unused.length}</strong> in the data the template never
+                      reads: <code>{dataCheck.unused.slice(0, 8).join(', ')}</code>
+                      {dataCheck.unused.length > 8 && ' …'}
+                    </p>
+                  )}
+                  {dataCheck.missing.length === 0 && dataCheck.unused.length === 0 && (
+                    <p className="muted small">
+                      The data covers everything the template names, and nothing else.
+                    </p>
                   )}
                 </div>
               )}
             </div>
-          </div>
+          )}
+            </ToolFlyout>
+          )}
         </section>
 
-        <section className="pane preview-pane">
-          <PreviewPane
-            html={html}
-            data={parsedData.data}
-            onError={setPreviewError}
-            fixWithAi={
-              assistant?.enabled
-                ? () => {
-                    setFixError(previewError)
-                    setShowAssistant(true)
-                  }
-                : undefined
-            }
-          />
-        </section>
+        {/* Not a column at all when the window is narrow, and not while the
+            page has the screen to itself. */}
+        {narrow.previewAsTab || focusMode ? null : previewOpen ? (
+          <>
+            <Splitter
+              value={previewWidth}
+              min={PREVIEW_MIN}
+              max={maxPreview}
+              defaultValue={PREVIEW_DEFAULT}
+              label="Resize the preview"
+              grows="after"
+              onChange={setPreviewWidth}
+            />
+            <section
+              className="pane preview-pane"
+              style={{ width: Math.min(previewWidth, maxPreview) }}
+            >
+              <PreviewPane
+                html={html}
+                data={parsedData.data}
+                onError={setPreviewError}
+                fixWithAi={
+                  assistant?.enabled
+                    ? () => {
+                        setFixError(previewError)
+                        setShowAssistant(true)
+                      }
+                    : undefined
+                }
+              />
+            </section>
+          </>
+        ) : (
+          /* Put away, not gone: a strip that says what is behind it and
+             brings it back. A panel that vanishes without trace is a
+             feature the next person does not know exists. */
+          <button
+            className="pane-strip"
+            aria-label="Show the preview"
+            title="Show the preview (Ctrl + \)"
+            onClick={() => setPreviewOpen(true)}
+          >
+            <span>PREVIEW</span>
+          </button>
+        )}
 
         {showAssistant && assistant?.enabled && (
           <AssistantPanel
