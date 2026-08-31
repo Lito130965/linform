@@ -114,6 +114,27 @@ const INSPECTOR_MAX = 460
  * see — fitZoom answers 100 for an impossible width. */
 const CANVAS_MIN_PX = 360
 
+/**
+ * TEMPORARILY DISABLED — the drawn guides, not the snapping.
+ *
+ * Turned off at the author's request after trying it on the test server: on
+ * a real form the extra lines were more to read than they were worth, even
+ * cut down to the nearest one per edge and drawn in their own colours. The
+ * millimetre grid stays, and so does the single line that says what an edge
+ * actually caught — both of those predate this and were never the problem.
+ *
+ * Snapping itself is untouched: values still fall onto page margins, page
+ * breaks and the edges and centres of other blocks, from a drag and from the
+ * spacing boxes alike. Only the drawing is off.
+ *
+ * Flipping this back to true restores the lot — the code, the styles and the
+ * two browser tests marked with this constant's name are all still here.
+ */
+// Typed as a boolean rather than left to infer `false`: as a literal type it
+// would make everything below the checks unreachable code, which is a
+// warning about a switch working exactly as intended.
+const DRAG_GUIDES_ENABLED: boolean = false
+
 const EXPR_ATTRS = ['data-jinja-expr', 'data-jinja-for', 'data-jinja-if'] as const
 type ExprAttr = (typeof EXPR_ATTRS)[number]
 
@@ -1981,6 +2002,8 @@ export default function CanvasEditor({
    * is where the block ACTUALLY is, and only the layout knows that.
    */
   const traceDrag = (el: Element | null, altKey = false): void => {
+    // See DRAG_GUIDES_ENABLED: the lines are off, the snapping is not.
+    if (!DRAG_GUIDES_ENABLED) return
     if (!el) {
       setMovingLines([])
       setHintLines([])
@@ -2088,6 +2111,7 @@ export default function CanvasEditor({
    * eye — and capped, because a page of forty rows has hundreds of them and a
    * screen full of hairlines helps nobody. */
   const showLines = (el: HTMLElement): void => {
+    if (!DRAG_GUIDES_ENABLED) return
     const seen = new Set<string>()
     const out: { axis: 'x' | 'y'; at: number }[] = []
     for (const axis of ['x', 'y'] as const) {

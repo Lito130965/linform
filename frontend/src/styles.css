@@ -1952,7 +1952,12 @@ label {
    squares behind all of this, and a 1px guide of any colour disappears into it
    — reported exactly that way: "different colours, but they blend". Each of
    these is 2px, the caught one 3px, and the grid stays thin and faint because
-   it is the background they are read against. */
+   it is the background they are read against.
+
+   NOTE: `.moving` and `.hint` are TEMPORARILY not drawn at all — see
+   DRAG_GUIDES_ENABLED in editor/CanvasEditor.tsx. The rules are kept because
+   the switch is meant to go back on; the grid and the caught line are what is
+   on screen today. */
 .snap-guide.vertical {
   width: 2px;
 }

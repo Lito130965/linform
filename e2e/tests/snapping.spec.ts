@@ -145,7 +145,11 @@ test('the drag says how big it is, in millimetres', async ({ page, request }) =>
   await expect(readout).toHaveCount(0)
 })
 
-test('a drag draws three kinds of line, and leaves none behind', async ({ page, request }) => {
+test.skip('a drag draws three kinds of line, and leaves none behind', async ({ page, request }) => {
+  // TEMPORARILY OFF with the lines themselves — see DRAG_GUIDES_ENABLED in
+  // editor/CanvasEditor.tsx. Kept whole, and skipped rather than deleted,
+  // because the switch is meant to go back on and this is what it has to
+  // satisfy when it does.
   // The canvas draws a lot of lines while something is moved, and they mean
   // different things: the grid is the paper's ruling, one pair is where the
   // block IS, the rest are what it could land on. All three were the same blue,
