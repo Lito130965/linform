@@ -187,6 +187,42 @@ docker run -p 8100:8000 -e LINFORM_ROLE=demo ghcr.io/lito130965/linform:latest
 
 That is exactly what runs at [linform.linitapp.com](https://linform.linitapp.com/).
 
+### A demo that survives being noticed
+
+The defaults are sized for a laptop: two render workers, and an in-flight
+ceiling of four. That is correct behaviour under load — the fifth simultaneous
+visitor gets a `429` rather than a queue — and it is the wrong first impression
+entirely when a link is posted somewhere and two hundred people arrive in an
+hour. Four things, in the order they matter:
+
+```bash
+LINFORM_RENDER_MAX_WORKERS=<cores>   # rendering is CPU-bound and single-threaded
+LINFORM_RENDER_MAX_CONCURRENCY=<2-3x workers>
+LINFORM_METRICS_ENABLED=true         # watch it on the day, not afterwards
+```
+
+**Measure it before strangers do.** `scripts/loadtest.py` against the demo's own
+URL, not against localhost, answers the only question that matters — how many
+simultaneous visitors it serves before it starts shedding — while there is still
+time to change the answer.
+
+**Put a rate limiter in front of it.** Nothing in this service protects a public
+instance from one script; that belongs in the reverse proxy, where it is a
+two-line job:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=linform:10m rate=30r/m;
+
+location / {
+    limit_req zone=linform burst=10 nodelay;
+    proxy_pass http://linform:8000;
+}
+```
+
+**And check the disk.** A demo accepts uploads; they are deleted within the hour
+and capped per visitor, but that is a claim worth verifying on your own instance
+before finding out it was wrong.
+
 On a serverless host that assigns a port — Cloud Run and its kind — the
 entrypoint follows `$PORT`, so nothing else needs configuring. Set
 `LINFORM_RENDER_MAX_WORKERS=1` and cap the instances: rendering is the only
