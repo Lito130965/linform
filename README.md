@@ -17,6 +17,11 @@ live instance. Open any template, edit it, watch the PDF change. Nothing is
 saved there and uploads are cleared within the hour; it is the same image this
 repository publishes, run with `LINFORM_ROLE=demo`.
 
+> **Status: early development, usable.** Everything described here works and
+> is tested; what is not settled is the shape of the editor's newer corners.
+> The version model — publish, pin, roll back — is the part that will not
+> move.
+
 ## Is this for you?
 
 **Yes, if** the printed page has to be exact and stay exact for years; the
