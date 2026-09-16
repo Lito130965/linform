@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
         allow_external_urls=settings.allow_external_urls,
         allowed_url_hosts=settings.allowed_url_hosts,
         max_concurrency=settings.render_max_concurrency,
+        pdf_variant=settings.pdf_variant,
     )
     # Read at scrape time rather than tracked on every render: the limiter
     # already holds the number, and a callback cannot drift from it. getattr

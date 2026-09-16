@@ -97,6 +97,14 @@ Writing one, including barcodes and QR codes drawn from payload data:
 typing — snapping, page-break marking, the keyboard:
 [docs/EDITOR.md](docs/EDITOR.md).
 
+**Archival and tagged output.** `LINFORM_PDF_VARIANT=pdf/a-3b` writes PDF/A,
+the standard an archive or a public-sector filing is usually required to be in;
+`pdf/ua-1` writes a tagged document a screen reader can navigate. PDF/A the
+engine handles by itself — fonts and colour profiles are its business. PDF/UA
+is a flag *and* a requirement on the template, because a tagged file is only
+navigable if there is something in the markup to tag; that trade is spelled out
+in [docs/CONFIGURATION.md](docs/CONFIGURATION.md#pdfa-and-pdfua).
+
 ## Versions
 
 **A draft is not a version.** A draft is a working copy: no number, editable,
@@ -193,8 +201,9 @@ and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 
 ## What's next
 
-- **PDF/A and PDF/UA output** — archival and tagged-accessible variants; the
-  engine already supports them, the service does not expose the choice yet.
+- **A PDF variant per template version.** The archival standard is an instance
+  setting today, which sits awkwardly beside "a version renders the same
+  document forever" — changing it changes what an old version produces.
 - **Accessibility hints in the editor** — an image with no alternative text, a
   table with no header row, a heading that is only a large paragraph.
 - **Keyboard parity in the canvas** — column widths, row heights and free

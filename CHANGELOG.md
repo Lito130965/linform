@@ -18,6 +18,26 @@ on the open internet as a demo with nothing on it to lose.
 
 ### Added
 
+- **PDF/A and PDF/UA output.** `LINFORM_PDF_VARIANT=pdf/a-3b` writes an archival
+  PDF — the standard a public-sector filing is usually required to be in, and
+  the same promise this product already makes ("this version renders the same
+  document for years") as somebody else's ISO — and `pdf/ua-1` writes a tagged
+  document a screen reader can navigate. The engine has been able to do this for
+  releases; the service simply never offered the choice.
+
+  The names are the engine's own, checked against it when a render asks for one,
+  so an upgrade that adds a variant needs no change here and one that removes a
+  variant cannot leave a stale name being offered. An unknown name is refused
+  with the real list in the message: a document that quietly failed to become
+  PDF/A looks exactly like one that succeeded, until an archive rejects it years
+  later.
+
+  Said plainly in the documentation rather than sold: PDF/A is fonts, colour
+  profiles and self-containment, which the engine handles by itself, but PDF/UA
+  additionally needs semantics from the template — headings as headings, tables
+  with `<th>`, alternative text on images. The flag produces a tagged file; it
+  cannot produce a meaningful one out of markup that carries no meaning.
+
 - **The assistant asks the editor to do things, instead of writing markup for
   them.** For "make it A5" or "add a footer", a whole document in an html block
   was a bad answer twice over: the user diffed a file to find three lines, and

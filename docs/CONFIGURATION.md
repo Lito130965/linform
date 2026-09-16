@@ -22,6 +22,7 @@ it to anyone.
 | `LINFORM_RENDER_TIMEOUT_SECONDS` | `30` | Hard render timeout |
 | `LINFORM_RENDER_MAX_WORKERS` | `2` | Render worker processes |
 | `LINFORM_RENDER_MAX_CONCURRENCY` | `0` (→ workers × 2) | In-flight ceiling; over it, renders get `429 Retry-After` |
+| `LINFORM_PDF_VARIANT` | *(empty)* | Write a PDF standard rather than a plain PDF: `pdf/a-3b`, `pdf/ua-1`, … (see below) |
 | `LINFORM_STRICT_PLACEHOLDERS` | `true` | Fail on missing placeholder values |
 | `LINFORM_TEMPLATE_CACHE_TTL_SECONDS` | `2` | How long another replica may serve the previous current version after a rollback (0 = no caching) |
 | `LINFORM_TEMPLATE_CACHE_MB` | `32` | Memory budget for resolved template versions |
@@ -48,3 +49,42 @@ sign-in, editor users and revocable render keys, described in
 
 **Roles.** `LINFORM_ROLE` decides which half of the API this process serves —
 see [Deployment roles](OPERATIONS.md#deployment-roles).
+
+## PDF/A and PDF/UA
+
+`LINFORM_PDF_VARIANT` asks the engine for a PDF standard instead of a plain PDF.
+Empty — the default — is what every deployment has produced until now.
+
+| Family | Names | What it is for |
+|---|---|---|
+| PDF/A | `pdf/a-1b`, `pdf/a-2b`, `pdf/a-3b`, `pdf/a-2u`, `pdf/a-3u`, `pdf/a-4u`, `pdf/a-1a`, `pdf/a-2a`, `pdf/a-3a`, `pdf/a-4e`, `pdf/a-4f` | Archival storage: everything needed to reproduce the page is inside the file |
+| PDF/UA | `pdf/ua-1`, `pdf/ua-2` | A tagged document a screen reader can navigate |
+| PDF/X | `pdf/x-1a`, `pdf/x-3`, `pdf/x-4`, `pdf/x-5g` | Handing artwork to a printer |
+
+The names are not a list this service keeps: they are WeasyPrint's, checked
+against the engine when a render asks for one, so an upgrade that adds or
+removes a variant needs no change here. An unknown name is refused with the
+real list in the message rather than silently ignored — which is the failure
+that matters, since a document that quietly did not become PDF/A looks exactly
+like one that did until an archive rejects it years later.
+
+**The honest caveat.** PDF/A is mostly about embedded fonts, colour profiles
+and self-containment, and the engine handles all of that by itself: set the
+variant and a normal template comes out conforming. **PDF/UA does not work that
+way.** A tagged document is only navigable if the template gives it something
+to tag — headings as `<h1>`–`<h6>` rather than large paragraphs, tables with
+`<th>`, alternative text on every image. The flag produces a *tagged* file; it
+cannot produce a *meaningful* one from markup that carries no meaning. Treat it
+as a requirement on whoever writes the form, with the flag as the last step.
+
+What the automated tests check is that the document claims what it was asked to
+claim. Whether it is *valid* is a question for a conformance checker —
+[veraPDF](https://verapdf.org/) is the reference one, and validating against it
+is [M-08](MANUAL-CHECKS.md) before a release.
+
+**One instance, one variant, for now.** The setting is per deployment, so
+changing it changes what an already-published version renders as — which sits
+awkwardly beside "a version renders the same document forever". A variant
+stored on the version itself is the right home for it and is on the list in the
+README's What's next; until then, a deployment that needs two standards runs
+two render nodes.

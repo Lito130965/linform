@@ -74,6 +74,20 @@ class Settings(BaseSettings):
     # it as render_max_workers * 2 (the pool plus a small burst buffer).
     render_max_concurrency: int = 0
 
+    # Which PDF standard to write. Empty is WeasyPrint's own default output,
+    # which is what every deployment has had until now. Anything else is a
+    # variant name the engine knows — `pdf/a-3b` for archival storage,
+    # `pdf/ua-1` for a tagged, screen-reader-navigable document — and the name
+    # is checked against the engine's list in the render worker, since the
+    # parent process deliberately never imports WeasyPrint.
+    #
+    # A caveat that belongs next to the setting and not only in the README:
+    # PDF/A is mostly about embedded fonts and colour profiles, which the engine
+    # handles by itself, but PDF/UA additionally requires semantics FROM THE
+    # TEMPLATE — headings as headings, tables with `<th>`, alternative text on
+    # images. Setting this does not make a careless template accessible.
+    pdf_variant: str = ""
+
     # Strict mode: fail the render when the payload is missing a placeholder,
     # instead of silently rendering an empty value.
     strict_placeholders: bool = True

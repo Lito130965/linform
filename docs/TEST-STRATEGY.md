@@ -4,7 +4,7 @@ What this project tests, what it deliberately does not, and how the two were
 decided. The mechanics — how to run each suite — are in
 [TESTING.md](TESTING.md); this is the reasoning behind them.
 
-Counts are from 0.3.0: 231 backend tests, 431 frontend unit tests, 142 browser
+Counts are from 0.3.0: 237 backend tests, 431 frontend unit tests, 142 browser
 tests.
 
 ---
@@ -40,6 +40,7 @@ Impact is read against the three promises. The last column is the honest one.
 | Risk | Likely? | Impact | What catches it | Where | What is still uncovered |
 |---|---|---|---|---|---|
 | An engine, font or CSS-preset change moves layout across every template at once | **Likely** — it is one `pip install` away | **Severe** (1) | Golden PDFs: exact page count, page-by-page text, page geometry, symbols as vector drawings | `tests/test_golden_pdfs.py`, `tests/golden/` | Only the six examples. A deployment's own templates are its own golden set — this is said in the docs, not solved for them |
+| A document claims a PDF standard it does not meet | Moderate | **Severe** (1) — an archive rejects it years later | The variant reaches the engine and the file says what it was asked to say; the name is checked against the engine's own list | `tests/test_pdf_variants.py` | Whether it is *valid*. That is veraPDF's answer, by hand, before a release ([M-08](MANUAL-CHECKS.md)) — and PDF/UA depends on the template, not on us |
 | A CSS capability the documentation claims quietly stops working | Moderate | Moderate | A page is rendered and read back: where did the box actually land, against a control | `tests/test_engine_capabilities.py` | The claim list is what somebody thought to write down |
 | The visual editor corrupts a template it merely opened | **Likely** — every canvas change is a chance | **Severe** (1), and silent | Byte-exact round trip: open in the canvas, leave, save, compare stored bytes through the API | `e2e/tests/roundtrip.spec.ts`, `frontend/src/jinja-bridge/*.test.ts` | Constructs no example uses; the tolerance tests name the ones that are known |
 | A template injects script into the editor of the person opening it | Moderate | **Severe** (2) | Markup is stripped before it reaches the canvas; CSP headers asserted on the built image | `frontend/src/editor/sanitize.test.ts`, `tests/test_security_headers.py` | A browser bug in the CSP implementation itself |
@@ -72,7 +73,7 @@ Impact is read against the three promises. The last column is the honest one.
 | Level | Count | Runs in | What only it can answer |
 |---|---:|---|---|
 | Frontend unit | 431 | ~seconds | Does the editor's logic hold: the bridge, sanitising, the box model, the operation vocabulary |
-| Backend unit and API | 231 | ~a minute | Request handling, the version invariants, auth, caching, the limits |
+| Backend unit and API | 237 | ~a minute | Request handling, the version invariants, auth, caching, the limits |
 | Golden PDF | included above | with the backend | Did the *output* change |
 | Browser, against the built image | 142 | ~minutes | Does the thing we would actually ship work |
 
@@ -168,6 +169,7 @@ a user* keeps the blocking one worth blocking.
 | What the model writes | A model is not a fixture. What *is* tested is the vocabulary it may use, that an invented operation is refused, and that an edit naming no unique place changes nothing |
 | Performance as a pass/fail threshold | The numbers are hardware. They are measured with `scripts/loadtest.py` and published as a method and a shape; asserting a millisecond figure in CI would fail on a noisy runner and teach nobody anything |
 | Load in CI | Same reason, plus it would be the longest job in the workflow |
+| PDF conformance validation in CI | veraPDF is a Java application and a large download, to check a property that changes about once a year. The tests assert what the document claims; the validator runs by hand before a release, and automatically for anyone who has it installed |
 | Third-party internals | WeasyPrint's own correctness is WeasyPrint's suite. What is checked here is the handful of capabilities the documentation promises |
 | The PDF viewer's chrome | The preview asks the viewer to hide its toolbar; Chrome honours it, Firefox does not. Chasing a frame nobody controls is not worth a test that can only report somebody else's choice |
 
