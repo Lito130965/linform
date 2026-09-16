@@ -27,8 +27,10 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 # Markdown files that are part of the published documentation. Anything under a
-# build or dependency directory is somebody else's.
-SKIP_DIRS = {"node_modules", ".git", ".venv", "out", "dist", "build", "__pycache__"}
+# build or dependency directory is somebody else's — including the dot
+# directories tools leave behind, which is how `.pytest_cache/README.md` turned
+# up as a documentation file with its own test.
+SKIP_DIRS = {"node_modules", "out", "dist", "build", "__pycache__"}
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*$", re.MULTILINE)
@@ -38,7 +40,8 @@ FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 def markdown_files() -> list[Path]:
     found = []
     for path in ROOT.rglob("*.md"):
-        if any(part in SKIP_DIRS for part in path.relative_to(ROOT).parts):
+        parts = path.relative_to(ROOT).parts
+        if any(part in SKIP_DIRS or part.startswith(".") for part in parts):
             continue
         # PLAN*.md and AUDIT*.md are gitignored working notes, not documentation.
         if path.parent == ROOT and path.name.startswith(("PLAN", "AUDIT")):
