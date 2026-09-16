@@ -3251,6 +3251,15 @@ label {
   color: #e5b34b;
 }
 
+/* A reply that stopped in the middle. Amber rather than red: nothing broke,
+   and nothing happened either — the document is exactly as it was. */
+.chat-cutoff {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #e5b34b;
+}
+
 /* What an assistant message did, after it did it. */
 .chat-applied {
   display: flex;
