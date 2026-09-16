@@ -245,7 +245,23 @@ ordinary full-width table inside the running element, with an explicit width on 
 each cell. It is made of the same parts as the rest of the document, so the \
 table tools apply to it.
 - A placeholder is `{{ name }}` in the text, nothing more. Do not wrap fields in \
-marker spans of your own; the editor adds and removes its own markers."""
+marker spans of your own; the editor adds and removes its own markers.
+- A CONDITIONAL VALUE inside a cell or a line of text is an expression, never a \
+statement. `{{ '☑' if paid else '☐' }}` — which is exactly what the editor's \
+checkbox preset writes — not `{% if paid %}✓{% endif %}`. The second one is \
+correct Jinja and correct output, and it takes the whole template out of the \
+visual editor: `{% %}` blocks are matched against elements, so one wrapping a \
+bare piece of text has no element to match and the document becomes code-only \
+from that moment. It also prints nothing when the value is false, where a form \
+usually wants an empty box.
+- The same rule decides where a `{% if %}` or `{% for %}` may go at all: it \
+must wrap EXACTLY ONE whole element — `{% for row in rows %}<tr>…</tr>\
+{% endfor %}` is fine, and anything that starts mid-element, spans two \
+elements, or wraps loose text is code-only. Before you write a statement, check \
+that what it encloses is one complete tag.
+- Prefer the markup a preset generates over inventing an equivalent: the preset \
+is what the panels produce, so the result stays something the user can change \
+with a dialog instead of by typing."""
 
 ROLE = """You are the template assistant inside Linform, a self-hosted service \
 where analysts maintain versioned HTML print-form templates and applications \

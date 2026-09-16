@@ -3,7 +3,7 @@ import Icon from './Icon'
 import { assistantChat, AssistantStatus } from '../api'
 import { extractHtmlBlock, isTruncated, replyProse } from '../assistant/extract'
 import { describeOp, extractOps, withoutOpsBlock, type Op } from '../assistant/ops'
-import { proposalCaveats } from '../assistant/proposal'
+import { newCaveats, proposalCaveats } from '../assistant/proposal'
 import { toDownscaledDataUrl } from '../assistant/image'
 import { renderMarkdown } from '../assistant/markdown'
 
@@ -23,6 +23,8 @@ interface ChatMessage {
   rejectedOps?: { what: string; why: string }[]
   /** set when the reply stopped mid-block, so nothing could be applied */
   cutOff?: boolean
+  /** what the operations in this message cost the document, if anything */
+  opCaveats?: { what: string; cost: string }[]
   /** set once this message's change has been taken back */
   undone?: boolean
 }
@@ -152,6 +154,11 @@ export default function AssistantPanel({
         // and an "Undo this change" over an untouched document is a lie.
         changed = onApplyOps(ops.ops)
       }
+      // A template reply says what it costs from the document it carried. An
+      // operations reply can only be read afterwards, and until it was, an
+      // `edit` could take the document out of Visual mode with nothing in the
+      // conversation to show which change did it.
+      const cost = changed && !proposed ? newCaveats(before, currentDocument()) : []
       setMessages((m) => {
         const next = [...m]
         const last = next[next.length - 1]
@@ -164,6 +171,7 @@ export default function AssistantPanel({
           rejectedOps: ops && ops.rejected.length > 0 ? ops.rejected : undefined,
           undoTo: changed ? before : undefined,
           cutOff: cutOff && !changed,
+          opCaveats: cost.length > 0 ? cost : undefined,
         }
         return next
       })
@@ -275,6 +283,15 @@ export default function AssistantPanel({
                 The answer stopped in the middle, so nothing was applied and the
                 document is unchanged. Ask again, or ask for a smaller change.
               </p>
+            )}
+            {m.opCaveats && (
+              <div className="chat-applied">
+                {m.opCaveats.map((caveat, j) => (
+                  <p key={j} className="proposal-caveat">
+                    <strong>{caveat.what}</strong> — {caveat.cost}
+                  </p>
+                ))}
+              </div>
             )}
             {m.appliedHtml && (
               <div className="chat-applied">

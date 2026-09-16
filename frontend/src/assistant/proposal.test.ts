@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { proposalCaveats } from './proposal'
+import { newCaveats, proposalCaveats } from './proposal'
 
 const PAGE = '<style>@page { size: A4; margin: 20mm; %s }</style>\n<h1>Report</h1>\n'
 
@@ -43,5 +43,35 @@ describe('what a proposed template will cost', () => {
       PAGE.replace('%s', '@top-right { content: "DRAFT" }') + CODE_ONLY,
     )
     expect(found).toHaveLength(2)
+  })
+})
+
+describe('what a change introduced', () => {
+  const CELL = '<table><tr><td class="num">{{ item.amount }}%s</td></tr></table>'
+
+  it('says nothing when the document was already code-only', () => {
+    // The caveat is about the change, not about the file. A template that
+    // could not open in Visual before the edit did not lose anything.
+    const broken = CELL.replace('%s', '{% if item.paid %}x{% endif %}')
+    expect(newCaveats(broken, broken + '<p>more</p>')).toEqual([])
+  })
+
+  it('names what an edit has just cost', () => {
+    const found = newCaveats(
+      CELL.replace('%s', ''),
+      CELL.replace('%s', '{% if item.paid %}✓{% endif %}'),
+    )
+    expect(found).toHaveLength(1)
+    expect(found[0].cost).toContain('code-only')
+  })
+
+  it('is quiet about an edit that keeps the document editable', () => {
+    // The markup the checkbox preset writes: an expression, not a statement,
+    // so there is no block to match against an element.
+    const found = newCaveats(
+      CELL.replace('%s', ''),
+      CELL.replace('%s', "{{ '☑' if item.paid else '☐' }}"),
+    )
+    expect(found).toEqual([])
   })
 })

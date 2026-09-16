@@ -51,3 +51,18 @@ export function proposalCaveats(html: string): Caveat[] {
   }
   return caveats
 }
+
+/**
+ * What a change introduced, rather than what the document already carried.
+ *
+ * Operations are applied before anything can be said about them — the result
+ * is only known afterwards — and a caveat that was already true before the
+ * assistant touched anything is not news about the change. Reported was an
+ * `edit` that inserted `{% if item.paid %}✓{% endif %}` into a table cell:
+ * correct Jinja, correct output, and the document left Visual mode on the
+ * spot, with the editor's own banner as the only word about it.
+ */
+export function newCaveats(before: string, after: string): Caveat[] {
+  const had = new Set(proposalCaveats(before).map((c) => c.what))
+  return proposalCaveats(after).filter((c) => !had.has(c.what))
+}
