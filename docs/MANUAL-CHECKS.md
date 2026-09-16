@@ -87,7 +87,8 @@ grey backgrounds turning muddy, text too small to read at actual size.
 ### M-02 — Codes scanned off paper
 
 Explore printed QR and barcodes with a real scanner and a phone camera,
-targeting the claim in the README that vector symbols survive print. Vary:
+targeting the claim in [TEMPLATES.md](TEMPLATES.md#barcodes-and-qr-codes)
+that vector symbols survive print. Vary:
 angle, poor light, a photocopy of the printout, the smallest size a template
 allows, coloured symbols on a coloured background. **45 min. Last run: —**
 

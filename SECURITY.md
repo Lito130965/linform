@@ -49,8 +49,8 @@ Stated plainly, because an unlisted gap reads as an overlooked one:
   the default and carries both the management API and the render API; a
   render-only token cannot change templates, but the endpoints are there to
   reach. Splitting is opt-in: `LINFORM_ROLE=render` builds a process with no
-  management API and no editor bundle at all (see "Deployment roles" in the
-  README). Worth doing when render nodes are reachable from a wider network
+  management API and no editor bundle at all (see [Deployment
+  roles](docs/OPERATIONS.md#deployment-roles)). Worth doing when render nodes are reachable from a wider network
   than the editor.
 - **No per-template or per-directory permissions.** Directories are
   organisational only.
