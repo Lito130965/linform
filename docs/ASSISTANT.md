@@ -20,9 +20,14 @@ writing markup, and you see it as a list of sentences before it runs. What
 lands is then what the panels produce: a footer the header switch maintains, a
 page number built on counters, both still editable afterwards. Its vocabulary
 is exactly the editor's, checked against the editor's own source in CI. When it
-does write a whole template, anything that would put the document out of the
-visual editor's reach is said beside the Apply button rather than discovered
-later.
+does write a whole template — the last resort, and a reply that does it says
+so — anything that would put the document out of the visual editor's reach is
+said beside the change rather than discovered later.
+
+Changes land in the document as they arrive, and one press of undo takes any
+of them back, including work typed by hand a moment earlier. Why that is the
+safe arrangement, and what it costs, is
+[decision 11](DECISIONS.md#11-the-assistant-writes-into-the-document-and-undo-is-what-makes-that-safe).
 
 ## Your key
 

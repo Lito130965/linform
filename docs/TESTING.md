@@ -4,6 +4,9 @@ How this repository checks itself. Running the suites is in
 [CONTRIBUTING.md](../CONTRIBUTING.md); what is checked by hand, and why it
 cannot be automated, is in [MANUAL-CHECKS.md](MANUAL-CHECKS.md).
 
+Why these suites and not others — the risks each one answers, and what is
+deliberately left uncovered — is in [TEST-STRATEGY.md](TEST-STRATEGY.md).
+
 ## Golden PDF tests
 
 `tests/test_golden_pdfs.py` renders every example in `examples/` and checks the

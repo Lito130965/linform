@@ -351,3 +351,68 @@ rather than remembered, so the list stays accurate across upgrades.
 cannot be expressed any other way. Then the seam gets an implementation, behind
 its own image and its own threat model, chosen for that requirement — not for
 the possibility of one.
+
+---
+
+## 11. The assistant writes into the document, and undo is what makes that safe
+
+**Context.** The assistant shipped as "it proposes, the human applies": a reply
+arrived as a block of HTML, shown as a diff against the open template, with an
+Apply button under it. That sentence was also how the feature was described in
+the README — the safety property was the button.
+
+**Decision.** What the assistant asks for is applied to the open document
+immediately, in the visual editor, with a snapshot taken first so that one press
+of undo takes it back. The diff and the Apply button are gone. It still never
+writes to the database.
+
+**Why.**
+
+*The diff was the wrong surface for this artefact.* A template is a page. Judging
+a change to a page by reading a text diff means compiling the page in your head,
+which is exactly the work the visual editor exists to remove. Every real use of
+that button was: press it, look at the page, then decide. The button did not add
+a decision point; it added a step before the decision point.
+
+*The button was never what made it safe.* The boundary that protects anything is
+that the assistant reaches only the working copy in the browser. Saving a draft
+is a human action, publishing a version is a human action, and a published
+version is immutable — so the worst an unwanted change can do is sit in an
+unsaved document until somebody undoes it or closes the tab. Immutability lives
+at the version boundary, and it always did.
+
+*What replaced it protects more, not less.* The assistant now asks for **editor
+operations** rather than writing markup: a closed vocabulary, checked against the
+editor's own source in CI, applied through the same functions the panels call. An
+operation it invents is refused out loud rather than half-applied. When it does
+edit text it must name a place that occurs exactly once — an edit matching
+nothing, or three things, changes nothing and says so. Both bound the damage in
+a way an Apply button never could, because the button could only ever ask "all of
+it, or none of it?".
+
+*And the undo is taken from the canvas rather than the shell's copy of the
+document*, which is a detail with consequences: it restores work typed by hand in
+the seconds before the reply landed, instead of a slightly older snapshot that
+would silently discard it.
+
+**Cost, paid knowingly.**
+
+- **An unwanted change arrives rather than being declined.** Undo is one press,
+  but it is after the fact, and somebody who does not notice has to find it in
+  the version diff at save time. This is the real cost, and it is the reason the
+  operations are shown as sentences as they run.
+- **A whole template is still the last resort, and still rewrites everything.**
+  The prompt pushes hard against it and a reply that does it says so, but nothing
+  structurally prevents a model from retyping sixty lines to change three. On a
+  long document that is where a paraphrased sentence or a digit-shifted reference
+  can enter.
+- **There is no separate audit trail.** What the assistant did is visible as the
+  difference between the draft and the version before it, like any other edit. A
+  deployment that needs to distinguish "a person wrote this" from "a model wrote
+  this" does not get that from here.
+
+**What would change this.** Two people editing one draft at the same time, or an
+assistant allowed to act while nobody is watching. Both make the assumption this
+rests on — a person is at the keyboard, looking at the page, when the change
+lands — false, and the answer then is not to bring the button back but to make
+the assistant's changes a proposal the document itself can hold.

@@ -243,6 +243,7 @@ trailers in the history. The reasoning behind the design is in
 | [CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable |
 | [OPERATIONS.md](docs/OPERATIONS.md) | Observability, performance, deployment roles, backup |
 | [TESTING.md](docs/TESTING.md) | Golden PDFs, browser tests, accessibility |
+| [TEST-STRATEGY.md](docs/TEST-STRATEGY.md) | What is tested, what is not, and the risks behind both |
 | [MANUAL-CHECKS.md](docs/MANUAL-CHECKS.md) | What is checked by hand, and why |
 | [SECURITY.md](SECURITY.md) | Threat model and reporting |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Running and testing it locally |
