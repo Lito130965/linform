@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] — 2026-09-16
+
+The release the editor grew up in. The assistant stopped writing markup and
+started asking the editor to do things; the layout stopped treating the page as
+one panel among several and gave it the window; and an instance can now be put
+on the open internet as a demo with nothing on it to lose.
+
 ### Added
 
 - **The assistant asks the editor to do things, instead of writing markup for
@@ -137,6 +146,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page breaks stay honest). It reserves a column, so below 1600px it starts
   closed and the toolbar toggle brings it back.
 
+- **The page gets the window.** The editor was a properties bar across the top, a
+  drawer of tools along the bottom and two panels beside them, and an A4 sheet
+  got 570 px of a 1680 px screen at 70 % zoom — the document the tool exists for
+  was the smallest thing on screen. It is one column now: the page in the middle
+  at 960 px and 100 %, with 84 px of chrome above it instead of 256. Properties
+  moved into an inspector beside the page, where a panel that changes height
+  cannot move the page under the pointer; the drawer of tools became a 52 px rail
+  down the side whose panels open *over* the canvas, so opening one cannot re-lay
+  the page out in the middle of a gesture. Both are measured by tests rather than
+  promised.
+- **The split between the page and the preview is dragged**, and every width the
+  layout has is remembered per browser: where the author put a column is where it
+  is tomorrow.
+- **The preview keeps the page you were reading.** Every render used to hand the
+  viewer a new file, which started it again at page one — so working on page
+  three of a document meant scrolling back to page three after every word. The
+  page survives a re-render, is clamped when the document gets shorter, and goes
+  into the URL fragment; the service says how many pages there are
+  (`X-Linform-Pages`, on the ad-hoc endpoint only, since counting pages on a
+  production render is work done for a reader who is not there).
+- **Focus mode**, `Ctrl+Shift+F`: the navigation, the inspector and the preview
+  fold away and the page has the screen. Nothing underneath changes, so `Esc`
+  brings the editor back exactly as it was. Deliberately not remembered — it is a
+  gesture for the length of one problem, where a layout is a setting that should
+  come back tomorrow.
+- **Fit page** joins fit width, on `Ctrl+0`: a form that fits the width can still
+  run three screens deep, and a page break you cannot see is one you find in the
+  PDF. Every key the rebuild added is in the Keyboard popover on the toolbar,
+  which replaced a disclosure that spent 26 px above the page on a summary nobody
+  opened twice.
+- **A laptop is a wide enough screen.** At 1280 and below the canvas and the
+  preview take turns instead of splitting, and the inspector is drawn over the
+  page rather than taking width from it: 1144 px of canvas, and an A4 page at
+  100 % for the first time on that class of machine. The width below which the
+  editor refuses to open at all drops from 1000 px to 900.
+- **Borders are a square with a side to press**, the way every spreadsheet has
+  drawn it for thirty years, instead of the five letters T, R, B, L and All — and
+  each side shows whether it is currently ruled, which no arrangement of letters
+  was going to.
+- **Spacing numbers snap to the page.** Dragging a block has had snapping since
+  the canvas was built; the other way to move something — reaching for a margin
+  or padding box — had a ruler and nothing to line up against. It now falls onto
+  page edges, page breaks and the edges and centres of other blocks, at the same
+  distance on screen whatever the zoom. How a property moves an edge is measured
+  from the first change of the gesture rather than written down, so this does not
+  keep a second copy of the box model. Arrow keys are deliberately not snapped: a
+  key press is somebody asking for exactly one step. The extra guide lines a drag
+  drew while this was being built are off for now — on a real form they were more
+  to read than they were worth — leaving the millimetre grid and the one line
+  that says what an edge actually caught.
+
 - **A demo role.** `LINFORM_ROLE=demo` serves the examples gallery and the
   editor behind it and nothing else: no stored templates, no accounts, no
   sign-in. `GET /api/capabilities` tells the interface what an instance offers,
@@ -230,6 +290,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   there; the canvas drew that inset as padding on the body, which left the
   origin for all of them at the corner of the sheet. Content in flow looked
   right either way, so the difference existed only on export.
+
+- **Inserting a block moved the whole document 174 px down.** A running header or
+  footer is a body child like any other, but it is drawn in its margin band by
+  absolute position — so its rectangle reads as "overflows its page" the moment
+  the document grows enough to be measured again. Pagination answered with a
+  spacer, and a spacer before an out-of-flow element pushes everything that
+  follows it in flow: the header band, the title, the whole page. Pagination
+  looks only at children in the flow now, which is the only thing a page break
+  can act on anyway.
+- **A header or footer could not be read in the dark theme.** The band between
+  two sheets is the page margin, and a margin is paper — but it was painted with
+  the shell's colour, which in that theme is nearly black, so a running footer
+  printed in the document's own dark ink came out dark on dark. It shows what
+  prints, so it has to look like what it prints on.
+- **The Insert panel printed its title twice**, once in the flyout's header and
+  once in its own. The flyout owns that chrome now, and the panels carry only
+  their one-line hint.
 
 ## [0.2.0] — 2026-08-09
 
@@ -399,6 +476,7 @@ First working version.
 - Optional AI assistant (bring your own key, off by default).
 - Two-tier token auth, `.docx` import, six worked examples.
 
-[Unreleased]: https://github.com/Lito130965/linform/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Lito130965/linform/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Lito130965/linform/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Lito130965/linform/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Lito130965/linform/releases/tag/v0.1.0
