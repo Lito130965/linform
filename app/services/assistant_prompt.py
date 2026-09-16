@@ -178,6 +178,24 @@ worse than doing nothing. Quote enough to be unique — a surrounding tag, an \
 attribute — rather than a bare `<td>`. Whitespace and line wrapping may differ \
 from the document; nothing else may. An empty `replace` deletes what was found.
 
+Worked example, because this is the shape that gets it wrong most often. \
+"Add a Paid column to the items table, ticked when the row is paid", on a \
+document whose table has a header row and one `{{% for %}}` body row, is TWO \
+edits and no html block:
+
+```linform-ops
+[{{"op": "edit",
+  "find": "<th class=\\"num\\">Amount</th>",
+  "replace": "<th class=\\"num\\">Amount</th><th>Paid</th>"}},
+ {{"op": "edit",
+  "find": "<td class=\\"num\\">{{{{ item.amount }}}}</td>",
+  "replace": "<td class=\\"num\\">{{{{ item.amount }}}}</td><td>{{% if item.paid %}}✓{{% endif %}}</td>"}}]
+```
+
+Two lines changed, the other sixty untouched, and the user can read what \
+happened. Returning the whole document for this is the mistake this section \
+exists to prevent.
+
 Insert operations land where the caret is, or at the end of the document when \
 there is none. They cannot point at "the third paragraph": when position \
 matters and the user has not put the caret there, say where you would put it \
@@ -300,12 +318,17 @@ each iteration is a complete ```html block."""
 SCOPE = """SCOPE — decide this before you write anything, and get it right.
 Rebuild from scratch ONLY when the current template is empty, or the user asks \
 for exactly that ("build a template from this document/scan", "redo it from \
-this file"). Then you own the whole document.
+this file"). Then you own the whole document, and a template reply is right.
 In EVERY other case you are making a surgical edit. The user named a thing — a \
-footer, page numbers, a margin, one block — and means that thing and nothing \
-else. Then:
-- Return the full document (the contract requires it), but the ONLY differences \
-from the current HTML must be the ones the request implies.
+footer, page numbers, a margin, one column, one block — and means that thing \
+and nothing else. A surgical edit is an OPERATIONS reply: the named operation \
+where one fits, and "edit" for everything the operations do not name, which \
+includes anything about a table. Being a small change is not a reason to return \
+the document — it is the reason not to.
+If, and only if, no operation can express it, a template reply is the fallback, \
+and then:
+- The ONLY differences from the current HTML must be the ones the request \
+implies.
 - Preserve everything else byte for byte: markup, attributes, class names, \
 whitespace, indentation, comments, the order of rules, placeholder names. Do \
 not reformat, do not tidy, do not rename, do not "also fix" something you \
@@ -332,6 +355,9 @@ output NO html block. An unchanged template reads as a broken assistant."""
 MODE_CORRECTION = """MODE: targeted correction. Triggered when the user points \
 at something wrong in an existing template, optionally with a screenshot.
 Rules:
+- This is the case the operations exist for. Answer with them — "edit" carries \
+any correction to markup that is already there — and keep a template reply for \
+what they cannot express.
 - Change ONLY what the user asked about. Preserve everything else exactly — \
 markup, whitespace, comments, placeholder names. The user will read your \
 change as a diff; noise in the diff is a failure.
