@@ -4,8 +4,8 @@ What this project tests, what it deliberately does not, and how the two were
 decided. The mechanics — how to run each suite — are in
 [TESTING.md](TESTING.md); this is the reasoning behind them.
 
-Counts are from 0.3.0: 237 backend tests, 431 frontend unit tests, 142 browser
-tests.
+Counts are from 0.3.0, as the runners report them: 302 backend tests, 458
+frontend unit tests, 135 browser tests.
 
 ---
 
@@ -72,10 +72,10 @@ Impact is read against the three promises. The last column is the honest one.
 
 | Level | Count | Runs in | What only it can answer |
 |---|---:|---|---|
-| Frontend unit | 431 | ~seconds | Does the editor's logic hold: the bridge, sanitising, the box model, the operation vocabulary |
-| Backend unit and API | 237 | ~a minute | Request handling, the version invariants, auth, caching, the limits |
+| Frontend unit | 458 | ~seconds | Does the editor's logic hold: the bridge, sanitising, the box model, the operation vocabulary |
+| Backend unit and API | 302 | ~a minute | Request handling, the version invariants, auth, caching, the limits |
 | Golden PDF | included above | with the backend | Did the *output* change |
-| Browser, against the built image | 142 | ~minutes | Does the thing we would actually ship work |
+| Browser, against the built image | 135 | ~minutes | Does the thing we would actually ship work |
 
 The classic pyramid says most tests at the bottom, few at the top, because the
 top is slow and brittle. That holds here for cost, and not for risk: the two
