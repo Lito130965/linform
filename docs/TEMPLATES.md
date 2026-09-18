@@ -8,6 +8,8 @@ Ready-made ones to start from — an invoice with a flowing table, a shipping
 label with QR and barcode, a fixed-layout certificate — are in
 [examples/](../examples/), each with sample data and curl commands.
 
+![The code editor with the invoice template open — syntax-highlighted HTML and Jinja on the left — and the rendered PDF in the column beside it, showing page one of two](media/06-code-mode.png)
+
 ## The pipeline
 
 ```

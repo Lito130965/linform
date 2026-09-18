@@ -4,6 +4,8 @@ The canvas is a purpose-built DOM editor: the document in it *is* the markup
 that will be rendered, so the round trip through it is byte-exact (there is a
 test that fails the build otherwise). This is what it does beyond typing.
 
+![The visual canvas with a heading selected: the millimetre grid over the sheet, the header and footer bands marked as repeating on every page, and the inspector beside it showing the block's font, size, margins and borders](media/04-visual-mode.png)
+
 ## From the keyboard
 
 The canvas is contenteditable, so the plain

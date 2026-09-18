@@ -12,6 +12,8 @@ publishes a numbered version. Your application posts JSON to one stable code and
 gets a PDF. That version is frozen, so the same call renders the same document
 years later.
 
+![Dragging a block across the page in the visual editor: the millimetre grid appears, the edge snaps to a line on the page with the distance beside the cursor, and the PDF re-renders in the column next to it](docs/media/01-move-with-snapping.gif)
+
 **[Try the editor →](https://linform.linitapp.com/)** — the examples gallery on a
 live instance. Open any template, edit it, watch the PDF change. Nothing is
 saved there and uploads are cleared within the hour; it is the same image this
@@ -91,6 +93,8 @@ HTML template with {{ placeholders }}  →  Jinja2 (sandboxed)  →
 final HTML  →  WeasyPrint  →  PDF
 ```
 
+![The payload on the left as JSON — an invoice number, a buyer, two line items, a total — and on the right the page it produced, a rendered invoice with the items as a table](docs/media/07-json-to-pdf.png)
+
 Jinja2 runs sandboxed, because a template is untrusted input. WeasyPrint lays
 the document out with CSS Paged Media — `@page`, running headers and footers,
 page counters, explicit break control — which is what makes a page repeatable
@@ -116,6 +120,8 @@ in [docs/CONFIGURATION.md](docs/CONFIGURATION.md#pdfa-and-pdfua).
 deletable, and unreachable by any consuming application. A version exists only
 once something is **published** — it is numbered then, which means a version
 number always refers to something a consumer could legitimately have rendered.
+
+![The version history beside the editor: two published versions with their comments, one marked current, and the diff between the older one and the document open in the editor](docs/media/05-version-history.png)
 
 Published versions are immutable, and exactly one is *current* (enforced by the
 database, so it holds with any number of replicas). Pointing that at an older
