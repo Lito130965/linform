@@ -3,6 +3,7 @@
 [![CI](https://github.com/Lito130965/linform/actions/workflows/ci.yml/badge.svg)](https://github.com/Lito130965/linform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+![Release](https://img.shields.io/github/v/release/Lito130965/linform)
 
 **Versioned print forms — HTML in, PDF out.**
 
@@ -245,11 +246,11 @@ and how to report a vulnerability: [SECURITY.md](SECURITY.md).
 
 ## About this project
 
-I work in QA on tax software for the public sector, where a printed form must
-render years later exactly as it did when it was filed. Linform is my answer to
-that problem. Architecture, scope, technical decisions, the test strategy and
-review are mine; implementation was AI-assisted — see the `Co-Authored-By`
-trailers in the history. The reasoning behind the design is in
+Linform comes out of a problem I know from working on regulated, form-heavy reporting: 
+a printed form has to render years later exactly as it did when it was filed. Architecture, 
+scope, the version model and the test strategy are mine, and the history shows the directions 
+that were tried and dropped — a third-party WYSIWYG among them. Implementation was AI-assisted; 
+see the Co-Authored-By trailers. The reasoning is in
 [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Documentation
