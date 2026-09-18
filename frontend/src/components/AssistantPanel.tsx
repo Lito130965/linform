@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from './Icon'
 import { assistantChat, AssistantStatus } from '../api'
-import { extractHtmlBlock, replyProse } from '../assistant/extract'
+import { extractHtmlBlock, isTruncated, replyProse } from '../assistant/extract'
 import { describeOp, extractOps, withoutOpsBlock, type Op } from '../assistant/ops'
-import { proposalCaveats } from '../assistant/proposal'
+import { newCaveats, proposalCaveats } from '../assistant/proposal'
 import { toDownscaledDataUrl } from '../assistant/image'
 import { renderMarkdown } from '../assistant/markdown'
 
@@ -21,6 +21,10 @@ interface ChatMessage {
   /** operations that were asked for and refused, with the reason. Shown, not
    * swallowed: silence would read as an editor that ignored the assistant. */
   rejectedOps?: { what: string; why: string }[]
+  /** set when the reply stopped mid-block, so nothing could be applied */
+  cutOff?: boolean
+  /** what the operations in this message cost the document, if anything */
+  opCaveats?: { what: string; cost: string }[]
   /** set once this message's change has been taken back */
   undone?: boolean
 }
@@ -136,6 +140,11 @@ export default function AssistantPanel({
       // the page, and the page is the thing being worked on. Taken back in
       // one press, exactly, because that is what makes applying safe.
       const before = currentDocument()
+      // A reply that opened a fence and never closed it was cut off — an output
+      // limit, or a stream that died. There is nothing to apply and nothing
+      // above will find anything, so say so: silence here reads as "it wrote
+      // the whole template and ignored me".
+      const cutOff = isTruncated(acc)
       let changed = false
       if (proposed) {
         onReplaceDocument(proposed)
@@ -145,6 +154,11 @@ export default function AssistantPanel({
         // and an "Undo this change" over an untouched document is a lie.
         changed = onApplyOps(ops.ops)
       }
+      // A template reply says what it costs from the document it carried. An
+      // operations reply can only be read afterwards, and until it was, an
+      // `edit` could take the document out of Visual mode with nothing in the
+      // conversation to show which change did it.
+      const cost = changed && !proposed ? newCaveats(before, currentDocument()) : []
       setMessages((m) => {
         const next = [...m]
         const last = next[next.length - 1]
@@ -156,6 +170,8 @@ export default function AssistantPanel({
           appliedOps: changed && ops && ops.ops.length > 0 ? ops.ops : undefined,
           rejectedOps: ops && ops.rejected.length > 0 ? ops.rejected : undefined,
           undoTo: changed ? before : undefined,
+          cutOff: cutOff && !changed,
+          opCaveats: cost.length > 0 ? cost : undefined,
         }
         return next
       })
@@ -261,6 +277,21 @@ export default function AssistantPanel({
                   </li>
                 ))}
               </ul>
+            )}
+            {m.cutOff && (
+              <p className="chat-cutoff">
+                The answer stopped in the middle, so nothing was applied and the
+                document is unchanged. Ask again, or ask for a smaller change.
+              </p>
+            )}
+            {m.opCaveats && (
+              <div className="chat-applied">
+                {m.opCaveats.map((caveat, j) => (
+                  <p key={j} className="proposal-caveat">
+                    <strong>{caveat.what}</strong> — {caveat.cost}
+                  </p>
+                ))}
+              </div>
             )}
             {m.appliedHtml && (
               <div className="chat-applied">

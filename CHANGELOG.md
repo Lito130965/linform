@@ -247,6 +247,36 @@ on the open internet as a demo with nothing on it to lose.
 
 ### Fixed
 
+- **The assistant returned a whole template for a one-line change**, however
+  firmly the prompt told it not to. It was not the model ignoring us: the
+  section written before the operations existed said, of every surgical edit,
+  "return the full document (the contract requires it)", while the section
+  written after says a template is the last resort and names adding a column to
+  a table as the example of the wrong answer. Both were in the same prompt, and
+  a model that picks either is obeying us. A surgical edit now routes into the
+  operations, and the section carries a worked example of that exact request as
+  two `edit` operations.
+- **A conditional in a cell no longer costs the visual editor.** Asked for a
+  ticked column, the assistant wrote `{% if item.paid %}✓{% endif %}` — correct
+  Jinja, correct print, and the template became code-only the moment it applied,
+  because a `{% %}` block is matched against an element and there is none around
+  a bare tick. The editor's own checkbox preset writes
+  `{{ '☑' if paid else '☐' }}` instead, which needs no element and prints an
+  empty box rather than nothing when the value is false. The prompt now names
+  that idiom and the rule behind it, and a test ties the characters in the
+  prompt to the ones the preset generates.
+- **An operations reply says what it cost.** Caveats were only ever computed for
+  a template reply, from the document it carried; an operations reply is only
+  knowable after it has been applied, so nothing in the conversation ever said
+  that a change had taken the document out of Visual mode. What a change
+  *introduced* is now shown beside the operations that caused it.
+- **An answer that stopped halfway says so.** A reply is applied by finding a
+  closed ```` ```html ```` fence, so a stream that ends mid-block matches
+  nothing, applies nothing, and used to leave the unfinished markup in the chat
+  with the document untouched and no explanation — reported as "it wrote the
+  whole template and nothing changed". The message now says the answer was cut
+  off and the document is unchanged.
+
 - **The journal showed the first hundred templates and nothing to say there were
   more.** `/api/templates` answers a page at a time, ordered by code; the editor
   asked for it plainly and displayed whatever came back. Past a hundred

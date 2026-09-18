@@ -126,3 +126,29 @@ def test_the_prompt_still_forbids_the_markup_the_editor_cannot_edit():
     assert "position: running(lf-header)" in prompt
     # The measured fact behind the width, which cost a round of bug reports.
     assert "shrink-to-fit" in prompt
+
+
+def test_the_prompt_writes_a_checkbox_the_way_the_preset_writes_it():
+    """The idiom, taken from the registry rather than remembered.
+
+    Reported from the test server: asked for a ticked column, the assistant
+    emitted `{% if item.paid %}✓{% endif %}` inside a cell. Correct Jinja,
+    correct print, and the template left Visual mode on the spot — a `{% %}`
+    block is matched against an element, and there is no element around a bare
+    tick. The editor has a checkbox preset that writes an expression instead;
+    the prompt now says so, and this fails if the two ever diverge.
+    """
+    registry = (FRONTEND / "presets" / "registry.ts").read_text(encoding="utf-8")
+    generated = re.search(r"id: 'checkbox'[\s\S]*?return `([^`]+)`", registry)
+    assert generated, "checkbox preset changed shape — fix this test"
+    # The preset interpolates the condition; compare the parts around it.
+    literal = generated.group(1)
+    boxes = re.findall(r"'([^']+)'", literal)
+    assert boxes, "the checkbox preset stopped carrying box characters"
+
+    prompt = build_system_prompt()
+    for box in boxes:
+        assert box in prompt, f"the prompt does not use the preset's {box!r}"
+    # And the trap it is there to avoid.
+    assert "code-only" in prompt
+    assert "wrap EXACTLY ONE whole element" in prompt
