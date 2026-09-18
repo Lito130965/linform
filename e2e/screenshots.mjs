@@ -81,10 +81,11 @@ async function main() {
     // Twice the pixels: the README shows these at about half their width, and a
     // 1x screenshot scaled down is exactly as soft as it sounds.
     deviceScaleFactor: 2,
-    // Light, to match the recorded gif at the top of the README: a page is
-    // white, and a set of pictures that disagree about the theme reads as a
-    // pile rather than one product.
-    colorScheme: 'light',
+    // Dark, to match the recording at the top of the README. Worth stating
+    // because it is easy to get backwards: the editor's chrome is #222229 and
+    // the two largest areas on screen — the sheet and the rendered PDF — are
+    // white, so a frame of it reads as a light interface until you sample it.
+    colorScheme: 'dark',
     baseURL: BASE,
   })
   const page = await context.newPage()
@@ -113,10 +114,28 @@ async function main() {
   // with two published versions that differ in a way a reader can see, and it
   // must be one this repository is willing to publish a picture of.
   const api = context.request
-  const code = 'delivery-note'
-  // A fixed code rather than a unique one: this ends up in a picture, and
+  // A readable code rather than a unique one, because it ends up in a picture:
   // `receipt-demo-mu4b6wlq` in the toolbar reads as somebody's leftover test.
-  await api.delete(`/api/templates/${code}`).catch(() => {})
+  // Archiving does not give a code back — that is the point of archiving — so a
+  // re-run takes the next name that is free, or reuses one it made before.
+  const CANDIDATES = ['delivery-note', 'goods-received', 'packing-slip', 'dispatch-note']
+  let code = null
+  let published = 0
+  for (const candidate of CANDIDATES) {
+    const found = await api.get(`/api/templates/${candidate}`)
+    if (found.status() === 404) {
+      await api.post('/api/templates', { data: { code: candidate, name: 'Delivery note' } })
+      code = candidate
+      break
+    }
+    const detail = await found.json()
+    if (!detail.archived_at) {
+      code = candidate
+      published = (detail.versions ?? []).filter((v) => v.status === 'published').length
+      break
+    }
+  }
+  if (!code) throw new Error(`no free template code among ${CANDIDATES.join(', ')}`)
   const v1 = `<h1>Delivery note {{ number }}</h1>
 <p>Issued to {{ customer.name }} on {{ issued_on }}.</p>
 <table>
@@ -130,8 +149,7 @@ async function main() {
     .replace('<td>{{ line.qty }}</td>', '<td>{{ line.qty }}</td><td>{% if line.checked %}✓{% endif %}</td>')
     .replace('Goods received in good order.', 'Goods received in good order. Signature: ____________')
 
-  await api.post('/api/templates', { data: { code, name: 'Delivery note' } })
-  for (const html of [v1, v2]) {
+  for (const html of published >= 2 ? [] : [v1, v2]) {
     const draft = await api.post(`/api/templates/${code}/drafts`, {
       data: { html_content: html, comment: html === v1 ? 'first issue' : 'a column for the checker, and a signature line' },
     })
@@ -163,10 +181,6 @@ async function main() {
   await page.waitForTimeout(800)
   await shot(page, '05-version-history')
 
-  // Put it back: a demonstration template is not something to leave behind on
-  // whatever instance this was pointed at.
-  await api.delete(`/api/templates/${code}`)
-
   // ---- 07: the picture that explains the product without a sentence.
   //
   // Not a screenshot of anything — a composition: the payload on the left, the
@@ -190,21 +204,21 @@ async function main() {
     )
     await page.setViewportSize({ width: 1400, height: 780 })
     await page.setContent(`<!doctype html><meta charset="utf-8"><style>
-      :root { color-scheme: light }
+      :root { color-scheme: dark }
       body { margin:0; width:1400px; height:780px; display:flex; align-items:center;
-             justify-content:center; gap:44px; background:#eef1f5;
-             font:14px/1.55 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; color:#2b3138 }
-      .card { width:600px; background:#ffffff; border:1px solid #d7dce2; border-radius:10px;
-              padding:22px 24px; box-shadow:0 10px 30px rgba(22,28,36,.10) }
+             justify-content:center; gap:44px; background:#222229;
+             font:14px/1.55 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; color:#c9d1d9 }
+      .card { width:600px; background:#1b1f24; border:1px solid #2f3540; border-radius:10px;
+              padding:22px 24px; box-shadow:0 18px 50px rgba(0,0,0,.45) }
       .card h3, .sheet-label { font:600 13px/1 ui-sans-serif,system-ui,sans-serif;
-              letter-spacing:.08em; text-transform:uppercase; color:#6b7480; margin:0 0 14px }
-      pre { margin:0; white-space:pre-wrap; color:#39414a }
-      .k { color:#1f6feb }
-      .arrow { text-align:center; color:#6b7480; font:600 13px/1.6 ui-sans-serif,system-ui,sans-serif }
-      .arrow div:first-child { font-size:42px; line-height:1; color:#1f6feb }
+              letter-spacing:.08em; text-transform:uppercase; color:#8b949e; margin:0 0 14px }
+      pre { margin:0; white-space:pre-wrap; color:#adbac7 }
+      .k { color:#6cb6ff }
+      .arrow { text-align:center; color:#8b949e; font:600 13px/1.6 ui-sans-serif,system-ui,sans-serif }
+      .arrow div:first-child { font-size:42px; line-height:1; color:#539bf5 }
       .sheet { text-align:center }
-      img { width:420px; border:1px solid #d7dce2; border-radius:4px;
-            box-shadow:0 10px 30px rgba(22,28,36,.14); display:block }
+      img { width:420px; border-radius:4px;
+            box-shadow:0 18px 50px rgba(0,0,0,.55); display:block }
     </style>
     <div class="card"><h3>your application sends JSON</h3><pre>${json}</pre></div>
     <div class="arrow"><div>&rarr;</div><div>POST /api/render/invoice</div></div>
