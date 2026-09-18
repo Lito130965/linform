@@ -54,7 +54,7 @@ class ConcurrencyLimiter:
 
 
 class PdfRenderer(Protocol):
-    async def render_pdf(self, html: str) -> bytes: ...
+    async def render_pdf(self, html: str, *, variant: str = "") -> bytes: ...
 
 
 def _fetch_url(url: str, allow_external: bool, allowed_hosts: list[str]):
@@ -77,16 +77,32 @@ def _fetch_url(url: str, allow_external: bool, allowed_hosts: list[str]):
     raise ValueError(f"URL scheme not allowed: {url!r}")
 
 
-def _render_worker(html: str, allow_external: bool, allowed_hosts: list[str]) -> bytes:
+def _render_worker(
+    html: str, allow_external: bool, allowed_hosts: list[str], variant: str = ""
+) -> bytes:
     # Runs in a worker process; import here so the parent process never
     # pays WeasyPrint's import cost (or its native-library requirements).
     import weasyprint
+    from weasyprint.pdf import VARIANTS
+
+    if variant and variant not in VARIANTS:
+        # Checked here rather than in the settings because the list belongs to
+        # the engine: keeping a copy of it beside the configuration is how a
+        # variant gets dropped from the allowed set on an upgrade, or offered
+        # after it stops existing. The parent process does not import
+        # WeasyPrint at all, deliberately, so this is the first place that can
+        # ask. `debug` is one of the engine's own variants and is not an output
+        # format; it is left out of what a deployment may ask for.
+        known = sorted(name for name in VARIANTS if name != "debug")
+        raise ValueError(
+            f"Unknown PDF variant {variant!r}. WeasyPrint offers: {', '.join(known)}."
+        )
 
     document = weasyprint.HTML(
         string=html,
         url_fetcher=lambda url: _fetch_url(url, allow_external, allowed_hosts),
     )
-    return document.write_pdf()
+    return document.write_pdf(pdf_variant=variant or None)
 
 
 class WeasyPrintRenderer:
@@ -98,11 +114,14 @@ class WeasyPrintRenderer:
         allow_external_urls: bool,
         allowed_url_hosts: list[str],
         max_concurrency: int = 0,
+        pdf_variant: str = "",
     ):
         self._pool = ProcessPoolExecutor(max_workers=max_workers)
         self._timeout = timeout_seconds
         self._allow_external = allow_external_urls
         self._allowed_hosts = allowed_url_hosts
+        # The deployment's default, used when the render does not ask for one.
+        self._pdf_variant = pdf_variant
         # 0 = derive: a small queue over the pool absorbs bursts without letting
         # the backlog grow without bound.
         limit = max_concurrency if max_concurrency > 0 else max_workers * 2
@@ -120,18 +139,18 @@ class WeasyPrintRenderer:
     def concurrency_limit(self) -> int:
         return self._limiter.limit
 
-    async def render_pdf(self, html: str) -> bytes:
+    async def render_pdf(self, html: str, *, variant: str = "") -> bytes:
         if not self._limiter.try_acquire():
             raise RenderBusy(
                 f"Server is at capacity ({self._limiter.limit} renders in flight). "
                 "Retry shortly."
             )
         try:
-            return await self._render(html)
+            return await self._render(html, variant or self._pdf_variant)
         finally:
             self._limiter.release()
 
-    async def _render(self, html: str) -> bytes:
+    async def _render(self, html: str, variant: str = "") -> bytes:
         loop = asyncio.get_running_loop()
         started = time.monotonic()
         try:
@@ -140,7 +159,12 @@ class WeasyPrintRenderer:
             # try that would escape as a 500 and never mark the instance
             # unready. A pool that breaks mid-render fails on the await instead.
             future = loop.run_in_executor(
-                self._pool, _render_worker, html, self._allow_external, self._allowed_hosts
+                self._pool,
+                _render_worker,
+                html,
+                self._allow_external,
+                self._allowed_hosts,
+                variant,
             )
             pdf = await asyncio.wait_for(future, timeout=self._timeout)
         except asyncio.TimeoutError:

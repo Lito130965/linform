@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
@@ -29,6 +30,23 @@ from app.services.renderer import WeasyPrintRenderer
 log = logging.getLogger("linform.main")
 
 
+def _version() -> str:
+    """The version the package was installed as, so there is one of them.
+
+    It used to be a literal here as well as in pyproject.toml, which is one
+    place too many: the number a consumer reads off /openapi.json is the one
+    that tells them which release they are talking to, and it went stale
+    silently because nothing ever compared the two.
+    """
+    try:
+        return package_version("linform")
+    except PackageNotFoundError:  # running from a checkout that was never installed
+        return "0.0.0"
+
+
+VERSION = _version()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -40,6 +58,7 @@ async def lifespan(app: FastAPI):
         allow_external_urls=settings.allow_external_urls,
         allowed_url_hosts=settings.allowed_url_hosts,
         max_concurrency=settings.render_max_concurrency,
+        pdf_variant=settings.pdf_variant,
     )
     # Read at scrape time rather than tracked on every render: the limiter
     # already holds the number, and a callback cannot drift from it. getattr
@@ -176,7 +195,7 @@ def create_app(settings: Settings | None = None, static_dir: Path | None = None)
     to reach.
     """
     settings = settings or get_settings()
-    app = FastAPI(title="Linform", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="Linform", version=VERSION, lifespan=lifespan)
     app.state.role = settings.role
     # Order matters: the request-id middleware is added last so it runs FIRST,
     # and every log line produced while serving — including one written by the

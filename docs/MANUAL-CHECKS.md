@@ -87,7 +87,8 @@ grey backgrounds turning muddy, text too small to read at actual size.
 ### M-02 — Codes scanned off paper
 
 Explore printed QR and barcodes with a real scanner and a phone camera,
-targeting the claim in the README that vector symbols survive print. Vary:
+targeting the claim in [TEMPLATES.md](TEMPLATES.md#barcodes-and-qr-codes)
+that vector symbols survive print. Vary:
 angle, poor light, a photocopy of the printout, the smallest size a template
 allows, coloured symbols on a coloured background. **45 min. Last run: —**
 
@@ -127,6 +128,19 @@ Explore a large real template (200+ elements): drag blocks, resize table
 columns, zoom, undo repeatedly. Targeting the failure that no assertion catches
 — formally works, unpleasant to use. Note anything that lags, jumps, or loses
 the selection. **45 min. Last run: —**
+
+### M-08 — PDF/A conformance, by a validator that is not us
+
+Validate a form rendered with `LINFORM_PDF_VARIANT=pdf/a-3b` in
+[veraPDF](https://verapdf.org/), the reference checker, and with
+`pdf/ua-1` for the tagged variant. The automated tests read back what the
+document *claims* — `pdfaid:part`, the PDF version — which is not the same as
+being valid, and the difference is exactly where a template rather than the
+engine is at fault: a font that could not be embedded, a colour outside the
+output intent, an image with no alternative text. Vary: each of the six
+examples, a template with an uploaded logo, one with a QR code. Targeting the
+claims made in the README, which are made on the engine's behalf.
+**45 min. Last run: —**
 
 ---
 

@@ -38,12 +38,14 @@ class StubRenderer:
 
     def __init__(self, **kwargs):
         self.last_html: str | None = None
+        self.last_variant: str = ""
         self.healthy = True
         self.inflight = 0
         self.concurrency_limit = 0
 
-    async def render_pdf(self, html: str) -> bytes:
+    async def render_pdf(self, html: str, *, variant: str = "") -> bytes:
         self.last_html = html
+        self.last_variant = variant
         return b"%PDF-stub"
 
     def shutdown(self) -> None:
