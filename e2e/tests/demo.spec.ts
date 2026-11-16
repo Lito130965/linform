@@ -54,14 +54,17 @@ test('the assets panel works, against a scratch store of its own', async ({ page
 test('the preview still renders a PDF, which is the point of a demo', async ({ page }) => {
   await page.goto('/')
   await page.locator('.example-card', { hasText: 'Invoice' }).click()
+  // Listen before opening the preview: opening it is what sends the render,
+  // and a response that lands first would otherwise be missed.
+  const rendered = page.waitForResponse(
+    (r) => r.url().includes('/api/render') && r.request().method() === 'POST',
+    { timeout: 30_000 },
+  )
   // At this width the preview starts put away; this test is about what it does
   // once it is open.
   await showPreview(page)
 
-  const response = await page.waitForResponse(
-    (r) => r.url().includes('/api/render') && r.request().method() === 'POST',
-    { timeout: 30_000 },
-  )
+  const response = await rendered
   expect(response.ok(), `preview render: ${response.status()}`).toBeTruthy()
   expect(response.headers()['content-type']).toContain('application/pdf')
 })
