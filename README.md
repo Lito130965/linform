@@ -15,11 +15,6 @@ years later.
 
 ![Dragging a block across the page in the visual editor: the millimetre grid appears, the edge snaps to a line on the page with the distance beside the cursor, and the PDF re-renders in the column next to it](docs/media/01-move-with-snapping.gif)
 
-**[Try the editor →](https://linform.linitapp.com/)** — the examples gallery on a
-live instance. Open any template, edit it, watch the PDF change. Nothing is
-saved there and uploads are cleared within the hour; it is the same image this
-repository publishes, run with `LINFORM_ROLE=demo`.
-
 > **Status: early development, usable.** Everything described here works and
 > is tested; what is not settled is the shape of the editor's newer corners.
 > The version model — publish, pin, roll back — is the part that will not
