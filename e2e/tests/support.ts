@@ -181,12 +181,16 @@ export async function showPreview(page: Page): Promise<void> {
   // back from its strip; at a laptop width there is no column at all and the
   // preview is one of two things the pane can show.
   const tab = page.getByRole('tab', { name: 'Preview' })
+  const strip = page.locator('.pane-strip', { hasText: 'PREVIEW' })
+  const preview = page.locator('.preview')
+  // count() does not wait, so ask only once the editor has drawn one of the
+  // three. Called straight after opening a document, the counts would
+  // otherwise both read 0 while it is still loading, nothing would be
+  // clicked, and the preview would never open.
+  await expect(tab.or(strip).or(preview).first()).toBeVisible()
   if ((await tab.count()) > 0) await tab.click()
-  else {
-    const strip = page.locator('.pane-strip', { hasText: 'PREVIEW' })
-    if ((await strip.count()) > 0) await strip.click()
-  }
-  await expect(page.locator('.preview')).toBeVisible()
+  else if ((await strip.count()) > 0) await strip.click()
+  await expect(preview).toBeVisible()
 }
 
 /**
